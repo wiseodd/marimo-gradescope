@@ -21,6 +21,7 @@ import logging
 import pwd
 import shutil
 import stat
+import sys
 import time
 from collections.abc import Mapping, Sequence
 from enum import Enum, auto
@@ -60,6 +61,7 @@ def grade(
     user: str | None,
     files_root: Path | None = None,
     files: Sequence[str] = (),
+    python: str = sys.executable,
 ) -> dict[str, Outcome]:
     """Run the public phase, then the hidden phase, within one time budget.
 
@@ -76,6 +78,8 @@ def grade(
         user: Dedicated grading user to run student code as, or `None` to keep the current one.
         files_root: Directory the data files are relative to. Required when `files` is given.
         files: Data files or directories for the notebook, as relative paths.
+        python: Interpreter for the children. It must have marimo-gradescope and the
+            notebook's dependencies.
 
     Returns:
         One outcome per test of the bundle: public tests first, then hidden ones.
@@ -99,7 +103,7 @@ def grade(
     for phase in (Phase.PUBLIC, Phase.HIDDEN):
         workdir = _prepare(root_workdir / phase.value, submission, data, user)
         outcomes, run_failed = _run_phase(
-            bundle, phase, workdir / SUBMISSION, workdir, user, deadline, run_failed
+            bundle, phase, workdir / SUBMISSION, workdir, user, python, deadline, run_failed
         )
         results |= outcomes
 
@@ -117,6 +121,7 @@ def run_phase(
     *,
     user: str | None,
     deadline: float,
+    python: str = sys.executable,
 ) -> dict[str, Outcome]:
     """Run one phase's tests in children started in `workdir`.
 
@@ -127,12 +132,13 @@ def run_phase(
         workdir: Existing working directory for the children.
         user: User to run the children as, or `None` to keep the current one.
         deadline: `time.monotonic()` value at which the time budget runs out.
+        python: Interpreter for the children.
 
     Returns:
         One outcome per test of the phase, in bundle order.
     """
 
-    outcomes, _ = _run_phase(bundle, phase, submission, workdir, user, deadline, None)
+    outcomes, _ = _run_phase(bundle, phase, submission, workdir, user, python, deadline, None)
     return outcomes
 
 
@@ -142,6 +148,7 @@ def _run_phase(
     submission: Path,
     workdir: Path,
     user: str | None,
+    python: str,
     deadline: float,
     run_failed: str | None,
 ) -> tuple[dict[str, Outcome], str | None]:
@@ -163,7 +170,7 @@ def _run_phase(
             break
 
         job = Job(bundle, submission, skip=tuple(done), run_failed=run_failed)
-        options = launch_options(workdir, user, bundle.config.memory_mb)
+        options = launch_options(workdir, user, bundle.config.memory_mb, python)
         child = Child(job.to_json(), options)
         watch = _Watch(bundle, pending, done, deadline, retry_load=run_failed is None)
 

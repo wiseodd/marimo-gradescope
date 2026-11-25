@@ -44,6 +44,7 @@ class LaunchOptions:
         group: Primary group of `user`.
         extra_groups: Supplementary groups; empty drops root's groups.
         limits: Resource limits set before the child starts.
+        python: Interpreter to run the child with.
     """
 
     cwd: Path
@@ -52,12 +53,13 @@ class LaunchOptions:
     group: int | None
     extra_groups: list[int] | None
     limits: list[Limit]
+    python: str
 
 
-def child_command(event_fd: int) -> list[str]:
-    """The command line of a grading child that writes events to `event_fd`."""
+def child_command(event_fd: int, python: str) -> list[str]:
+    """The command line of a grading child that runs on `python` and writes events to `event_fd`."""
 
-    return [sys.executable, "-m", "marimo_gradescope.grader.child", str(event_fd)]
+    return [python, "-m", "marimo_gradescope.grader.child", str(event_fd)]
 
 
 def child_env(workdir: Path) -> dict[str, str]:
@@ -117,8 +119,8 @@ def check_user(user: str) -> pwd.struct_passwd:
     return entry
 
 
-def launch_options(workdir: Path, user: str | None, memory_mb: int) -> LaunchOptions:
-    """Options for a child that runs in `workdir`, as `user` when set.
+def launch_options(workdir: Path, user: str | None, memory_mb: int, python: str) -> LaunchOptions:
+    """Options for a child that runs on `python` in `workdir`, as `user` when set.
 
     Raises:
         ValueError: If `user` is root or the current user (see `check_user`).
@@ -128,7 +130,7 @@ def launch_options(workdir: Path, user: str | None, memory_mb: int) -> LaunchOpt
     extra_groups = None if user is None else []
 
     return LaunchOptions(
-        workdir, child_env(workdir), user, group, extra_groups, limits(memory_mb, user)
+        workdir, child_env(workdir), user, group, extra_groups, limits(memory_mb, user), python
     )
 
 
@@ -187,7 +189,7 @@ class Child:
 
             try:
                 self._process = subprocess.Popen(
-                    child_command(write),
+                    child_command(write, options.python),
                     stdin=stdin,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,

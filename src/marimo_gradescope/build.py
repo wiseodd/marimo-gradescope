@@ -10,7 +10,8 @@ The build writes, next to the source notebook, the layout Otter uses:
   sit next to it.
 
 Before it writes anything, it grades the solved copy and the student copy with the real
-grader. The solved copy must get full marks. The student copy should get none; tests that pass
+grader, in a fresh environment with Gradescope's requirements. The solved copy must get full
+marks. The student copy should get none; tests that pass
 on it come back as warnings.
 """
 
@@ -29,13 +30,14 @@ from pathlib import Path, PurePosixPath
 from marimo_gradescope import __version__
 from marimo_gradescope._env import clean_env
 from marimo_gradescope.config import TOOL, AssignmentConfig, ConfigError, read_config
+from marimo_gradescope.environment import grading_python
 from marimo_gradescope.grader.bundle import GradingBundle, bundle_from_notebook
 from marimo_gradescope.grader.datafiles import data_files as shared_data_files
 from marimo_gradescope.grader.results import Results, build_results
 from marimo_gradescope.grader.templates import run_autograder_script, setup_script
 from marimo_gradescope.requirements import gradescope_requirements
-from marimo_gradescope.runner import Outcome
-from marimo_gradescope.source import Notebook, parse_notebook, validate
+from marimo_gradescope.runner import FailureReason, Outcome
+from marimo_gradescope.source import Notebook, parse_notebook, question_id, validate
 from marimo_gradescope.transform import pinned_requirement, student_notebook
 
 DIST = "dist"
@@ -147,7 +149,7 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
             full marks.
         ConfigError: If the config, a data file or a header edit is invalid.
         SourceError: If the notebook cannot be parsed or transformed.
-        RequirementsError: If the dependencies cannot be pinned.
+        RequirementsError: If the dependencies cannot be pinned or installed.
     """
 
     if sys.platform not in ("linux", "darwin"):
@@ -184,7 +186,8 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
     with tempfile.TemporaryDirectory(prefix="mgs-build-") as folder:
         stage = Path(folder)
 
-        # Self-check.
+        # Self-check, in an environment with what Gradescope installs.
+        python = str(grading_python(requirements, stage / "env", cfg.python))
         check = stage / "check"
         check.mkdir()
         student_path = check / "student" / cfg.notebook
@@ -193,11 +196,11 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
             notebook.parent.mkdir()
             notebook.write_text(text, encoding="utf-8")
 
-        warnings += marimo_check(student_path, "student notebook")
-        warnings += marimo_check(solved_path, "solved notebook")
+        warnings += marimo_check(student_path, "student notebook", python)
+        warnings += marimo_check(solved_path, "solved notebook", python)
 
         # The solved copy, not the source: it is what the instructor's test upload sends.
-        solution = _self_grade(bundle, solved_path, check / "solution", assignment_dir)
+        solution = _self_grade(bundle, solved_path, check / "solution", assignment_dir, python)
         failed = [outcome for outcome in solution.outcomes.values() if not outcome.passed]
         if failed:
             raise BuildError(
@@ -205,7 +208,7 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
                 + "\n".join(failure_report(failed))
             )
 
-        blank = _self_grade(bundle, student_path, check / "blank", assignment_dir)
+        blank = _self_grade(bundle, student_path, check / "blank", assignment_dir, python)
         warnings += _blank_warnings(blank)
 
         # Output, written in full before it replaces the old one.
@@ -288,9 +291,9 @@ class _Graded:
 
 
 def _self_grade(
-    bundle: GradingBundle, notebook: Path, workdir: Path, assignment_dir: Path
+    bundle: GradingBundle, notebook: Path, workdir: Path, assignment_dir: Path, python: str
 ) -> _Graded:
-    """Grade `notebook` the way Gradescope would, as the current user."""
+    """Grade `notebook` on `python` the way Gradescope would, as the current user."""
 
     # Imported here: the sandbox needs POSIX, and the CLI must start on any platform.
     from marimo_gradescope.grader.sandbox import grade
@@ -303,21 +306,27 @@ def _self_grade(
         user=None,
         files_root=assignment_dir,
         files=bundle.config.files,
+        python=python,
     )
 
     return _Graded(outcomes, build_results(bundle, outcomes, []))
 
 
 def failure_report(failed: Iterable[Outcome]) -> list[str]:
-    """One line per distinct failure message, naming the tests that share it."""
+    """One line per distinct failure message, naming the tests that share it.
 
-    by_message: dict[str, list[str]] = {}
+    Tests that failed to load are counted per message and name their questions instead, since
+    a failing setup cell fails every test.
+    """
+
+    by_message: dict[tuple[str, bool], list[str]] = {}
     for outcome in failed:
-        by_message.setdefault(outcome.message.strip(), []).append(outcome.name)
+        key = (outcome.message.strip(), outcome.reason is FailureReason.LOAD_FAILED)
+        by_message.setdefault(key, []).append(outcome.name)
 
     return [
-        f"- {', '.join(names)}: " + message.replace("\n", "\n    ")
-        for message, names in by_message.items()
+        f"- {_failed_tests(names, load_failed)}: " + message.replace("\n", "\n    ")
+        for (message, load_failed), names in by_message.items()
     ]
 
 
@@ -333,6 +342,15 @@ def question_warnings(cfg: AssignmentConfig) -> list[str]:
     ]
 
 
+def _failed_tests(names: list[str], load_failed: bool) -> str:
+    if not load_failed:
+        return ", ".join(names)
+
+    questions = ", ".join(dict.fromkeys(question_id(name) for name in names))
+    tests = "1 test" if len(names) == 1 else f"{len(names)} tests"
+    return f"{tests} of {questions}"
+
+
 def _blank_warnings(blank: _Graded) -> list[str]:
     passing = [outcome.name for outcome in blank.outcomes.values() if outcome.passed]
     if not passing:
@@ -344,8 +362,8 @@ def _blank_warnings(blank: _Graded) -> list[str]:
     ]
 
 
-def marimo_check(notebook: Path, label: str) -> list[str]:
-    """Run `marimo check` on `notebook`, called `label` in messages.
+def marimo_check(notebook: Path, label: str, python: str) -> list[str]:
+    """Run `marimo check` with `python` on `notebook`, called `label` in messages.
 
     Returns:
         Its output as a warning, if it printed anything.
@@ -355,7 +373,7 @@ def marimo_check(notebook: Path, label: str) -> list[str]:
     """
 
     result = subprocess.run(
-        [sys.executable, "-m", "marimo", "check", notebook.name],
+        [python, "-m", "marimo", "check", notebook.name],
         capture_output=True,
         text=True,
         check=False,
