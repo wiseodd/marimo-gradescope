@@ -143,9 +143,10 @@ def student_notebook(
         ) from e
 
     manual = [question.id for question in cfg.questions.values() if question.manual]
-    placeholders = answer_placeholders(parse_notebook(text), manual)
-
-    cells = export_cells(cfg, package_alias(nb), placeholders, marimo=marimo_import(nb))
+    # The copy, not the source: the edits above may have removed an import or a name.
+    copy = parse_notebook(text)
+    placeholders = answer_placeholders(copy, manual)
+    cells = export_cells(cfg, package_alias(copy), placeholders, marimo=marimo_import(copy))
 
     return _append_cells(text, cells)
 

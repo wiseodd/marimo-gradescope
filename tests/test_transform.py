@@ -700,6 +700,28 @@ def test_export_cells_take_names_from_other_cells_as_parameters(cell, importer, 
     assert (result.stdout + result.stderr).strip() == ""
 
 
+@pytest.mark.parametrize("solutions", [False, True])
+def test_export_cells_look_for_mo_in_the_copy_not_the_source(solutions):
+    # The student copy drops a solution region, imports in it included.
+    src = HEADER + (
+        "\n@app.cell\ndef _():\n    # BEGIN SOLUTION\n    import marimo as mo\n\n    mo = mo\n"
+        "    # END SOLUTION\n    return\n"
+    )
+
+    out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT, solutions=solutions)
+
+    assert out.count("import marimo as mo") == 1
+    assert ("    import marimo as mo\n\n    return (mo,)\n" in out) != solutions
+
+
+def test_export_cells_ignore_mo_bound_only_in_a_solution_region():
+    out = student_of(
+        "\n@app.cell\ndef _():\n    # BEGIN SOLUTION\n    mo = 1\n    # END SOLUTION\n    return\n"
+    )
+
+    assert out.count("import marimo as mo") == 1
+
+
 def test_export_cells_refuse_a_taken_mo_name():
     with pytest.raises(SourceError, match="`mo`"):
         student_of("\n@app.cell\ndef _():\n    mo = 1\n    return (mo,)\n")
