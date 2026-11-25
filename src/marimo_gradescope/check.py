@@ -24,7 +24,8 @@ SHADE = "rgba(127, 127, 127, 0.12)"
 
 PANEL_STYLE = (
     "border: 1px solid rgba(127, 127, 127, 0.35); border-left: 4px solid {accent}; "
-    "border-radius: 6px; padding: 0.6em 0.9em; color: inherit; background: {shade};"
+    "border-radius: 6px; padding: 0.9em 1.2em; line-height: 1.55; color: inherit; "
+    "background: {shade};"
 )
 TITLE_STYLE = "font-weight: 600; margin-bottom: 0.4em;"
 LIST_STYLE = "list-style: none; margin: 0; padding: 0;"

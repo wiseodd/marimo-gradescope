@@ -5,7 +5,8 @@ The build appends two cells to the student notebook:
     export_button = mgs.export_button()
     export_button
 
-    mgs.export(export_button, name="hw", manual=["q3"], titles={"q3": "Question 3"},
+    mgs.export(export_button, name="hw", manual=["q3"],
+               titles={"q1": "Question 1", "q2": "Question 2", "q3": "Question 3"},
                placeholders={"q3": "*Write your answer here.*"})
 
 On a click, `export` works from the notebook file on disk, not the kernel's state. It reads
@@ -34,7 +35,6 @@ from marimo_gradescope._env import grading
 from marimo_gradescope._run import run_capped
 from marimo_gradescope.check import (
     FAIL,
-    ITEM_STYLE,
     LIST_STYLE,
     MARK_STYLE,
     NOTE_STYLE,
@@ -43,6 +43,7 @@ from marimo_gradescope.check import (
     SHADE,
     WARN,
 )
+from marimo_gradescope.config import default_title
 from marimo_gradescope.pdf import PdfUnavailable, cell_markdown, quiet, render_manual_pdf
 from marimo_gradescope.runner import exception_summary, shorten
 from marimo_gradescope.source import Notebook, SourceError, answer_text, parse_notebook
@@ -58,6 +59,15 @@ NOT_FOUND = (
     "Cannot find this notebook's file, so it cannot be exported. Save the notebook, then open "
     "it with `marimo edit <your notebook>.py`."
 )
+
+# Room between the panel's groups: the checks, and the download below a rule.
+LINE_STYLE = "margin: 0 0 0.75em;"
+SUBLIST_STYLE = "list-style: none; margin: 0.4em 0 0 1.6em; padding: 0;"
+SUBITEM_STYLE = "margin: 0.25em 0;"
+DOWNLOAD_STYLE = (
+    "margin-top: 1em; padding-top: 1em; border-top: 1px solid rgba(127, 127, 127, 0.3);"
+)
+BUTTON_STYLE = "margin: 0.75em 0;"
 
 type Status = Callable[[str], None]
 
@@ -88,10 +98,12 @@ class Line:
     Attributes:
         mark: Symbol in front.
         text: Plain text; escaped when rendered.
+        items: Lines shown indented below this one.
     """
 
     mark: Mark
     text: str
+    items: tuple["Line", ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,14 +111,31 @@ class Package:
     """An exported submission.
 
     Attributes:
-        lines: What the panel reports, in order.
+        lines: What the checks found, in order.
         filename: Name of the zip.
         data: The zip.
+        note: Which file was exported and when it was saved.
     """
 
     lines: tuple[Line, ...]
     filename: str
     data: bytes
+    note: str
+
+
+@dataclass(frozen=True, slots=True)
+class Download:
+    """The download part of the export panel.
+
+    Attributes:
+        button: The download button's HTML, trusted.
+        filename: Name of the zip.
+        note: Small print under the button.
+    """
+
+    button: str
+    filename: str
+    note: str
 
 
 def export_button() -> "mo.ui.run_button":
@@ -136,7 +165,7 @@ def export(
         button: The button from `export_button()`.
         name: Base name of the files in the zip, e.g. `hw` for `hw_submission.zip`.
         manual: Ids of the questions graded by hand.
-        titles: Title per manual question, used as headings.
+        titles: Title per question: a heading in the PDF, a label in the test summary.
         placeholders: The answer text each manual question starts with; an answer still
             equal to it (ignoring whitespace) gets a warning.
 
@@ -196,7 +225,7 @@ def export_panel(
         data=result.data, filename=result.filename, mimetype="application/zip", label="Download"
     )
 
-    return mo.Html(panel(result.lines, download=download.text))
+    return mo.Html(panel(result.lines, Download(download.text, result.filename, result.note)))
 
 
 def locate(namespace: Mapping[str, object]) -> Path | None:
@@ -240,7 +269,7 @@ def package(
         notebook: The notebook file.
         name: Base name of the files in the zip.
         manual: Ids of the questions graded by hand.
-        titles: Title per manual question.
+        titles: Title per question.
         placeholders: The answer text each manual question starts with.
         status: Called with a short message before slow steps.
 
@@ -258,7 +287,7 @@ def package(
         data = file.read()
 
     saved = datetime.fromtimestamp(modified).strftime("%Y-%m-%d %H:%M:%S")
-    lines = [Line(Mark.OK, f"Using {notebook.name} (saved {saved})")]
+    lines = []
     entries = {notebook.name: data}
 
     with tempfile.TemporaryDirectory(prefix="mgs-export-", ignore_cleanup_errors=True) as folder:
@@ -266,7 +295,7 @@ def package(
         snapshot.write_bytes(data)
 
         report("Running the public tests…")
-        lines.append(tests_line(notebook, notebook.parent))
+        lines.append(tests_line(notebook, notebook.parent, titles))
 
         if manual:
             nb = _parse(data)
@@ -293,19 +322,21 @@ def package(
         lines.append(Line(Mark.WARN, CHANGED))
 
     filename = f"{name}_submission.zip"
-    lines.append(Line(Mark.DOWNLOAD, f"{filename} — upload this to Gradescope"))
+    note = f"Exported {notebook.name} as saved at {saved}."
 
-    return Package(tuple(lines), filename, build_zip(entries))
+    return Package(tuple(lines), filename, build_zip(entries), note)
 
 
-def tests_line(notebook: Path, folder: Path) -> Line:
+def tests_line(notebook: Path, folder: Path, titles: Mapping[str, str] | None = None) -> Line:
     """Run the public tests of a notebook file in a subprocess and summarize them.
 
-    The line counts the failures per question. The check under each question names them.
+    The line gives the total, with one line per question below it. The check under each
+    question names the failing tests.
 
     Args:
         notebook: The notebook file.
         folder: Working directory for the tests: the folder of the student's notebook.
+        titles: Title per question; a question without one gets `default_title`.
     """
 
     result = run_capped(
@@ -326,13 +357,17 @@ def tests_line(notebook: Path, folder: Path) -> Line:
 
     passed = sum(passed for passed, _, _ in summary.values())
     total = sum(total for _, total, _ in summary.values())
-    failed = ", ".join(f"{qid} ({len(names)})" for qid, (_, _, names) in summary.items() if names)
-    text = f"Public tests: {passed}/{total} passed"
+    items = tuple(
+        Line(
+            Mark.OK if done == count else Mark.FAIL,
+            f"{(titles or {}).get(qid) or default_title(qid)}: {done}/{count} passed",
+        )
+        for qid, (done, count, _) in summary.items()
+    )
 
-    if not failed:
-        return Line(Mark.OK, text)
-
-    return Line(Mark.WARN, f"{text}. Failing: {failed}")
+    return Line(
+        Mark.OK if passed == total else Mark.WARN, f"Public tests: {passed}/{total} passed", items
+    )
 
 
 def answers_markdown(
@@ -370,8 +405,11 @@ def build_zip(entries: Mapping[str, bytes]) -> bytes:
     return buffer.getvalue()
 
 
-def panel(lines: Sequence[Line], download: str = "") -> str:
-    """HTML for the export panel; `download` is trusted HTML placed after the lines."""
+def panel(lines: Sequence[Line], download: Download | None = None) -> str:
+    """HTML for the export panel: the lines, then the download set apart below a rule.
+
+    The accent is the worst mark among the lines; indented lines do not count.
+    """
 
     marks = {line.mark for line in lines}
     accent = FAIL if Mark.FAIL in marks else WARN if Mark.WARN in marks else PASS
@@ -379,23 +417,33 @@ def panel(lines: Sequence[Line], download: str = "") -> str:
     if marks <= {Mark.NOTE}:
         accent = NOTE
 
-    items = "".join(
-        f'<li style="{ITEM_STYLE}">'
-        f'<span style="{MARK_STYLE.format(accent=ACCENTS[line.mark])}">{line.mark}</span> '
-        f"{html.escape(line.text)}</li>"
-        for line in lines
-    )
-    after = (
-        f'<div style="margin-top: 0.5em;">{download}</div>'
-        f'<div style="{NOTE_STYLE}">Export again after further changes.</div>'
-        if download
-        else ""
-    )
+    items = "".join(_line(line, LINE_STYLE) for line in lines)
+    after = ""
+
+    if download is not None:
+        label = f"{download.filename} — upload this to Gradescope"
+        after = (
+            f'<div style="{DOWNLOAD_STYLE}">'
+            f'<ul style="{LIST_STYLE}">{_line(Line(Mark.DOWNLOAD, label), "margin: 0;")}</ul>'
+            f'<div style="{BUTTON_STYLE}">{download.button}</div>'
+            f'<div style="{NOTE_STYLE}">{html.escape(download.note)} Export again after further '
+            "changes.</div></div>"
+        )
 
     return (
         f'<div style="{PANEL_STYLE.format(accent=accent, shade=SHADE)}">'
         f'<ul style="{LIST_STYLE}">{items}</ul>{after}</div>'
     )
+
+
+def _line(line: Line, style: str) -> str:
+    """One list item: the mark, the text, and the indented lines below it."""
+
+    mark = f'<span style="{MARK_STYLE.format(accent=ACCENTS[line.mark])}">{line.mark}</span>'
+    below = "".join(_line(item, SUBITEM_STYLE) for item in line.items)
+    sublist = f'<ul style="{SUBLIST_STYLE}">{below}</ul>' if below else ""
+
+    return f'<li style="{style}">{mark} {html.escape(line.text)}{sublist}</li>'
 
 
 def _summary(stdout: str) -> dict[str, tuple[int, int, list[str]]] | None:

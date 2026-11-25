@@ -232,7 +232,7 @@ def export_cells(
 
     stem = Path(cfg.notebook).stem
     manual = [question.id for question in cfg.questions.values() if question.manual]
-    titles = {qid: cfg.questions[qid].title for qid in manual}
+    titles = {qid: question.title for qid, question in cfg.questions.items()}
     name = alias or DEFAULT_ALIAS
     call = (
         f"{name}.export({EXPORT_BUTTON}, name={python_literal(stem)}, "

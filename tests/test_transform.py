@@ -572,7 +572,8 @@ def test_export_cells_appended_before_main_guard():
     assert "import marimo_gradescope" not in tail
     assert "    export_button\n" in tail
     assert (
-        'mgs.export(export_button, name="solution", manual=["q3"], titles={"q3": "Question 3"}, '
+        'mgs.export(export_button, name="solution", manual=["q3"], titles={"q1": "Question 1", '
+        '"q2": "Vowels", "q3": "Question 3"}, '
         'placeholders={"q3": "Because the order of the terms does not change the sum."})' in tail
     )
 
@@ -594,7 +595,10 @@ def _():
     return
 """)
 
-    assert 'mgs.export(export_button, name="nb", manual=[], titles={}, placeholders={})' in out
+    assert (
+        'mgs.export(export_button, name="nb", manual=[], titles={"q1": "Q1"}, placeholders={})'
+        in out
+    )
 
 
 def test_export_cells_use_the_setup_alias():
