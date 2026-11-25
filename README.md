@@ -1,7 +1,7 @@
 # Gradescope-Compatible Marimo Autograder
 
 <p align="center">
-  <a href="https://marimo-gradescope.kristia.de"><img alt="Docs" src="https://img.shields.io/badge/docs-marimo--gradescope.kristia.de-8f55e0?style=for-the-badge"></a>
+  <a href="https://marimo-gradescope.kristia.de"><img alt="Docs: Quickstart" src="https://img.shields.io/badge/docs-quickstart-8f55e0?style=for-the-badge"></a>
   <a href="https://marimo-gradescope.kristia.de/instructors/"><img alt="Instructors" src="https://img.shields.io/badge/instructors-8f55e0?style=for-the-badge"></a>
   <a href="https://marimo-gradescope.kristia.de/students/"><img alt="Students" src="https://img.shields.io/badge/students-8f55e0?style=for-the-badge"></a>
   <br>

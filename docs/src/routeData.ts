@@ -1,6 +1,19 @@
 import { defineRouteMiddleware } from '@astrojs/starlight/route-data';
+import { PAGES } from './llms';
 
-// Three pages, linked from the header: no left sidebar.
 export const onRequest = defineRouteMiddleware((context) => {
-	context.locals.starlightRoute.hasSidebar = false;
+	const route = context.locals.starlightRoute;
+
+	// Three pages, linked from the header: no left sidebar.
+	route.hasSidebar = false;
+
+	// Point agents that fetch the HTML at the page's Markdown copy.
+	// Starlight names the home page '' here; its copy is `/index.md`.
+	const id = route.entry.id || 'index';
+	if (PAGES.includes(id)) {
+		route.head.push({
+			tag: 'link',
+			attrs: { rel: 'alternate', type: 'text/markdown', href: `/${id}.md` },
+		});
+	}
 });
