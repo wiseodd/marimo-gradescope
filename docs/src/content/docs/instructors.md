@@ -40,7 +40,7 @@ An assignment is a folder with one source notebook and its data files.
 | `requirements` | none | A requirements file to use on Gradescope instead of `dependencies`. |
 
 Question ids are letters and digits, like `q1` or `bonus`.
-`reactive_tests = false` is required: `marimo` 0.25 crashes when it runs tests in the notebook by itself.
+`reactive_tests = false` is required: `marimo` 0.25 and 0.26 crash when they run the notebook's tests on their own.
 
 ## Notebook
 
@@ -64,6 +64,9 @@ def step(x, lr):
 Students get the `# PROMPT:` lines, or `...` if there are none.
 A single line works too: `lr = 0.1  # SOLUTION` becomes `lr = ...`.
 A misspelled marker is a build error, so no solution leaks by accident.
+
+The markers work in any cell, Markdown cells included.
+An ungraded exercise therefore needs no entry in `questions`: write it in a plain cell and put its solution between the markers.
 
 ### Tests
 
