@@ -9,7 +9,7 @@ import io
 import tokenize
 from collections.abc import Mapping, Sequence
 from enum import StrEnum
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from marimo_gradescope import __version__
 from marimo_gradescope.config import (
@@ -34,11 +34,13 @@ from marimo_gradescope.source import (
     answer_placeholders,
     cell_names,
     parse_notebook,
+    question_id,
 )
 
 EXPORT_BUTTON = "export_button"
 DEFAULT_ALIAS = "mgs"
 MARIMO_ALIAS = "mo"
+TESTS_FOLDER = "tests"
 
 
 class MarimoImport(StrEnum):
@@ -74,9 +76,11 @@ def student_notebook(
       or `...` if it has none, at the indent of `# BEGIN SOLUTION`.
     - `x = rhs  # SOLUTION` becomes `x = ...`; another statement ending in `# SOLUTION` is
       dropped.
-    - `# HIDDEN` cells are dropped with the blank lines after them.
-    - `check("q1")` becomes
-      `check("q1", tests=[<public tests>], points=<p>, hidden=<n>, title=<title>)`.
+    - `# HIDDEN` cells and public test cells are dropped with the blank lines after them. The
+      public tests go to their own files instead (`public_test_files`).
+    - `check("q1")` becomes `check("q1", test_file="tests/q1.py", uses=[<names>],
+      points=<p>, hidden=<n>, title=<title>)`, where `uses` lists the student names the
+      public tests read, so marimo runs the check again when one of them changes.
     - Export cells go after the last cell: a "Submit" note, the export button and the export
       panel (`export_cells`).
     - The header loses the `[tool.marimo-gradescope]` table, turns off marimo's reactive
@@ -119,8 +123,8 @@ def student_notebook(
     edits: Edits = {}
 
     for cell in nb.cells:
-        if cell.hidden:
-            _drop_hidden(edits, lines, cell)
+        if cell.hidden or cell.tests:
+            _drop_cell(edits, lines, cell)
 
     regions = _solution_regions(edits, lines, solutions)
     _inline_solutions(edits, lines, nb.src, solutions, regions)
@@ -149,6 +153,43 @@ def student_notebook(
     cells = export_cells(cfg, package_alias(copy), placeholders, marimo=marimo_import(copy))
 
     return _append_cells(text, cells)
+
+
+def test_file(qid: str) -> PurePosixPath:
+    """Path of a question's public test file, relative to the student notebook."""
+
+    return PurePosixPath(TESTS_FOLDER, f"{qid}.py")
+
+
+def public_test_files(nb: Notebook) -> dict[PurePosixPath, str]:
+    """The public test file of each question with a check call, by `test_file` path.
+
+    A file holds the bodies of the question's public test cells, in file order. A question
+    without public tests gets a file with only its first comment line.
+
+    Args:
+        nb: The source notebook. It should pass `validate`.
+    """
+
+    qids = dict.fromkeys(
+        cell.check_qid for cell in nb.cells if cell.check_qid is not None and not cell.hidden
+    )
+    files = {}
+
+    for qid in qids:
+        bodies = [nb.cell_body_source(cell) for cell in _public_test_cells(nb, qid)]
+        head = f'# Public tests for {qid}, run by check("{qid}") in the notebook.\n'
+        files[test_file(qid)] = "\n\n".join([head, *bodies])
+
+    return files
+
+
+def _public_test_cells(nb: Notebook, qid: str) -> list[Cell]:
+    return [
+        cell
+        for cell in nb.cells
+        if cell.tests and not cell.hidden and question_id(cell.tests[0]) == qid
+    ]
 
 
 def package_alias(nb: Notebook) -> str | None:
@@ -346,8 +387,8 @@ def _append_cells(text: str, cells: str) -> str:
     return f"{head}\n\n\n{cells}" + (f"\n\n{tail}" if tail else "")
 
 
-def _drop_hidden(edits: Edits, lines: list[str], cell: Cell) -> None:
-    """Drop a hidden cell and the blank lines after it."""
+def _drop_cell(edits: Edits, lines: list[str], cell: Cell) -> None:
+    """Drop a cell and the blank lines after it."""
 
     end = cell.end
     while end < len(lines) and not lines[end].strip():
@@ -488,7 +529,7 @@ def _inline_solutions(
 def _rewrite_check(
     edits: Edits, lines: list[str], nb: Notebook, cell: Cell, cfg: AssignmentConfig
 ) -> None:
-    """Pass the public tests, points, hidden-test count and title to a check call."""
+    """Pass the test file, the names its tests use, points, hidden-test count and title."""
 
     call = nb.check_call(cell)
     qid = cell.check_qid
@@ -503,13 +544,22 @@ def _rewrite_check(
     if qid is None or question is None:
         raise SourceError(f"line {call.lineno}: check() names an unknown question {qid!r}.")
 
-    public, hidden = nb.tests_by_question().get(qid, ([], []))
+    _, hidden = nb.tests_by_question().get(qid, ([], []))
+    students = nb.student_names()
+    uses = sorted(
+        {
+            name
+            for test_cell in _public_test_cells(nb, qid)
+            for name in cell_names(nb.cell_body_source(test_cell))[1] & students
+        }
+    )
     points = question.points
     shown = str(int(points)) if points.is_integer() else repr(points)
     func = ast.get_source_segment(nb.src, call.func)
     new_call = (
-        f"{func}({python_literal(qid)}, tests=[{', '.join(public)}], points={shown}, "
-        f"hidden={len(hidden)}, title={python_literal(question.title)})"
+        f"{func}({python_literal(qid)}, test_file={python_literal(str(test_file(qid)))}, "
+        f"uses=[{', '.join(uses)}], points={shown}, hidden={len(hidden)}, "
+        f"title={python_literal(question.title)})"
     )
 
     first = lines[call.lineno - 1]

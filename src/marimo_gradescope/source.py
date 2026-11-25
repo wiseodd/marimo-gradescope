@@ -210,6 +210,20 @@ class Notebook:
                     f"line {cell.start}: expected one check call, found {len(calls)}."
                 )
 
+    def check_test_file(self, cell: Cell) -> str | None:
+        """The path a cell's check call passes as a string literal `test_file`, if it does.
+
+        Raises:
+            SourceError: If the cell does not hold exactly one check call.
+        """
+
+        for keyword in self.check_call(cell).keywords:
+            match keyword:
+                case ast.keyword(arg="test_file", value=ast.Constant(value=str() as path)):
+                    return path
+
+        return None
+
     def _named(self, prefix: str, qid: str) -> tuple[Cell, ...]:
         name = f"{prefix}_{qid}"
         return tuple(
@@ -248,6 +262,20 @@ def question_id(name: str) -> str:
     """Question id in a test name: `test_q1_norm` → `q1`."""
 
     return name.removeprefix("test_").split("_", 1)[0]
+
+
+def module_tests(source: str) -> tuple[str, ...]:
+    """Names of the `test_*` functions that `source` defines at top level, in file order.
+
+    Raises:
+        SyntaxError: If `source` is not valid Python.
+    """
+
+    return tuple(
+        node.name
+        for node in ast.parse(source).body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
+    )
 
 
 def answer_text(nb: Notebook, cell: Cell) -> str | None:

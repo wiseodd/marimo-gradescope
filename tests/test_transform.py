@@ -4,7 +4,7 @@ import os
 import re
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -20,6 +20,7 @@ from marimo_gradescope.source import SourceError, parse_notebook
 from marimo_gradescope.transform import (
     export_cells,
     pinned_requirement,
+    public_test_files,
     python_literal,
     student_notebook,
 )
@@ -59,9 +60,10 @@ def outside_pytest() -> dict[str, str]:
     return {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
 
 
-def student(path: Path) -> str:
+def student(path: Path, *, solutions: bool = False) -> str:
     src = path.read_text(encoding="utf-8")
-    return student_notebook(src, parse_notebook(src), read_config(src, path), REQUIREMENT)
+    cfg = read_config(src, path)
+    return student_notebook(src, parse_notebook(src), cfg, REQUIREMENT, solutions=solutions)
 
 
 def student_of(cells: str, config: AssignmentConfig = CONFIG) -> str:
@@ -368,9 +370,70 @@ def test_hidden_cell_trailing_blanks_removed():
     out = student(SOLUTION)
 
     assert (
-        "        assert add(-1, -2) == -3\n\n    return\n\n\n@app.cell\ndef _():\n    mgs.check"
-        in out
+        '    """Sum of two numbers."""\n    ...\n\n\n@app.cell\ndef _():\n    mgs.check("q1"' in out
     )
+
+
+# Public tests
+
+
+def test_public_test_cells_removed():
+    for out in (student(SOLUTION), student(SOLUTION, solutions=True)):
+        assert "def test_" not in out
+        assert "assert add(1, 2) == 3" not in out
+
+
+def test_public_test_files_hold_each_question_s_public_tests():
+    src = SOLUTION.read_text(encoding="utf-8")
+
+    files = public_test_files(parse_notebook(src))
+
+    assert list(files) == [PurePosixPath("tests/q1.py"), PurePosixPath("tests/q2.py")]
+    assert files[PurePosixPath("tests/q1.py")] == (
+        '# Public tests for q1, run by check("q1") in the notebook.\n\n\n'
+        "def test_q1_add():\n    assert add(1, 2) == 3\n\n"
+        "def test_q1_add_negative():\n    assert add(-1, -2) == -3\n"
+    )
+    assert "test_q1_add_large" not in "".join(files.values())
+    assert "test_q2_upper" not in files[PurePosixPath("tests/q2.py")]
+
+
+def test_public_test_files_join_cells_and_function_cells():
+    src = (
+        HEADER
+        + """
+@app.function
+def double(x):
+    return 2 * x
+
+
+@app.cell
+def _():
+    def test_q1_a():
+        assert double(1) == 2
+
+    return
+
+
+@app.function
+def test_q1_b():
+    assert double(2) == 4
+
+
+@app.cell
+def _():
+    mgs.check("q1")
+    return
+"""
+    )
+
+    [text] = public_test_files(parse_notebook(src)).values()
+
+    assert text.endswith(
+        "def test_q1_a():\n    assert double(1) == 2\n\n\n"
+        "def test_q1_b():\n    assert double(2) == 4\n"
+    )
+    ast.parse(text)
 
 
 # Check calls
@@ -380,10 +443,13 @@ def test_check_calls_rewritten():
     out = student(SOLUTION)
 
     assert (
-        '    mgs.check("q1", tests=[test_q1_add, test_q1_add_negative], points=4, hidden=1, '
+        '    mgs.check("q1", test_file="tests/q1.py", uses=[add], points=4, hidden=1, '
         'title="Question 1")\n' in out
     )
-    assert '    mgs.check("q2", tests=[test_q2_count], points=6, hidden=2, title="Vowels")\n' in out
+    assert (
+        '    mgs.check("q2", test_file="tests/q2.py", uses=[count_vowels], points=6, hidden=2, '
+        'title="Vowels")\n' in out
+    )
 
 
 def test_check_call_rewrite_keeps_surroundings():
@@ -405,8 +471,8 @@ def _():
 """)
 
     assert (
-        '    panel = c("q1", tests=[test_q1_a], points=2.5, hidden=0, title="Q1")  # comment\n'
-        in out
+        '    panel = c("q1", test_file="tests/q1.py", uses=[], points=2.5, hidden=0, title="Q1")'
+        "  # comment\n" in out
     )
 
 
@@ -435,7 +501,8 @@ def _():
 """)
 
     assert (
-        '    x = "é"; mgs.check("q1", tests=[test_q1_a], points=2.5, hidden=0, title="Q1")\n' in out
+        '    x = "é"; mgs.check("q1", test_file="tests/q1.py", uses=[], points=2.5, hidden=0, '
+        'title="Q1")\n' in out
     )
 
 
@@ -851,14 +918,8 @@ def test_marimo_check_passes(path, tmp_path):
     assert (result.stdout + result.stderr).strip() == ""
 
 
-@pytest.mark.parametrize(
-    ("path", "public"),
-    [
-        (SOLUTION, ["test_q1_add", "test_q1_add_negative", "test_q2_count"]),
-        (PURE, ["test_q1_add", "test_q1_add_negative", "test_q2_double", "test_q2_double_float"]),
-    ],
-)
-def test_pytest_collects_exactly_public_tests(path, public, tmp_path):
+@pytest.mark.parametrize("path", [SOLUTION, PURE])
+def test_pytest_collects_no_tests_from_the_student_copy(path, tmp_path):
     notebook = tmp_path / "student.py"
     notebook.write_text(student(path), encoding="utf-8")
 
@@ -871,10 +932,23 @@ def test_pytest_collects_exactly_public_tests(path, public, tmp_path):
         env=outside_pytest(),
         cwd=tmp_path,
     )
-    collected = re.findall(r"::(test_\w+)", result.stdout)
 
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert sorted(collected) == public
+    assert result.returncode == pytest.ExitCode.NO_TESTS_COLLECTED, result.stdout + result.stderr
+    assert re.findall(r"::(test_\w+)", result.stdout) == []
+
+
+def write_student(path: Path, folder: Path) -> Path:
+    """Write the student copy of `path` and its public test files into `folder`."""
+
+    src = path.read_text(encoding="utf-8")
+    notebook = folder / "student.py"
+    notebook.write_text(student(path), encoding="utf-8")
+
+    for rel, text in public_test_files(parse_notebook(src)).items():
+        (folder / rel).parent.mkdir(parents=True, exist_ok=True)
+        (folder / rel).write_text(text, encoding="utf-8")
+
+    return notebook
 
 
 # marimo's reactive pytest hook (needs network for `uv run --with` on a cold cache)
@@ -903,8 +977,7 @@ def test_export_html_source_and_student_copy(tmp_path):
     # Copies in tmp_path, since marimo writes a `__marimo__` cache next to the notebook.
     source = tmp_path / "source.py"
     source.write_text(PURE.read_text(encoding="utf-8"), encoding="utf-8")
-    notebook = tmp_path / "student.py"
-    notebook.write_text(student(PURE), encoding="utf-8")
+    notebook = write_student(PURE, tmp_path)
 
     for path in (source, notebook):
         result = export_html(path, tmp_path)
@@ -930,8 +1003,7 @@ def test_export_html_without_runtime_flag_crashes(tmp_path):
 @pytest.mark.slow
 @pytest.mark.parametrize("marimo", [MARIMO, "marimo==0.24.2"])
 def test_export_html_student_copy_with_check_panels(marimo, tmp_path):
-    notebook = tmp_path / "student.py"
-    notebook.write_text(student(SOLUTION), encoding="utf-8")
+    notebook = write_student(SOLUTION, tmp_path)
 
     result = export_html(notebook, tmp_path, marimo)
     output = result.stdout + result.stderr

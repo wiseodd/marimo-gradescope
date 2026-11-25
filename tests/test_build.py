@@ -118,7 +118,7 @@ def test_bundle_has_hidden_tests_and_student_copy_does_not(demo):
         assert name in sources
         assert name not in student
 
-    assert "test_q1_fractions" in student
+    assert "def test_" not in student
     assert "# BEGIN SOLUTION" not in student
     assert "csv.DictReader" not in student
     assert f'"marimo-gradescope[pdf]=={__version__}"' in student
@@ -135,12 +135,28 @@ def test_dist_has_only_the_artifacts(demo):
             "autograder/data/scores.csv",
             "autograder/hw.py",
             "autograder/requirements.txt",
+            "autograder/tests/q1.py",
+            "autograder/tests/q2.py",
             "student/data/scores.csv",
             "student/hw.py",
+            "student/tests/q1.py",
+            "student/tests/q2.py",
         ]
     )
     source = [name for name in tree(DEMO) if not name.startswith(("dist/", "__marimo__/"))]
     assert tree(folder) == sorted(source + [f"dist/{name}" for name in tree(folder / "dist")])
+
+
+@pytest.mark.network
+def test_public_tests_sit_next_to_both_copies(demo):
+    folder, _ = demo
+
+    for part in ("student", "autograder"):
+        q1 = (folder / "dist" / part / "tests" / "q1.py").read_text(encoding="utf-8")
+
+        assert "def test_q1_whole_numbers():" in q1
+        assert "def test_q1_fractions():" in q1
+        assert "test_q1_negative" not in q1
 
 
 @pytest.mark.network
@@ -177,7 +193,7 @@ def test_solved_copy_and_requirements_next_to_the_zip(demo):
     assert "return sum(xs) / len(xs)" in solved
     assert "SOLUTION" not in solved
     assert "test_q1_negative" not in solved
-    assert "test_q1_fractions" in solved
+    assert "def test_" not in solved
     assert "export_button = mgs.export_button()" in solved
     assert "[tool.marimo-gradescope]" not in solved
 
@@ -297,11 +313,14 @@ def test_missing_dir_is_an_error(tmp_path):
         ('["data/scores.csv", "setup.sh"]', "setup.sh"),
         ('["hw.py"]', "hw.py"),
         ('["submission.py"]', "submission.py"),
+        ('["tests"]', "tests"),
     ],
 )
 def test_bad_data_files(tmp_path, files, message):
     folder = demo_copy(tmp_path / "demo")
     (folder / "setup.sh").write_text("", encoding="utf-8")
+    (folder / "tests").mkdir()
+    (folder / "tests" / "x.txt").write_text("", encoding="utf-8")
     edit(folder / "hw.py", '# files = ["data/scores.csv"]', f"# files = {files}")
 
     with pytest.raises(ConfigError, match=message):

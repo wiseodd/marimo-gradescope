@@ -7,7 +7,10 @@ notebook work.
 
 Tests are found statically and run the way the grader's public phase runs them: the setup
 cell first, then the student names bound from the notebook, then each test cell compiled with
-assertion rewriting. There is no per-test timer here; the caller caps the whole run.
+assertion rewriting. A student copy has no test cells; its check calls name the files that
+hold its public tests (`test_file`), and those run the same way. A file that cannot be read
+counts as one failed test named after it. There is no per-test timer here; the caller caps
+the whole run.
 
 The last line of stdout is the JSON summary, `{qid: {"passed": k, "total": n, "failed":
 [names]}}`. Prints from the notebook go to stderr. On a notebook that cannot be read or
@@ -20,12 +23,23 @@ import os
 import sys
 from pathlib import Path
 
-from marimo_gradescope._assertrewrite import compile_tests
 from marimo_gradescope.config import AssignmentConfig
-from marimo_gradescope.grader.bundle import Phase, bundle_from_notebook
+from marimo_gradescope.grader.bundle import Phase, TestCell, bundle_from_notebook
 from marimo_gradescope.loader import bind
-from marimo_gradescope.runner import FailureReason, Outcome, cap, exception_summary, run_test
-from marimo_gradescope.source import SourceError, parse_notebook
+from marimo_gradescope.runner import (
+    FailureReason,
+    Outcome,
+    cap,
+    exception_summary,
+    run_test_source,
+)
+from marimo_gradescope.source import (
+    Notebook,
+    SourceError,
+    cell_names,
+    module_tests,
+    parse_notebook,
+)
 
 type Summary = dict[str, dict[str, object]]
 
@@ -45,7 +59,22 @@ def public_results(path: Path) -> Summary:
     # The bundle keeps the config but does not read it; a student copy has none.
     cfg = AssignmentConfig(name=path.stem, notebook=path.name, questions={})
     bundle = bundle_from_notebook(nb, cfg).for_phase(Phase.PUBLIC)
+    cells = list(bundle.cells)
     outcomes: dict[str, list[Outcome]] = {}
+    students = nb.student_names()
+
+    for qid, relative in test_files(nb):
+        try:
+            source = (path.parent / relative).read_text(encoding="utf-8")
+            names = module_tests(source)
+        except (OSError, UnicodeDecodeError, SyntaxError) as exc:
+            message = cap(f"cannot read {relative} ({exception_summary(exc)})")
+            outcome = Outcome(relative, False, message, FailureReason.LOAD_FAILED)
+            outcomes.setdefault(qid, []).append(outcome)
+            continue
+
+        uses = tuple(sorted(cell_names(source)[1] & students))
+        cells.append(TestCell(qid, False, source, names, uses))
 
     base: dict[str, object] = {"__name__": "__mgs_selfcheck__"}
     setup_error = None
@@ -56,29 +85,18 @@ def public_results(path: Path) -> Summary:
         setup_error = cap(f"the setup cell failed ({exception_summary(exc)})")
 
     if setup_error is None:
-        uses = sorted({name for cell in bundle.cells for name in cell.uses})
+        uses = sorted({name for cell in cells for name in cell.uses})
         base.update(bind(path, uses))
 
-    for cell in bundle.cells:
+    for cell in cells:
         results = outcomes.setdefault(cell.qid, [])
-        namespace = dict(base)
-        error = setup_error
 
-        if error is None:
-            try:
-                exec(compile_tests(cell.source, f"{cell.qid}-tests"), namespace)
-            except Exception as exc:
-                error = cap(f"the test cell failed to load ({exception_summary(exc)})")
+        if setup_error is not None:
+            reason = FailureReason.LOAD_FAILED
+            results += [Outcome(name, False, setup_error, reason) for name in cell.tests]
+            continue
 
-        for name in cell.tests:
-            match error, namespace.get(name):
-                case str(), _:
-                    results.append(Outcome(name, False, error, FailureReason.LOAD_FAILED))
-                case None, test if callable(test):
-                    results.append(run_test(name, test))
-                case _:
-                    message = f"`{name}` is not defined by its test cell"
-                    results.append(Outcome(name, False, message, FailureReason.ERROR))
+        results += run_test_source(cell.source, f"{cell.qid}-tests", cell.tests, dict(base))
 
     return {
         qid: {
@@ -88,6 +106,17 @@ def public_results(path: Path) -> Summary:
         }
         for qid, results in outcomes.items()
     }
+
+
+def test_files(nb: Notebook) -> list[tuple[str, str]]:
+    """Question id and `test_file` of each check call that names one, without repeats."""
+
+    calls = [cell for cell in nb.cells if cell.check_qid is not None and not cell.hidden]
+    pairs = [(cell.check_qid, nb.check_test_file(cell)) for cell in calls]
+
+    return list(
+        dict.fromkeys((qid, file) for qid, file in pairs if qid is not None and file is not None)
+    )
 
 
 def main(path: str | Path, folder: str | Path | None = None) -> int:

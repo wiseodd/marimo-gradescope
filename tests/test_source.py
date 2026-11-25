@@ -8,6 +8,7 @@ from marimo_gradescope.source import (
     Cell,
     CellKind,
     SourceError,
+    module_tests,
     parse_notebook,
     validate,
 )
@@ -788,3 +789,40 @@ def _():
 """
 
     assert errors(PUBLIC + CHECK + cell) == []
+
+
+# Public test files
+
+
+def test_module_tests_are_top_level_test_functions_in_order():
+    source = (
+        "def helper():\n    pass\n\ndef test_q1_b():\n    def test_inner():\n        pass\n\n"
+        "async def test_q1_async():\n    pass\n\ndef test_q1_a():\n    pass\n"
+    )
+
+    assert module_tests(source) == ("test_q1_b", "test_q1_a")
+
+
+def check_cell_of(code: str) -> tuple:
+    nb = parse_notebook(HEADER + "import marimo\napp = marimo.App()\n" + code)
+    [cell] = [cell for cell in nb.cells if cell.check_qid is not None]
+    return nb, cell
+
+
+def test_check_test_file_reads_the_keyword():
+    nb, cell = check_cell_of(
+        "with app.setup:\n    import marimo_gradescope as mgs\n\n@app.cell\ndef _():\n"
+        '    mgs.check("q1", test_file="tests/q1.py", uses=[])\n    return\n'
+    )
+
+    assert nb.check_test_file(cell) == "tests/q1.py"
+
+
+@pytest.mark.parametrize("arguments", ["", ", test_file=name", ", tests=[]"])
+def test_check_test_file_is_none_without_a_literal(arguments):
+    nb, cell = check_cell_of(
+        "with app.setup:\n    import marimo_gradescope as mgs\n\n@app.cell\ndef _():\n"
+        f'    mgs.check("q1"{arguments})\n    return\n'
+    )
+
+    assert nb.check_test_file(cell) is None
