@@ -1,0 +1,82 @@
+[project]
+name = "marimo-gradescope"
+version = "0.1.0"
+description = "Build Gradescope autograders from marimo notebooks."
+authors = [{ name = "Agustinus Kristiadi", email = "agustinus@kristia.de" }]
+license = "MIT"
+requires-python = ">=3.13"
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+  "marimo",
+  "packaging>=24",
+  "pytest",
+]
+
+[project.scripts]
+marimo-gradescope = "marimo_gradescope.cli:main"
+
+[project.optional-dependencies]
+# The vendored Typst packages in `_typst` need Typst 0.15.
+pdf = ["typst>=0.15,<0.16"]
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+  "pytest>=8",
+  "ty>=0.0.104",
+  "ruff>=0.14",
+  "pypdf>=5",
+  # The PDF tests need the pdf extra.
+  "marimo-gradescope[pdf]",
+]
+
+[tool.ty.src]
+include = ["src", "tests"]
+# Fixtures are notebooks under test, not code to type-check.
+exclude = ["tests/fixtures"]
+
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+# A fixture that must fail to parse.
+extend-exclude = ["tests/fixtures/syntax_error.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "D"]
+# D100: not every module needs a docstring. D105, D107: dunders and `__init__` are covered
+# by the class docstring. D202: the house style puts a blank line after a function's docstring.
+ignore = ["D100", "D105", "D107", "D202"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+"examples/**" = ["D"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "slow: runs marimo in a subprocess through `uv run --with` (network on a cold cache)",
+  "network: resolves packages from PyPI through uv (fast with a warm cache)",
+  "docker: grades in Gradescope's base image with docker or podman (deselected unless `-m` names `docker`)",
+]
+
+[tool.uv]
+# The lockfile must install on every CI platform: Linux, macOS and Windows.
+required-environments = [
+  "sys_platform == 'linux' and platform_machine == 'x86_64'",
+  "sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "sys_platform == 'win32' and platform_machine == 'AMD64'",
+]

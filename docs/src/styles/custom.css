@@ -1,0 +1,165 @@
+/* Calm docs styling, close to the author's course sites (Public Sans, orchid accent).
+   Code is JetBrains Mono, served with the site so it looks the same everywhere. */
+@import "@fontsource-variable/public-sans";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* This file is unlayered, so it beats Starlight's layered styles regardless of specificity.
+   Theme colors therefore go under explicit [data-theme] selectors: an unlayered :root would
+   also override Starlight's light palette. */
+
+:root {
+	--sl-font: "Public Sans Variable", system-ui, sans-serif;
+	--sl-font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+	--sl-text-h1: 2rem;
+	--sl-text-h2: 1.45rem;
+	--sl-text-h3: 1.15rem;
+	--sl-text-h4: 1rem;
+	--sl-text-h5: 1rem;
+
+	/* Layout: one centered "page" holding the text column and, on wide screens, the TOC. */
+	--sl-content-width: 40rem;
+	--mg-toc: 14rem;
+	--mg-gap: 2rem;
+	--sl-sidebar-width: var(--mg-toc);
+	--mg-page: calc(var(--sl-content-width) + 2 * var(--sl-content-pad-x));
+	/* Space between the page's right edge and the GitHub icon: the text column's padding when
+	   it is the rightmost column, nothing once the TOC is. */
+	--mg-end-pad: var(--sl-content-pad-x);
+}
+
+@media (min-width: 72rem) {
+	:root {
+		--mg-page: calc(
+			var(--sl-content-width) + 2 * var(--sl-content-pad-x) + var(--mg-gap) + var(--mg-toc)
+		);
+		--mg-end-pad: 0rem;
+	}
+
+	/* Pages without a TOC (404): the page is just the text column. */
+	:root:not([data-has-toc]) {
+		--mg-page: calc(var(--sl-content-width) + 2 * var(--sl-content-pad-x));
+		--mg-end-pad: var(--sl-content-pad-x);
+	}
+}
+
+/* Starlight widens pages without a sidebar to 67.5rem (html:not([data-has-sidebar])). */
+:root:not([data-has-sidebar]) {
+	--sl-content-width: 40rem;
+}
+
+:root[data-theme="dark"] {
+	--sl-color-accent-low: #2f2340;
+	--sl-color-accent: #b98cf0;
+	--sl-color-accent-high: #d7b4ff;
+
+	--sl-color-black: #1f2028;
+	--sl-color-gray-6: #25272f;
+}
+
+:root[data-theme="light"] {
+	--sl-color-accent-low: #efe6fb;
+	--sl-color-accent: #8f55e0;
+	--sl-color-accent-high: #472276;
+}
+
+/* Header: title and links start where the text starts; the GitHub icon ends where the page
+   ends. Percentages are of the viewport, since the header is position: fixed. */
+header.header {
+	padding-inline-start: max(
+		var(--sl-nav-pad-x),
+		calc(max(0rem, (100% - var(--mg-page)) / 2) + var(--sl-content-pad-x))
+	);
+	padding-inline-end: max(
+		var(--sl-nav-pad-x),
+		calc(max(0rem, (100% - var(--mg-page)) / 2) + var(--mg-end-pad))
+	);
+}
+
+/* Text column, centered. */
+.main-pane .sl-container {
+	margin-inline: auto;
+}
+
+/* Narrow screens: the "On this page" bar under the header lines up with the text. */
+mobile-starlight-toc summary {
+	padding-inline: max(
+		1rem,
+		calc(max(0rem, (100% - var(--mg-page)) / 2) + var(--sl-content-pad-x))
+	);
+}
+
+/* Wide screens: text column and TOC side by side, centered as one block. */
+@media (min-width: 72rem) {
+	.main-frame > .lg\:sl-flex {
+		max-width: var(--mg-page);
+		margin-inline: auto;
+		gap: var(--mg-gap);
+	}
+
+	.main-pane {
+		flex: 1 1 0;
+		width: auto;
+		min-width: 0;
+	}
+
+	.right-sidebar-container {
+		flex: none;
+		width: var(--mg-toc);
+		margin-inline-start: 0;
+	}
+
+	.right-sidebar {
+		width: var(--mg-toc);
+		border-inline-start: 0;
+	}
+
+	.right-sidebar-panel {
+		padding-inline: 0;
+	}
+
+	.right-sidebar-panel .sl-container {
+		width: auto;
+		max-width: none;
+		margin: 0;
+	}
+}
+
+.sl-markdown-content h2 {
+	margin-top: 2.25rem;
+}
+
+/* Show code as typed: `>=` must not turn into a ligature. */
+code,
+pre,
+.expressive-code {
+	font-variant-ligatures: none;
+	font-feature-settings: "liga" 0, "calt" 0;
+}
+
+/* Comments in the header snippets are most of the code: keep them upright. */
+.expressive-code pre span {
+	font-style: normal !important;
+}
+
+/* The rule under the page title spans the padded pane, wider than the text: drop it. */
+.content-panel + .content-panel {
+	border-top: 0;
+}
+
+/* Keep short inline code like `marimo-gradescope build hw1/` on one line. */
+.sl-markdown-content :not(pre) > code {
+	white-space: nowrap;
+}
+
+/* Key and default columns stay on one line; the description column wraps. */
+.sl-markdown-content td:nth-child(-n + 2) {
+	white-space: nowrap;
+}
+
+/* Smallest phones: a slightly smaller site title keeps the header on one line. */
+@media (max-width: 22rem) {
+	.site-title {
+		font-size: var(--sl-text-sm);
+	}
+}

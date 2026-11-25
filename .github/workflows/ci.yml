@@ -1,0 +1,77 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  # Ruff only, at the version in uv.lock: no project sync.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: echo "RUFF=$(uv export --only-group dev --no-hashes --frozen | grep '^ruff==')" >> "$GITHUB_ENV"
+      - run: uvx --from "$RUFF" ruff check
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: echo "RUFF=$(uv export --only-group dev --no-hashes --frozen | grep '^ruff==')" >> "$GITHUB_ENV"
+      - run: uvx --from "$RUFF" ruff format --check
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: make typecheck
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: make test
+  # The build's self-check runs the sandbox, which must also work on an instructor's Mac.
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: make test
+  # Students on Windows run the check panels, the export button, the selfcheck and the PDF.
+  # The grader and `build` need Linux or macOS, so only the student-side tests run.
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: >-
+          uv run pytest -q
+          tests/test_config.py tests/test_source.py tests/test_transform.py
+          tests/test_assertrewrite_guard.py tests/test_runner.py tests/test_check.py
+          tests/test_loader.py tests/test_selfcheck.py tests/test_export.py tests/test_pdf.py
+  # The autograder graded in Gradescope's base image. MGS_REQUIRE_CONTAINER makes a missing
+  # Docker fail the job instead of skipping the tests.
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MGS_REQUIRE_CONTAINER: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run pytest -m docker -v

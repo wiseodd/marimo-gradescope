@@ -1,0 +1,70 @@
+---
+import SiteTitle from '@astrojs/starlight/components/SiteTitle.astro';
+import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
+
+const links = [
+	{ label: 'Instructors', href: '/instructors/' },
+	{ label: 'Students', href: '/students/' },
+];
+const path = Astro.url.pathname;
+---
+
+<div class="header">
+	<div class="left">
+		<SiteTitle />
+		<nav>
+			{
+				links.map(({ label, href }) => (
+					<a href={href} aria-current={path.startsWith(href) ? 'page' : undefined}>
+						{label}
+					</a>
+				))
+			}
+		</nav>
+	</div>
+	<div class="right"><SocialIcons /></div>
+</div>
+
+<style>
+	.header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		height: 100%;
+		gap: 1rem;
+	}
+	.left,
+	nav,
+	.right {
+		display: flex;
+		align-items: center;
+	}
+	.left {
+		gap: 2rem;
+		min-width: 0;
+	}
+	nav {
+		gap: 1.25rem;
+	}
+	nav a {
+		color: var(--sl-color-gray-2);
+		text-decoration: none;
+		font-size: var(--sl-text-sm);
+	}
+	/* Phones: tighter gaps, and no GitHub icon, so the title is never cut off. */
+	@media (max-width: 30rem) {
+		.left {
+			gap: 0.75rem;
+		}
+		nav {
+			gap: 0.75rem;
+		}
+		.right {
+			display: none;
+		}
+	}
+	nav a:hover,
+	nav a[aria-current='page'] {
+		color: var(--sl-color-text-accent);
+	}
+</style>

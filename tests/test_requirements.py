@@ -1,0 +1,451 @@
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from marimo_gradescope.config import ConfigError, read_config
+from marimo_gradescope.grader._user import STUDENT_USER
+from marimo_gradescope.grader.templates import UV_VERSION, run_autograder_script, setup_script
+from marimo_gradescope.requirements import RequirementsError, gradescope_requirements
+
+REPO = Path(__file__).parent.parent
+TOOL = "marimo-gradescope==0.1.0"
+
+CODE = """
+import marimo
+
+app = marimo.App()
+"""
+
+
+def notebook(header: str) -> str:
+    lines = [f"# {line}" if line else "#" for line in header.strip("\n").splitlines()]
+    return "# /// script\n" + "\n".join(lines) + "\n# ///\n" + CODE
+
+
+TORCH = notebook(
+    """
+requires-python = ">=3.13"
+dependencies = ["marimo", "marimo-gradescope==0.0.0", "torch"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.marimo-gradescope]
+questions = { q1 = 25 }
+"""
+)
+
+
+def tool_lines(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line.startswith("marimo-gradescope")]
+
+
+def requirement_lines(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line and not line.startswith(("#", " ", "-"))]
+
+
+def config(src: str, tmp_path: Path):
+    path = tmp_path / "hw.py"
+    path.write_text(src, encoding="utf-8")
+    return read_config(src, path)
+
+
+# From the header, through `uv export`
+
+
+@pytest.mark.network
+def test_header_with_explicit_index(tmp_path):
+    text, warnings = gradescope_requirements(TORCH, config(TORCH, tmp_path), TOOL)
+    lines = text.splitlines()
+
+    assert lines[0] == "--extra-index-url https://download.pytorch.org/whl/cpu"
+    assert any(line.startswith("torch==") and "+cpu" in line for line in lines)
+    assert any(line.startswith("marimo==") for line in lines)
+    assert tool_lines(text) == [TOOL]
+    assert lines[-1] == TOOL
+    assert warnings == []
+
+
+@pytest.mark.network
+def test_header_requirements_install(tmp_path):
+    # The real tool line pins a release; a local path lets the dry run resolve it.
+    tool = f"marimo-gradescope @ {REPO.as_uri()}"
+    text, _ = gradescope_requirements(TORCH, config(TORCH, tmp_path), tool)
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text(text, encoding="utf-8")
+    uv = shutil.which("uv")
+    assert uv is not None
+
+    subprocess.run(
+        [uv, "venv", "-q", "--python", "3.13", str(tmp_path / "venv")], check=True, cwd=tmp_path
+    )
+    result = subprocess.run(
+        [uv, "pip", "install", "--dry-run", "--python", str(tmp_path / "venv" / "bin" / "python")]
+        # Resolved for Gradescope's Linux, wherever the test runs: the CPU index is only
+        # used off macOS.
+        + ["--python-platform", "x86_64-manylinux_2_28"]
+        + ["--index-strategy", "unsafe-best-match", "-r", str(requirements)],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "+cpu" in result.stderr
+
+
+@pytest.mark.network
+def test_header_without_indexes(tmp_path):
+    src = notebook(
+        'dependencies = ["marimo-gradescope", "pytest"]\n\n'
+        "[tool.marimo-gradescope]\nquestions = { q1 = 1 }"
+    )
+
+    text, _ = gradescope_requirements(src, config(src, tmp_path), TOOL)
+
+    assert not any(line.startswith("-") for line in text.splitlines())
+    assert any(line.startswith("pytest==") for line in text.splitlines())
+    assert tool_lines(text) == [TOOL]
+
+
+@pytest.mark.network
+def test_default_index_becomes_index_url(tmp_path):
+    src = notebook(
+        'dependencies = ["pytest"]\n\n[[tool.uv.index]]\nname = "main"\n'
+        'url = "https://pypi.org/simple"\ndefault = true\n\n'
+        "[tool.marimo-gradescope]\nquestions = { q1 = 1 }"
+    )
+
+    text, _ = gradescope_requirements(src, config(src, tmp_path), TOOL)
+
+    assert text.splitlines()[0] == "--index-url https://pypi.org/simple"
+    assert "--extra-index-url" not in text
+
+
+@pytest.mark.parametrize(
+    "uv",
+    [
+        '[[tool.uv.index]]\nname = "w"\nurl = "https://example.com/wheels"\nformat = "flat"',
+        '[tool.uv]\nindex-url = "https://example.com/simple"',
+        '[tool.uv]\nextra-index-url = ["https://example.com/simple"]',
+        '[tool.uv]\nfind-links = ["https://example.com/links"]',
+        '[[tool.uv.index]]\nname = "x"',
+    ],
+)
+def test_unsupported_index_config(uv, tmp_path):
+    src = notebook(
+        f'dependencies = ["pytest"]\n\n{uv}\n\n[tool.marimo-gradescope]\nquestions = {{ q1 = 1 }}'
+    )
+
+    with pytest.raises(ConfigError, match="tool.uv"):
+        gradescope_requirements(src, config(src, tmp_path), TOOL)
+
+
+def test_uv_export_error_shows_stderr(tmp_path):
+    src = notebook(
+        'dependencies = ["numpy >> 1"]\n\n[tool.marimo-gradescope]\nquestions = { q1 = 1 }'
+    )
+
+    with pytest.raises(RequirementsError, match="uv export") as error:
+        gradescope_requirements(src, config(src, tmp_path), TOOL)
+
+    assert "numpy >> 1" in str(error.value)
+
+
+# From a requirements file
+
+
+OVERRIDE = notebook(
+    """
+dependencies = ["marimo-gradescope", "torch"]
+
+[tool.marimo-gradescope]
+questions = { q1 = 25 }
+requirements = "env/requirements.txt"
+"""
+)
+
+
+def test_header_index_with_file_url_rejected(tmp_path):
+    src = TORCH.replace("https://download.pytorch.org/whl/cpu", "file:///home/me/simple")
+
+    with pytest.raises(ConfigError, match="file:///home/me/simple"):
+        gradescope_requirements(src, config(src, tmp_path), TOOL)
+
+
+def test_override_file_relative_to_notebook(tmp_path):
+    folder = tmp_path / "A_01"
+    (folder / "env").mkdir(parents=True)
+    (folder / "env" / "requirements.txt").write_text(
+        "numpy==2.0\n# pinned\n--extra-index-url https://example.com/simple\n", encoding="utf-8"
+    )
+    path = folder / "hw.py"
+    path.write_text(OVERRIDE, encoding="utf-8")
+
+    text, warnings = gradescope_requirements(OVERRIDE, read_config(OVERRIDE, path), TOOL)
+
+    assert text == f"numpy==2.0\n# pinned\n--extra-index-url https://example.com/simple\n{TOOL}\n"
+    assert warnings == []
+
+
+def test_override_file_without_trailing_newline(tmp_path):
+    (tmp_path / "env").mkdir()
+    (tmp_path / "env" / "requirements.txt").write_text("numpy==2.0", encoding="utf-8")
+
+    text, _ = gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), TOOL)
+
+    assert text == f"numpy==2.0\n{TOOL}\n"
+
+
+def test_override_file_drops_its_own_tool_line(tmp_path):
+    (tmp_path / "env").mkdir()
+    (tmp_path / "env" / "requirements.txt").write_text(
+        "marimo-gradescope>=0.0.1\nnumpy\nmarimo_gradescope[pdf]\n", encoding="utf-8"
+    )
+
+    text, warnings = gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), TOOL)
+
+    assert text == f"numpy\n{TOOL}\n"
+    assert tool_lines(text) == [TOOL]
+    assert len(warnings) == 1
+    assert "marimo-gradescope>=0.0.1" in warnings[0]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "-r other.txt",
+        "--requirement=other.txt",
+        "-c constraints.txt",
+        "--constraint constraints.txt",
+        "-e .",
+        "--editable ./pkg",
+        "./pkg",
+        "../wheels/pkg-1.0-py3-none-any.whl",
+        "/home/me/pkg",
+        "dist/pkg-1.0-py3-none-any.whl",
+        "pkg-1.0.tar.gz",
+        "--find-links ./wheels",
+        "-f wheels",
+        "pkg @ file:///home/me/pkg-1.0.whl",
+        "file:///home/me/pkg-1.0-py3-none-any.whl",
+        "git+file:///home/me/repo",
+        "-r file:///home/me/other.txt",
+        "-e file:///home/me/pkg",
+        "--extra-index-url file:///home/me/simple",
+        "--index-url=file:///home/me/simple",
+        "-i /home/me/simple",
+    ],
+)
+def test_override_file_rejects_local_paths(line, tmp_path):
+    (tmp_path / "env").mkdir()
+    (tmp_path / "env" / "requirements.txt").write_text(f"numpy\n{line}\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="requirements") as error:
+        gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), TOOL)
+
+    assert line in str(error.value)
+
+
+def test_override_file_keeps_urls(tmp_path):
+    lines = (
+        "https://example.com/pkg-1.0-py3-none-any.whl\n"
+        "https://example.com/pkg-1.0.tar.gz ; python_version >= '3.13'\n"
+        "git+https://github.com/me/repo@v1\n"
+        "-r https://example.com/requirements.txt\n"
+        "--requirement=https://example.com/requirements.txt\n"
+        "-c https://example.com/constraints.txt\n"
+        "--extra-index-url https://download.pytorch.org/whl/cpu\n"
+        "--index-url=https://pypi.org/simple\n"
+        "-i https://pypi.org/simple\n"
+        "--find-links https://example.com/links\n"
+        "torch==2.0+cpu ; sys_platform != 'darwin'  # cpu\n"
+        "pkg @ https://example.com/pkg-1.0-py3-none-any.whl\n"
+        "scipy==1.0 \\\n"
+        "    --hash=sha256:abc\n"
+        "\n"
+        "# ./not/a/path\n"
+    )
+    (tmp_path / "env").mkdir()
+    (tmp_path / "env" / "requirements.txt").write_text(lines, encoding="utf-8")
+
+    text, _ = gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), TOOL)
+
+    assert text == lines + TOOL + "\n"
+
+
+@pytest.mark.parametrize(
+    ("requires", "python", "warns"),
+    [(">=3.13", "3.12", True), (">=3.13", "3.13", False), (">=3.11,<3.13", "3.13.1", True)],
+)
+def test_python_outside_requires_python_warns(requires, python, warns, tmp_path):
+    src = OVERRIDE.replace("# dependencies", f'# requires-python = "{requires}"\n# dependencies')
+    src = src.replace("# questions", f'# python = "{python}"\n# questions')
+    (tmp_path / "env").mkdir()
+    (tmp_path / "env" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
+
+    _, warnings = gradescope_requirements(src, config(src, tmp_path), TOOL)
+
+    if warns:
+        assert len(warnings) == 1
+        assert python in warnings[0] and requires in warnings[0]
+    else:
+        assert warnings == []
+
+
+def test_invalid_requires_python(tmp_path):
+    src = OVERRIDE.replace("# dependencies", '# requires-python = "three"\n# dependencies')
+    (tmp_path / "env").mkdir()
+    (tmp_path / "env" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="requires-python"):
+        gradescope_requirements(src, config(src, tmp_path), TOOL)
+
+
+def test_override_file_missing(tmp_path):
+    with pytest.raises(ConfigError, match="requirements.txt"):
+        gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), TOOL)
+
+
+# Tool line
+
+
+@pytest.mark.parametrize("version", ["0.1.0.dev3", "0.1.dev0+g1234", "0.1.0+local"])
+def test_unreleased_version_warns(version, tmp_path):
+    (tmp_path / "env").mkdir()
+    (tmp_path / "env" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
+    tool = f"marimo-gradescope=={version}"
+
+    text, warnings = gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), tool)
+
+    assert tool_lines(text) == [tool]
+    assert len(warnings) == 1
+    assert version in warnings[0]
+    assert "not on PyPI" in warnings[0]
+
+
+def test_tool_requirement_must_name_the_tool(tmp_path):
+    (tmp_path / "env").mkdir()
+    (tmp_path / "env" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="marimo-gradescope"):
+        gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), "numpy==1.0")
+
+
+# Templates
+
+
+def bash_check(script: str, tmp_path: Path) -> None:
+    path = tmp_path / "script.sh"
+    path.write_text(script, encoding="utf-8")
+    result = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+    shellcheck = shutil.which("shellcheck")
+    if shellcheck is not None:
+        result = subprocess.run([shellcheck, str(path)], capture_output=True, text=True)
+        assert result.returncode == 0, result.stdout
+
+
+def test_setup_script(tmp_path):
+    cfg = config(OVERRIDE.replace("# questions", '# python = "3.12"\n# questions'), tmp_path)
+    assert cfg.python == "3.12"
+
+    script = setup_script(cfg)
+
+    assert script.startswith("#!/usr/bin/env bash\n")
+    assert "set -euo pipefail" in script
+    assert "command -v curl >/dev/null || { apt-get update && apt-get install -y curl " in script
+    assert script.index("command -v curl") < script.index("astral.sh")
+    assert "command -v pkill >/dev/null || { apt-get update && apt-get install -y procps; }" in (
+        script
+    )
+    assert f"https://astral.sh/uv/{UV_VERSION}/install.sh" in script
+    assert "UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1" in script
+    assert "UV_PYTHON_INSTALL_DIR=/opt/mgs-python" in script
+    assert "uv venv --managed-python --python 3.12 /opt/mgs-venv" in script
+    assert "--index-strategy unsafe-best-match" in script
+    assert "--compile-bytecode" in script
+    assert f"useradd --system --no-create-home --shell /usr/sbin/nologin {STUDENT_USER}" in script
+    assert "chmod -R a+rX /opt/mgs-python /opt/mgs-venv" in script
+    assert "chmod -R go-rwx /autograder/source" in script
+    sanity = 'python -c "import marimo_gradescope, marimo"'
+    assert script.rstrip().endswith(f"runuser -u {STUDENT_USER} -- /opt/mgs-venv/bin/{sanity}")
+    assert "${" not in script
+    bash_check(script, tmp_path)
+
+
+@pytest.mark.network
+def test_uv_installer_url_exists():
+    # curl, as in setup.sh; the CDN refuses urllib's default user agent.
+    url = f"https://astral.sh/uv/{UV_VERSION}/install.sh"
+    command = ["curl", "-fsSLI", "-o", "/dev/null", "-w", "%{http_code}", url]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "200"
+
+
+def test_templates_do_not_import_the_sandbox():
+    code = (
+        "import sys, marimo_gradescope.grader.templates\n"
+        "assert 'resource' not in sys.modules, 'resource'\n"
+        "assert 'marimo_gradescope.grader.sandbox' not in sys.modules, 'sandbox'\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("python", ["3.13; rm -rf /", "latest", "3", ""])
+def test_setup_script_rejects_bad_python(python, tmp_path):
+    cfg = config(OVERRIDE.replace("# questions", f'# python = "{python}"\n# questions'), tmp_path)
+
+    with pytest.raises(ConfigError, match="python"):
+        setup_script(cfg)
+
+
+def test_run_autograder_script(tmp_path):
+    script = run_autograder_script()
+
+    assert script == (
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "exec /opt/mgs-venv/bin/python -m marimo_gradescope.grader.main\n"
+    )
+    bash_check(script, tmp_path)
+
+
+@pytest.mark.slow
+def test_wheel_ships_templates_and_typst_packages(tmp_path):
+    uv = shutil.which("uv")
+    assert uv is not None
+
+    subprocess.run([uv, "build", "--wheel", "-q", "-o", str(tmp_path)], check=True, cwd=REPO)
+    wheel = next(tmp_path.glob("*.whl"))
+    names = subprocess.run(
+        [sys.executable, "-m", "zipfile", "-l", str(wheel)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+    assert "marimo_gradescope/grader/templates/setup.sh" in names
+    assert "marimo_gradescope/grader/templates/run_autograder" in names
+
+    # The Typst packages the PDF of written answers needs, with their licenses.
+    for package in ("cmarker/0.1.10", "mitex/0.2.7"):
+        folder = f"marimo_gradescope/_typst/preview/{package}"
+        assert f"{folder}/typst.toml" in names
+        assert f"{folder}/lib.typ" in names
+        assert f"{folder}/LICENSE" in names
+        assert f"{folder}/README.md" not in names
