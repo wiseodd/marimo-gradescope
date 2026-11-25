@@ -10,6 +10,8 @@ import json
 import shutil
 import subprocess
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from marimo_gradescope import __version__
 from marimo_gradescope._env import clean_env
@@ -67,18 +69,40 @@ def tool_install_args(direct_url: str | None) -> list[str]:
     match None if direct_url is None else json.loads(direct_url):
         case None:
             return [f"{TOOL}=={__version__}"]
-        case {"url": str(url), "dir_info": {"editable": True}}:
-            return ["--editable", url.removeprefix("file://")]
-        case {"url": str(url), "dir_info": dict()}:
-            return [url.removeprefix("file://")]
-        case {"url": str(url), "archive_info": dict()}:
-            return [f"{TOOL} @ {url}"]
-        case {"url": str(url), "vcs_info": {"vcs": str(vcs), "commit_id": str(commit)}}:
-            return [f"{TOOL} @ {vcs}+{url}@{commit}"]
+        case {"url": str(url), "dir_info": {"editable": True}} as info:
+            return ["--editable", _local_path(url, info)]
+        case {"url": str(url), "dir_info": dict()} as info:
+            return [_local_path(url, info)]
+        case {"url": str(url), "archive_info": dict()} as info:
+            return [f"{TOOL} @ {url}{_fragment(info)}"]
+        case {"url": str(url), "vcs_info": {"vcs": str(vcs), "commit_id": str(commit)}} as info:
+            return [f"{TOOL} @ {vcs}+{url}@{commit}{_fragment(info)}"]
         case other:
             raise RequirementsError(
                 f"Cannot tell where {TOOL} was installed from; its direct_url.json is {other!r}."
             )
+
+
+def _local_path(url: str, info: dict[str, object]) -> str:
+    """The folder a `file://` URL names, with PEP 610's `subdirectory` appended."""
+
+    path = Path(url2pathname(urlparse(url).path))
+
+    match info.get("subdirectory"):
+        case str(subdirectory):
+            path = path / subdirectory
+
+    return str(path)
+
+
+def _fragment(info: dict[str, object]) -> str:
+    """The `#subdirectory=...` URL fragment for PEP 610's `subdirectory`, if any."""
+
+    match info.get("subdirectory"):
+        case str(subdirectory):
+            return f"#subdirectory={subdirectory}"
+        case _:
+            return ""
 
 
 def _direct_url() -> str | None:

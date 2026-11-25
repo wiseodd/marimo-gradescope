@@ -38,6 +38,36 @@ def test_tool_install_args(text, expected):
     assert tool_install_args(text) == expected
 
 
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        (
+            {"url": "file:///src/my%20project", "dir_info": {"editable": True}},
+            ["--editable", "/src/my project"],
+        ),
+        ({"url": "file:///src/my%20project", "dir_info": {}}, ["/src/my project"]),
+        (
+            {"url": "file:///src/repo", "dir_info": {}, "subdirectory": "pkg"},
+            ["/src/repo/pkg"],
+        ),
+        (
+            {"url": "https://x.test/repo.tar.gz", "archive_info": {}, "subdirectory": "pkg"},
+            ["marimo-gradescope @ https://x.test/repo.tar.gz#subdirectory=pkg"],
+        ),
+        (
+            {
+                "url": "https://github.com/o/repo",
+                "vcs_info": {"vcs": "git", "commit_id": "abc123"},
+                "subdirectory": "pkg",
+            },
+            ["marimo-gradescope @ git+https://github.com/o/repo@abc123#subdirectory=pkg"],
+        ),
+    ],
+)
+def test_tool_install_args_decodes_paths_and_keeps_subdirectory(fields, expected):
+    assert tool_install_args(json.dumps(fields)) == expected
+
+
 def test_tool_install_args_rejects_unknown_direct_url():
     with pytest.raises(RequirementsError, match="direct_url.json"):
         tool_install_args(json.dumps({"url": "file:///x"}))
