@@ -99,6 +99,56 @@ class BuildResult:
     scores: tuple[QuestionScore, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class Assignment:
+    """A source notebook, read and validated.
+
+    Attributes:
+        path: The source notebook.
+        src: Its text.
+        cfg: Its config.
+        nb: Its parsed cells.
+    """
+
+    path: Path
+    src: str
+    cfg: AssignmentConfig
+    nb: Notebook
+
+
+def require_posix() -> None:
+    """Refuse to grade on a platform the sandbox does not support.
+
+    Raises:
+        BuildError: If the platform is not Linux or macOS.
+    """
+
+    if sys.platform not in ("linux", "darwin"):
+        raise BuildError("Grading needs Linux or macOS (WSL on Windows).")
+
+
+def read_assignment(assignment_dir: Path) -> Assignment:
+    """Find, read and validate the source notebook in `assignment_dir`.
+
+    Raises:
+        BuildError: If there is no single source notebook, or it is invalid.
+        ConfigError: If its config is invalid.
+        SourceError: If it cannot be parsed.
+    """
+
+    path = find_notebook(assignment_dir)
+    src = path.read_text(encoding="utf-8")
+    cfg = read_config(src, path)
+    nb = parse_notebook(src)
+
+    errors = validate(nb, cfg)
+    if errors:
+        listed = "\n".join("- " + error.replace("\n", "\n  ") for error in errors)
+        raise BuildError(f"{path} has {len(errors)} problem(s):\n{listed}")
+
+    return Assignment(path, src, cfg, nb)
+
+
 def find_notebook(assignment_dir: Path) -> Path:
     """The one `*.py` file in `assignment_dir` whose header has a `[tool.marimo-gradescope]` table.
 
@@ -152,18 +202,9 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
         RequirementsError: If the dependencies cannot be pinned or installed.
     """
 
-    if sys.platform not in ("linux", "darwin"):
-        raise BuildError("The build needs Linux or macOS (WSL on Windows) for its self-check.")
-
-    path = find_notebook(assignment_dir)
-    src = path.read_text(encoding="utf-8")
-    cfg = read_config(src, path)
-    nb = parse_notebook(src)
-
-    errors = validate(nb, cfg)
-    if errors:
-        listed = "\n".join("- " + error.replace("\n", "\n  ") for error in errors)
-        raise BuildError(f"{path} has {len(errors)} problem(s):\n{listed}")
+    require_posix()
+    assignment = read_assignment(assignment_dir)
+    src, cfg, nb = assignment.src, assignment.cfg, assignment.nb
 
     data = data_files(assignment_dir, cfg)
     student = student_notebook(src, nb, cfg, pinned_requirement(cfg))
@@ -234,8 +275,8 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
         student=dist / "student" / cfg.notebook,
         zip=dist / "autograder" / zip_name,
         solved=dist / "autograder" / cfg.notebook,
-        solution=_total(solution.results),
-        blank=_total(blank.results),
+        solution=total(solution.results),
+        blank=total(blank.results),
         warnings=warnings,
         scores=_scores(cfg, nb, solution.results, blank.results),
     )
@@ -295,11 +336,32 @@ def _self_grade(
 ) -> _Graded:
     """Grade `notebook` on `python` the way Gradescope would, as the current user."""
 
+    outcomes = grade_locally(bundle, notebook, workdir, assignment_dir, python)
+    return _Graded(outcomes, build_results(bundle, outcomes, []))
+
+
+def grade_locally(
+    bundle: GradingBundle, notebook: Path, workdir: Path, assignment_dir: Path, python: str
+) -> dict[str, Outcome]:
+    """Grade `notebook` on `python` with the real grader, as the current user.
+
+    Args:
+        bundle: The grading bundle.
+        notebook: The notebook to grade.
+        workdir: Folder for the grader's phase folders; must not exist.
+        assignment_dir: Folder the data files are relative to.
+        python: Interpreter with the grading requirements.
+
+    Returns:
+        One outcome per test of the bundle.
+    """
+
     # Imported here: the sandbox needs POSIX, and the CLI must start on any platform.
     from marimo_gradescope.grader.sandbox import grade
 
     workdir.mkdir()
-    outcomes = grade(
+
+    return grade(
         bundle,
         notebook,
         workdir,
@@ -308,8 +370,6 @@ def _self_grade(
         files=bundle.config.files,
         python=python,
     )
-
-    return _Graded(outcomes, build_results(bundle, outcomes, []))
 
 
 def failure_report(failed: Iterable[Outcome]) -> list[str]:
@@ -388,7 +448,9 @@ def marimo_check(notebook: Path, label: str, python: str) -> list[str]:
     return [f"`marimo check` on the {label}:\n{output}"] if output else []
 
 
-def _total(results: Results) -> tuple[float, float]:
+def total(results: Results) -> tuple[float, float]:
+    """Score and maximum, summed over the rows of `results`."""
+
     rows = results["tests"]
     return sum(row["score"] for row in rows), sum(row["max_score"] for row in rows)
 

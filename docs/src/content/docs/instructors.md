@@ -114,6 +114,16 @@ A test that passes on the blank copy is reported, since it gives free points.
 
 `build` runs on Linux and macOS.
 
+## Grade one submission
+
+```console
+$ marimo-gradescope grade examples/demo submission.py
+```
+
+This grades one student notebook with the same grader and requirements as Gradescope, without uploading it.
+The submission can also be a folder, such as a downloaded upload.
+It prints the score per question and every failing test with its message, hidden tests included, which helps with regrade requests.
+
 ## Requirements
 
 Gradescope installs the header's `dependencies`, pinned at build time.
