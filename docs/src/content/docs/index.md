@@ -63,8 +63,13 @@ def _():
 
 Say the notebook is `examples/demo/hw.py`:
 
-```console
-$ marimo-gradescope build examples/demo
+```bash
+marimo-gradescope build examples/demo
+```
+
+The output starts with where the files went:
+
+```text
 Student notebook:  examples/demo/dist/student/hw.py
 Autograder zip:    examples/demo/dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip
 Solved notebook:   examples/demo/dist/autograder/hw.py
