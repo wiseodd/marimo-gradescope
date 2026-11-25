@@ -45,7 +45,9 @@ def grading_python(requirements: str, folder: Path, python_version: str) -> Path
     listed = folder / "requirements.txt"
     listed.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
 
+    # Gradescope installs with pip, which takes each package's best version from any index.
     command = [uv, "pip", "install", "--quiet", "--python", str(python), "-r", str(listed)]
+    command += ["--index-strategy", "unsafe-best-match"]
     _uv(command + tool_install_args(_direct_url()), "install the requirements in")
 
     return python

@@ -1,5 +1,6 @@
 import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -69,3 +70,20 @@ def test_environment_has_the_requirements_and_this_package(tmp_path):
     assert result.stdout.split(maxsplit=2)[0] == "(3,"
     assert result.stdout.split()[1] == "13)"
     assert result.stdout.split()[2:] == ["0.9.0", __version__]
+
+
+def test_install_resolves_like_pip(tmp_path, monkeypatch):
+    # Gradescope installs with pip, which takes each package's best version from any index.
+    commands = []
+
+    def fake_run(command, **kwargs):
+        commands.append(command)
+        if command[1] == "venv":
+            Path(command[-1]).mkdir()
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(environment.subprocess, "run", fake_run)
+    grading_python("--extra-index-url https://x.test/simple\ntorch==1\n", tmp_path / "env", "3.13")
+
+    [install] = [command for command in commands if command[1:3] == ["pip", "install"]]
+    assert install[install.index("--index-strategy") + 1] == "unsafe-best-match"
