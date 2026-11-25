@@ -8,6 +8,7 @@ import ast
 import io
 import tokenize
 from collections.abc import Mapping, Sequence
+from enum import StrEnum
 from pathlib import Path
 
 from marimo_gradescope import __version__
@@ -26,6 +27,7 @@ from marimo_gradescope.source import (
     PROMPT,
     SOLUTION,
     Cell,
+    CellKind,
     Marker,
     Notebook,
     SourceError,
@@ -36,6 +38,16 @@ from marimo_gradescope.source import (
 
 EXPORT_BUTTON = "export_button"
 DEFAULT_ALIAS = "mgs"
+MARIMO_ALIAS = "mo"
+
+
+class MarimoImport(StrEnum):
+    """Where the student copy gets `mo`, the name marimo is imported as."""
+
+    SETUP = "setup"
+    CELL = "cell"
+    MISSING = "missing"
+
 
 # Replacement lines by 1-based line number. A line not in the map is kept as it is.
 type Edits = dict[int, list[str]]
@@ -133,7 +145,9 @@ def student_notebook(
     manual = [question.id for question in cfg.questions.values() if question.manual]
     placeholders = answer_placeholders(parse_notebook(text), manual)
 
-    return _append_cells(text, export_cells(cfg, package_alias(nb), placeholders))
+    cells = export_cells(cfg, package_alias(nb), placeholders, marimo=marimo_import(nb))
+
+    return _append_cells(text, cells)
 
 
 def package_alias(nb: Notebook) -> str | None:
@@ -160,10 +174,51 @@ def package_alias(nb: Notebook) -> str | None:
     return None
 
 
+def marimo_import(nb: Notebook) -> MarimoImport:
+    """Which cell has `import marimo as mo`: the setup cell, a student cell, or none.
+
+    Raises:
+        SourceError: If none does, and `mo`, the name the export cells would import marimo as,
+            is already taken.
+    """
+
+    cells = [cell for cell in nb.cells if not cell.hidden and cell.kind is not CellKind.SETUP]
+    sources = [
+        (MarimoImport.SETUP, nb.setup_source()),
+        *((MarimoImport.CELL, nb.cell_body_source(cell)) for cell in cells),
+    ]
+    bound: set[str] = set()
+
+    for where, source in sources:
+        for node in ast.parse(source).body:
+            match node:
+                case ast.Import(names=names) if any(
+                    alias.name == "marimo" and alias.asname == MARIMO_ALIAS for alias in names
+                ):
+                    return where
+
+        bound |= cell_names(source)[0]
+
+    if MARIMO_ALIAS in bound:
+        raise SourceError(
+            f"The Submit note needs `import marimo as {MARIMO_ALIAS}`, and `{MARIMO_ALIAS}` is "
+            "taken. Add `import marimo as mo` to the setup cell."
+        )
+
+    return MarimoImport.MISSING
+
+
 def export_cells(
-    cfg: AssignmentConfig, alias: str | None, placeholders: Mapping[str, str] | None = None
+    cfg: AssignmentConfig,
+    alias: str | None,
+    placeholders: Mapping[str, str] | None = None,
+    *,
+    marimo: MarimoImport = MarimoImport.SETUP,
 ) -> str:
     """Cells that let the student export a submission: a note, the button and the panel.
+
+    The note is a cell with nothing but `mo.md(...)`. marimo renders such a cell when the
+    notebook opens, before anything runs, so the student sees how to show the button.
 
     Args:
         cfg: Assignment config.
@@ -171,6 +226,7 @@ def export_cells(
             `mgs`.
         placeholders: The student copy's answer text per manual question, so the export
             can warn about an answer left as it was.
+        marimo: Which cell has `import marimo as mo`; `MISSING` adds a cell that does.
     """
 
     stem = Path(cfg.notebook).stem
@@ -182,48 +238,59 @@ def export_cells(
         f"manual={python_literal(manual)}, titles={python_literal(titles)}, "
         f"placeholders={python_literal(dict(placeholders or {}))})"
     )
+    imports = [
+        *([("marimo", MARIMO_ALIAS)] if marimo is MarimoImport.MISSING else []),
+        *([] if alias is not None else [(PACKAGE, DEFAULT_ALIAS)]),
+    ]
+    names = [as_name for _, as_name in imports]
     importer = (
-        ""
-        if alias is not None
-        else f"""@app.cell(hide_code=True)
-def _():
-    import {PACKAGE} as {DEFAULT_ALIAS}
-
-    return ({DEFAULT_ALIAS},)
-
-
-"""
+        "@app.cell(hide_code=True)\ndef _():\n"
+        + "".join(f"    import {module} as {as_name}\n" for module, as_name in imports)
+        + f"\n    return {_returned(names)}\n\n\n"
+        if imports
+        else ""
     )
+    # A cell takes the names other cells define as parameters; setup names are global.
+    note_args = "" if marimo is MarimoImport.SETUP else MARIMO_ALIAS
+    button_args = "" if alias is not None else DEFAULT_ALIAS
+    export_args = ", ".join(sorted({EXPORT_BUTTON, name} if alias is None else {EXPORT_BUTTON}))
+    contents = "your notebook and your written answers" if manual else "your notebook"
 
     return (
         importer
         + f'''@app.cell(hide_code=True)
-def _():
-    import marimo as _mo
-
-    _mo.md(r"""
+def _({note_args}):
+    {MARIMO_ALIAS}.md(r"""
     ## Submit
 
     Save the notebook, then click **Export submission** below. It runs the public tests on
-    the saved file and makes a zip of your notebook and written answers. Upload that zip to
-    Gradescope.
+    the saved file and makes a zip of {contents}. Upload that zip to Gradescope.
+
+    No button below? Run the notebook first: **Run all stale cells**, or Ctrl+Shift+R
+    (Cmd+Shift+R on a Mac).
     """)
     return
 
 
 @app.cell(hide_code=True)
-def _():
+def _({button_args}):
     {EXPORT_BUTTON} = {name}.export_button()
     {EXPORT_BUTTON}
     return ({EXPORT_BUTTON},)
 
 
 @app.cell(hide_code=True)
-def _({EXPORT_BUTTON}):
+def _({export_args}):
     {call}
     return
 '''
     )
+
+
+def _returned(names: Sequence[str]) -> str:
+    """A cell's return value for `names`, as marimo writes it: `(a,)` or `(a, b)`."""
+
+    return f"({names[0]},)" if len(names) == 1 else f"({', '.join(names)})"
 
 
 type Literal = str | Sequence[str] | Mapping[str, str]
