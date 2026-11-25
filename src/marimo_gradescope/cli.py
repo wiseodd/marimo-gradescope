@@ -2,11 +2,13 @@
 
 import argparse
 import sys
+from copy import replace
 from pathlib import Path
 
 from marimo_gradescope import __version__
-from marimo_gradescope.build import BuildError, BuildResult, build
+from marimo_gradescope.build import BuildError, BuildResult, build, failure_report
 from marimo_gradescope.config import ConfigError
+from marimo_gradescope.grade import GradeResult, grade_submission
 from marimo_gradescope.requirements import RequirementsError
 from marimo_gradescope.source import SourceError
 
@@ -26,6 +28,8 @@ def main(argv: list[str] | None = None) -> int:
     match args.command:
         case "build":
             return _build(args.dir)
+        case "grade":
+            return _grade(args.dir, args.submission)
         case _:
             raise AssertionError(f"unhandled command {args.command!r}")
 
@@ -39,6 +43,45 @@ def _build(folder: Path) -> int:
 
     print(report(result))
     return 0
+
+
+def _grade(folder: Path, submission: Path) -> int:
+    try:
+        result = grade_submission(folder, submission)
+    except (BuildError, ConfigError, SourceError, RequirementsError, OSError) as error:
+        print(f"Grading failed.\n{error}", file=sys.stderr)
+        return 1
+
+    print(grade_report(result))
+    return 0
+
+
+def grade_report(result: GradeResult) -> str:
+    """Per-question scores and the failing tests, hidden ones marked, as text."""
+
+    lines = [f"Graded:  {result.submission}", ""]
+    rows = [("Question", "Score")]
+    titles = {q.id: q.title for q in result.bundle.config.questions.values()}
+
+    for row in result.results["tests"]:
+        if "number" in row:
+            rows.append((titles[row["number"]], _fraction(row["score"], row["max_score"])))
+
+    rows.append(("Total", _fraction(*result.score)))
+    width = max(len(row[0]) for row in rows)
+    lines += [f"{name:<{width}}  {score:>9}" for name, score in rows]
+
+    hidden = {name for cell in result.bundle.cells if cell.hidden for name in cell.tests}
+    failed = [
+        replace(outcome, name=f"{outcome.name} (hidden)") if outcome.name in hidden else outcome
+        for outcome in result.outcomes.values()
+        if not outcome.passed
+    ]
+
+    if failed:
+        lines += ["", "Failing tests:", *failure_report(failed, count_load_failures=False)]
+
+    return "\n".join(lines)
 
 
 def report(result: BuildResult) -> str:
@@ -110,6 +153,24 @@ def _parser() -> argparse.ArgumentParser:
     )
     build_parser.add_argument(
         "dir", type=Path, metavar="DIR", help="assignment folder with the source notebook"
+    )
+
+    grade_parser = commands.add_parser(
+        "grade",
+        help="grade one submission locally",
+        description=(
+            "Grade SUBMISSION against the source notebook in DIR with the real grader, as "
+            "Gradescope would, and list every failing test, hidden ones included."
+        ),
+    )
+    grade_parser.add_argument(
+        "dir", type=Path, metavar="DIR", help="assignment folder with the source notebook"
+    )
+    grade_parser.add_argument(
+        "submission",
+        type=Path,
+        metavar="SUBMISSION",
+        help="student notebook, or a folder with one (such as a downloaded upload)",
     )
 
     return parser
