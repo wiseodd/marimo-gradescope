@@ -97,8 +97,8 @@ Images show as their alt text, and a prompt cell that isn't plain `mo.md` shows 
 
 ## Build
 
-```console
-$ marimo-gradescope build examples/demo
+```bash
+marimo-gradescope build examples/demo
 ```
 
 This writes two folders, as Otter does:
@@ -116,8 +116,8 @@ A test that passes on the blank copy is reported, since it gives free points.
 
 ## Grade one submission
 
-```console
-$ marimo-gradescope grade examples/demo submission.py
+```bash
+marimo-gradescope grade examples/demo submission.py
 ```
 
 This grades one student notebook with the same grader and requirements as Gradescope, without uploading it.
