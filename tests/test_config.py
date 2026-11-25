@@ -6,7 +6,6 @@ from marimo_gradescope.config import (
     AssignmentConfig,
     ConfigError,
     Question,
-    ensure_runtime_flag,
     read_config,
     read_header,
     remove_dependency,
@@ -253,70 +252,6 @@ def test_strip_tool_table_without_table_is_identity():
     src = notebook('dependencies = ["numpy"]')
 
     assert strip_tool_table(src) == src
-
-
-# ensure_runtime_flag
-
-
-def runtime(src: str) -> dict:
-    return read_header(src)["tool"]["marimo"]["runtime"]
-
-
-def test_ensure_runtime_flag_adds_table():
-    out = ensure_runtime_flag(BASIC)
-
-    assert runtime(out) == {"reactive_tests": False}
-    assert count(out, "# [tool.marimo.runtime]") == 1
-    assert read_config(out, NB) == read_config(BASIC, NB)
-    assert out.endswith(CODE)
-
-
-def test_ensure_runtime_flag_merges_into_table_without_key():
-    src = notebook(
-        """
-dependencies = []
-
-[tool.marimo.runtime]
-auto_instantiate = false
-
-[tool.marimo-gradescope]
-questions = { q1 = 1 }
-"""
-    )
-
-    out = ensure_runtime_flag(src)
-
-    assert runtime(out) == {"auto_instantiate": False, "reactive_tests": False}
-    assert count(out, "# [tool.marimo.runtime]") == 1
-
-
-@pytest.mark.parametrize("value", ["true", "false"])
-def test_ensure_runtime_flag_with_key_already_set(value: str):
-    src = notebook(f"dependencies = []\n\n[tool.marimo.runtime]\nreactive_tests = {value}")
-
-    out = ensure_runtime_flag(src)
-
-    assert runtime(out) == {"reactive_tests": False}
-    assert count(out, "# [tool.marimo.runtime]") == 1
-    assert ensure_runtime_flag(out) == out
-
-
-def test_ensure_runtime_flag_is_idempotent():
-    once = ensure_runtime_flag(BASIC)
-
-    assert ensure_runtime_flag(once) == once
-
-
-def test_ensure_runtime_flag_dotted_key_conflict_raises():
-    src = notebook("[tool.marimo]\nruntime = { reactive_tests = true }")
-
-    with pytest.raises(ConfigError, match="reactive_tests"):
-        ensure_runtime_flag(src)
-
-
-def test_ensure_runtime_flag_missing_header():
-    with pytest.raises(ConfigError, match="# /// script"):
-        ensure_runtime_flag(CODE)
 
 
 # set_dependency

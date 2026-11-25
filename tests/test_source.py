@@ -603,18 +603,11 @@ def f():
     assert errors(PUBLIC + CHECK + cell) == []
 
 
-def test_validate_missing_reactive_tests():
-    header = HEADER.replace("#\n# [tool.marimo.runtime]\n# reactive_tests = false\n", "")
+@pytest.mark.parametrize("runtime", ["", "#\n# [tool.marimo.runtime]\n# reactive_tests = true\n"])
+def test_validate_needs_no_runtime_flag(runtime):
+    header = HEADER.replace("#\n# [tool.marimo.runtime]\n# reactive_tests = false\n", runtime)
 
-    error = one_error(PUBLIC + CHECK, header=header)
-
-    assert "# [tool.marimo.runtime]\n# reactive_tests = false" in error
-
-
-def test_validate_reactive_tests_true():
-    header = HEADER.replace("reactive_tests = false", "reactive_tests = true")
-
-    assert "reactive_tests" in one_error(PUBLIC + CHECK, header=header)
+    assert errors(PUBLIC + CHECK, header=header) == []
 
 
 def test_cell_body_source_function_keeps_other_decorators():

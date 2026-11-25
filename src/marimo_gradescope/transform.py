@@ -14,7 +14,6 @@ from pathlib import Path, PurePosixPath
 from marimo_gradescope import __version__
 from marimo_gradescope.config import (
     AssignmentConfig,
-    ensure_runtime_flag,
     normalize_newlines,
     set_dependency,
     split_lines,
@@ -83,8 +82,8 @@ def student_notebook(
       public tests read, so marimo runs the check again when one of them changes.
     - Export cells go after the last cell: a "Submit" note, the export button and the export
       panel (`export_cells`).
-    - The header loses the `[tool.marimo-gradescope]` table, turns off marimo's reactive
-      tests, and depends on `tool_requirement`.
+    - The header loses the `[tool.marimo-gradescope]` table and depends on
+      `tool_requirement`.
 
     With `solutions=True` it makes the solved copy instead: the same notebook, except that a
     solution region keeps its code without the marker and `# PROMPT:` lines, and
@@ -136,7 +135,7 @@ def student_notebook(
     text = "\n".join(
         new for number, line in enumerate(lines, start=1) for new in edits.get(number, [line])
     )
-    text = set_dependency(ensure_runtime_flag(strip_tool_table(text)), tool_requirement)
+    text = set_dependency(strip_tool_table(text), tool_requirement)
 
     try:
         ast.parse(text)

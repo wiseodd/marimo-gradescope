@@ -12,9 +12,6 @@
 # q1 = 4
 # q2 = { points = 6, title = "Vowels" }
 # q3 = { points = 5, manual = true }
-#
-# [tool.marimo.runtime]
-# reactive_tests = false
 # ///
 
 import marimo

@@ -15,11 +15,9 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from marimo_gradescope.config import (
-    RUNTIME_SNIPPET,
     TOOL,
     AssignmentConfig,
     normalize_newlines,
-    read_header,
     split_lines,
 )
 
@@ -566,23 +564,12 @@ def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
         One message per problem. Empty when the notebook is valid.
     """
 
-    errors = _runtime_errors(nb) + _test_name_errors(nb, cfg) + _question_errors(nb, cfg)
+    errors = _test_name_errors(nb, cfg) + _question_errors(nb, cfg)
     errors += _hidden_check_errors(nb) + _public_cell_errors(nb) + _marker_errors(nb)
     errors += _public_marker_errors(nb)
     errors += _near_marker_errors(nb) + _hidden_name_errors(nb)
 
     return errors
-
-
-def _runtime_errors(nb: Notebook) -> list[str]:
-    match read_header(nb.src):
-        case {"tool": {"marimo": {"runtime": {"reactive_tests": False}}}}:
-            return []
-        case _:
-            return [
-                "The header must turn off marimo's reactive tests. Add to the `# /// script` "
-                f"header:\n{RUNTIME_SNIPPET}"
-            ]
 
 
 def _test_name_errors(nb: Notebook, cfg: AssignmentConfig) -> list[str]:

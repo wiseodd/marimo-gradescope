@@ -14,7 +14,6 @@ from pathlib import Path
 
 TOOL = "marimo-gradescope"
 MIN_MEMORY_MB = 2048
-RUNTIME_SNIPPET = "# [tool.marimo.runtime]\n# reactive_tests = false"
 
 # The reference regex from PEP 723, for the `script` block.
 HEADER_RE = re.compile(r"(?m)^# /// script$\s(?P<content>(^#(| .*)$\s)+)^# ///$")
@@ -328,57 +327,6 @@ def strip_tool_table(src: str) -> str:
         raise ConfigError(f"Write the config as a [tool.{TOOL}] table, not as dotted keys.")
 
     return out
-
-
-def ensure_runtime_flag(src: str) -> str:
-    """Set `reactive_tests = false` under `[tool.marimo.runtime]` in the header.
-
-    Adds the key to an existing `[tool.marimo.runtime]` table, or appends the table.
-
-    Raises:
-        ConfigError: If the header is missing, or the result does not hold the flag (the
-            runtime config is written as an inline table or dotted keys).
-    """
-
-    before, body, after = _split(src)
-    start = next(
-        (i for i, line in enumerate(body) if _table_name(line) == "tool.marimo.runtime"), None
-    )
-
-    if start is None:
-        if body and body[-1].strip():
-            body.append("")
-        body += ["[tool.marimo.runtime]", "reactive_tests = false"]
-    else:
-        end = next(
-            (i for i in range(start + 1, len(body)) if _table_name(body[i]) is not None),
-            len(body),
-        )
-        key = next(
-            (i for i in range(start + 1, end) if re.match(r"\s*reactive_tests\s*=", body[i])),
-            None,
-        )
-        if key is None:
-            body.insert(start + 1, "reactive_tests = false")
-        else:
-            body[key] = "reactive_tests = false"
-
-    out = _join(before, body, after)
-    message = (
-        f"Could not set reactive_tests = false. Write the marimo runtime config as:\n"
-        f"{RUNTIME_SNIPPET}"
-    )
-
-    try:
-        header = read_header(out)
-    except ConfigError as e:
-        raise ConfigError(message) from e
-
-    match header:
-        case {"tool": {"marimo": {"runtime": {"reactive_tests": False}}}}:
-            return out
-        case _:
-            raise ConfigError(message)
 
 
 def set_dependency(src: str, requirement: str) -> str:
