@@ -147,11 +147,8 @@ def test_package_reports_disk_file_tests_and_download(tmp_path, no_pdf):
     result = package(notebook, name="hw", manual=["q3"], titles=TITLES)
     lines = texts(result.lines)
 
-    assert lines[0] == f"✓ Using {notebook} (saved {saved})"
-    assert lines[1] == (
-        "✓ Public tests: 0/3 passed (q1: test_q1_add, test_q1_add_negative failed; "
-        "q2: test_q2_count failed)"
-    )
+    assert lines[0] == f"✓ Using hw.py (saved {saved})"
+    assert lines[1] == "⚠ Public tests: 0/3 passed. Failing: q1 (2), q2 (1)"
     assert lines[2] == "⚠ PDF not created: typst is not installed; answers included as Markdown"
     assert lines[-1] == "⬇ hw_submission.zip — upload this to Gradescope"
     assert result.filename == "hw_submission.zip"

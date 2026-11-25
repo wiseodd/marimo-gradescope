@@ -258,7 +258,7 @@ def package(
         data = file.read()
 
     saved = datetime.fromtimestamp(modified).strftime("%Y-%m-%d %H:%M:%S")
-    lines = [Line(Mark.OK, f"Using {notebook} (saved {saved})")]
+    lines = [Line(Mark.OK, f"Using {notebook.name} (saved {saved})")]
     entries = {notebook.name: data}
 
     with tempfile.TemporaryDirectory(prefix="mgs-export-", ignore_cleanup_errors=True) as folder:
@@ -301,6 +301,8 @@ def package(
 def tests_line(notebook: Path, folder: Path) -> Line:
     """Run the public tests of a notebook file in a subprocess and summarize them.
 
+    The line counts the failures per question. The check under each question names them.
+
     Args:
         notebook: The notebook file.
         folder: Working directory for the tests: the folder of the student's notebook.
@@ -324,12 +326,13 @@ def tests_line(notebook: Path, folder: Path) -> Line:
 
     passed = sum(passed for passed, _, _ in summary.values())
     total = sum(total for _, total, _ in summary.values())
-    failed = "; ".join(
-        f"{qid}: {', '.join(names)} failed" for qid, (_, _, names) in summary.items() if names
-    )
+    failed = ", ".join(f"{qid} ({len(names)})" for qid, (_, _, names) in summary.items() if names)
     text = f"Public tests: {passed}/{total} passed"
 
-    return Line(Mark.OK, f"{text} ({failed})" if failed else text)
+    if not failed:
+        return Line(Mark.OK, text)
+
+    return Line(Mark.WARN, f"{text}. Failing: {failed}")
 
 
 def answers_markdown(
