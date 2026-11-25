@@ -534,14 +534,15 @@ def test_child_environment(tmp_path, monkeypatch):
 
 
 def test_launch_without_user(tmp_path):
-    options = _process.launch_options(tmp_path, None, 1024)
+    options = _process.launch_options(tmp_path, None, 1024, "/env/bin/python")
 
     assert options.cwd == tmp_path
+    assert options.python == "/env/bin/python"
     assert options.env == _process.child_env(tmp_path)
     assert options.user is options.group is options.extra_groups is None
     assert options.limits == _process.limits(1024, None)
-    assert _process.child_command(7) == [
-        sys.executable,
+    assert _process.child_command(7, "/env/bin/python") == [
+        "/env/bin/python",
         "-m",
         "marimo_gradescope.grader.child",
         "7",
@@ -560,7 +561,7 @@ def other_user() -> str:
 
 def test_launch_with_user(tmp_path):
     user = other_user()
-    options = _process.launch_options(tmp_path, user, 1024)
+    options = _process.launch_options(tmp_path, user, 1024, sys.executable)
 
     assert options.user == user
     assert options.group == pwd.getpwnam(user).pw_gid
@@ -577,7 +578,7 @@ def test_root_and_own_user_are_refused(tmp_path, user, match):
         pytest.skip("running as root")
 
     with pytest.raises(ValueError, match=match):
-        _process.launch_options(tmp_path, user, 1024)
+        _process.launch_options(tmp_path, user, 1024, sys.executable)
 
     root = tmp_path / "root"
     root.mkdir()

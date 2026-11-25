@@ -201,6 +201,26 @@ def test_broken_solution_fails_naming_the_test(tmp_path, capsys):
 
 
 @pytest.mark.network
+def test_self_check_installs_the_header_dependencies(tmp_path, capsys):
+    # `tabulate` is not in this test environment, only in the notebook's header.
+    folder = demo_copy(tmp_path / "demo")
+    edit(
+        folder / "hw.py",
+        '#     "marimo-gradescope",\n',
+        '#     "marimo-gradescope",\n#     "tabulate",\n',
+    )
+    edit(
+        folder / "hw.py",
+        "    import marimo_gradescope as mgs\n",
+        "    import marimo_gradescope as mgs\n    import tabulate\n",
+    )
+
+    code = main(["build", str(folder)])
+
+    assert code == 0, capsys.readouterr().err
+
+
+@pytest.mark.network
 def test_blank_score_warning_names_passing_tests(tmp_path, capsys):
     folder = demo_copy(tmp_path / "demo")
     edit(
@@ -414,6 +434,20 @@ def test_zero_point_manual_question_warns():
     assert "SOLUTION" in warning
 
 
+def test_failure_report_names_questions_for_load_failures():
+    setup = "the grader's setup code failed (ModuleNotFoundError: No module named 'torch')"
+    outcomes = [
+        *(Outcome(f"test_q1_{i}", False, setup, FailureReason.LOAD_FAILED) for i in range(20)),
+        *(Outcome(f"test_q2_{i}", False, setup, FailureReason.LOAD_FAILED) for i in range(10)),
+        Outcome("test_q3_a", False, "boom", FailureReason.ERROR),
+    ]
+
+    assert failure_report(outcomes) == [
+        f"- 30 tests of q1, q2: {setup}",
+        "- test_q3_a: boom",
+    ]
+
+
 def test_marimo_check_warnings_are_passed_through(tmp_path, monkeypatch):
     def fake_run(command, **kwargs):
         return subprocess.CompletedProcess(command, 0, "warning: something odd", "")
@@ -422,7 +456,7 @@ def test_marimo_check_warnings_are_passed_through(tmp_path, monkeypatch):
     notebook = tmp_path / "hw.py"
     notebook.write_text("", encoding="utf-8")
 
-    assert build_module.marimo_check(notebook, "solved notebook") == [
+    assert build_module.marimo_check(notebook, "solved notebook", sys.executable) == [
         "`marimo check` on the solved notebook:\nwarning: something odd"
     ]
 

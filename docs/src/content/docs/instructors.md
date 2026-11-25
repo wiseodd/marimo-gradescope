@@ -108,6 +108,7 @@ This writes two folders, as Otter does:
 
 Each build replaces both folders.
 Before that, the build grades the solved and the blank student notebook with the real grader.
+It grades them in a new environment with the pinned requirements Gradescope gets, so the build needs network, and the first build of an assignment downloads its dependencies.
 The solved notebook must get full marks.
 A test that passes on the blank copy is reported, since it gives free points.
 
