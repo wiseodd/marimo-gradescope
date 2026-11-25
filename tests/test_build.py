@@ -21,7 +21,7 @@ from marimo_gradescope.build import (
     find_notebook,
 )
 from marimo_gradescope.cli import main, report
-from marimo_gradescope.config import ConfigError, read_config
+from marimo_gradescope.config import AssignmentConfig, ConfigError, Question, read_config
 from marimo_gradescope.runner import FailureReason, Outcome
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
@@ -396,6 +396,22 @@ def test_failure_report_merges_identical_messages():
         "- test_q1_a, test_q1_b: not run: crash",
         "- test_q2_a: boom\n    line two",
     ]
+
+
+def test_zero_point_manual_question_warns():
+    questions = {
+        "q1": Question("q1", "Mean", 0),
+        "q2": Question("q2", "Proof", 0, manual=True),
+        "q3": Question("q3", "Essay", 5, manual=True),
+    }
+    cfg = AssignmentConfig("hw", "hw.py", questions)
+
+    [warning] = build_module.question_warnings(cfg)
+
+    assert "q2" in warning
+    assert "q1" not in warning
+    assert "q3" not in warning
+    assert "SOLUTION" in warning
 
 
 def test_marimo_check_warnings_are_passed_through(tmp_path, monkeypatch):
