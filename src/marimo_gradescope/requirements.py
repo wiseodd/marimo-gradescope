@@ -179,7 +179,7 @@ def _uv_export(src: str) -> str:
         script.write_text(src, encoding="utf-8")
 
         command = [uv, "export", "--script", str(script), "--format", "requirements-txt"]
-        command += ["--no-hashes", "--no-header", "--quiet"]
+        command += ["--no-hashes", "--no-header", "--no-annotate", "--quiet"]
         result = subprocess.run(command, capture_output=True, text=True, check=False, cwd=folder)
 
     if result.returncode != 0:
