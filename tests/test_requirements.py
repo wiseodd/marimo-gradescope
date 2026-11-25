@@ -115,6 +115,7 @@ def test_header_without_indexes(tmp_path):
     assert not any(line.startswith("-") for line in text.splitlines())
     assert any(line.startswith("pytest==") for line in text.splitlines())
     assert tool_lines(text) == [TOOL]
+    assert "# via" not in text
 
 
 @pytest.mark.network
