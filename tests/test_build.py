@@ -251,8 +251,10 @@ def test_blank_score_warning_names_passing_tests(tmp_path, capsys):
     assert code == 0
     assert "test_q1_trivial" in out
     [archive] = (folder / "dist" / "autograder").glob("*.zip")
-    assert f"Autograder zip:    {archive}" in out
-    assert f"Solved notebook:   {folder / 'dist' / 'autograder' / 'hw.py'}" in out
+    assert f"{folder / 'dist'}/" in out
+    assert re.search(
+        rf"── {re.escape(archive.name)} +← upload to Gradescope as the autograder", out
+    )
     assert "Average" in out
     assert "Reading scores" in out
 
@@ -394,11 +396,84 @@ def test_cli_does_not_import_the_sandbox():
     assert "marimo_gradescope.grader._process" not in result.stdout
 
 
-def test_report_shows_manual_questions():
+def fake_dist(root: Path) -> Path:
+    """A `dist/` with the files a build of the demo writes, empty."""
+
+    dist = root / "dist"
+    for rel in (
+        "student/hw.py",
+        "student/data/scores.csv",
+        "student/tests/q1.py",
+        "student/tests/q2.py",
+        "autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
+        "autograder/hw.py",
+        "autograder/requirements.txt",
+        "autograder/data/scores.csv",
+        "autograder/tests/q1.py",
+        "autograder/tests/q2.py",
+    ):
+        (dist / rel).parent.mkdir(parents=True, exist_ok=True)
+        (dist / rel).write_text("", encoding="utf-8")
+
+    return dist
+
+
+def fake_result(dist: Path, **fields) -> BuildResult:
+    return BuildResult(
+        student=dist / "student" / "hw.py",
+        zip=dist / "autograder" / "hw-autograder-2026_09_30T12_30_41_890583.zip",
+        solved=dist / "autograder" / "hw.py",
+        solution=(4.0, 4.0),
+        blank=(0.0, 4.0),
+        warnings=[],
+        **fields,
+    )
+
+
+def test_report_draws_the_dist_tree(tmp_path, monkeypatch):
+    dist = fake_dist(tmp_path / "demo")
+    monkeypatch.chdir(tmp_path)
+
+    lines = report(fake_result(dist, scores=())).splitlines()
+
+    assert lines[: lines.index("")] == [
+        "demo/dist/",
+        "├── autograder/",
+        "│   ├── hw-autograder-2026_09_30T12_30_41_890583.zip  "
+        "← upload to Gradescope as the autograder",
+        "│   ├── hw.py                                         "
+        "← submit on Gradescope to check the autograder",
+        "│   ├── requirements.txt",
+        "│   ├── data/",
+        "│   │   └── scores.csv",
+        "│   └── tests/",
+        "│       ├── q1.py",
+        "│       └── q2.py",
+        "└── student/                                          "
+        "← give this directory to your students",
+        "    ├── hw.py",
+        "    ├── data/",
+        "    │   └── scores.csv",
+        "    └── tests/",
+        "        ├── q1.py",
+        "        └── q2.py",
+    ]
+
+
+def test_report_shows_an_absolute_path_outside_the_working_directory(tmp_path, monkeypatch):
+    dist = fake_dist(tmp_path / "demo")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    assert report(fake_result(dist, scores=())).splitlines()[0] == f"{dist}/"
+
+
+def test_report_shows_manual_questions(tmp_path):
     result = BuildResult(
-        student=Path("dist/student/hw.py"),
-        zip=Path("dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip"),
-        solved=Path("dist/autograder/hw.py"),
+        student=fake_dist(tmp_path) / "student/hw.py",
+        zip=tmp_path / "dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
+        solved=tmp_path / "dist/autograder/hw.py",
         solution=(4.0, 4.0),
         blank=(0.0, 4.0),
         warnings=["careful"],
@@ -416,11 +491,11 @@ def test_report_shows_manual_questions():
     assert "- careful" in text
 
 
-def test_report_shows_public_and_hidden_test_counts():
+def test_report_shows_public_and_hidden_test_counts(tmp_path):
     result = BuildResult(
-        student=Path("dist/student/hw.py"),
-        zip=Path("dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip"),
-        solved=Path("dist/autograder/hw.py"),
+        student=fake_dist(tmp_path) / "student/hw.py",
+        zip=tmp_path / "dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
+        solved=tmp_path / "dist/autograder/hw.py",
         solution=(4.0, 4.0),
         blank=(0.0, 4.0),
         warnings=[],
