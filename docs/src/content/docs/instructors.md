@@ -124,6 +124,12 @@ This grades one student notebook with the same grader and requirements as Grades
 The submission can also be a folder, such as a downloaded upload.
 It prints the score per question and every failing test with its message, hidden tests included, which helps with regrade requests.
 
+:::caution
+The student's code runs as you, with your files and your environment variables.
+On Gradescope it runs as a separate user with fewer rights; that protection is missing here.
+Grade a submission you don't trust in a container or VM with no credentials or private files in it.
+:::
+
 ## Requirements
 
 Gradescope installs the header's `dependencies`, pinned at build time.

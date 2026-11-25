@@ -372,17 +372,19 @@ def grade_locally(
     )
 
 
-def failure_report(failed: Iterable[Outcome]) -> list[str]:
+def failure_report(failed: Iterable[Outcome], *, count_load_failures: bool = True) -> list[str]:
     """One line per distinct failure message, naming the tests that share it.
 
-    Tests that failed to load are counted per message and name their questions instead, since
-    a failing setup cell fails every test.
+    Args:
+        failed: The failed outcomes.
+        count_load_failures: Count the tests that failed to load and name their questions
+            instead of the tests, since a failing setup cell fails every test.
     """
 
     by_message: dict[tuple[str, bool], list[str]] = {}
     for outcome in failed:
-        key = (outcome.message.strip(), outcome.reason is FailureReason.LOAD_FAILED)
-        by_message.setdefault(key, []).append(outcome.name)
+        counted = count_load_failures and outcome.reason is FailureReason.LOAD_FAILED
+        by_message.setdefault((outcome.message.strip(), counted), []).append(outcome.name)
 
     return [
         f"- {_failed_tests(names, load_failed)}: " + message.replace("\n", "\n    ")

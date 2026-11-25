@@ -79,7 +79,7 @@ def grade_report(result: GradeResult) -> str:
     ]
 
     if failed:
-        lines += ["", "Failing tests:", *failure_report(failed)]
+        lines += ["", "Failing tests:", *failure_report(failed, count_load_failures=False)]
 
     return "\n".join(lines)
 
