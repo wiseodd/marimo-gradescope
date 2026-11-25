@@ -248,7 +248,7 @@ wheels = [
 
 [[package]]
 name = "marimo-gradescope"
-version = "0.1.0"
+version = "0.2"
 source = { editable = "." }
 dependencies = [
     { name = "marimo" },

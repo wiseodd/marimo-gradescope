@@ -653,16 +653,17 @@ def test_submit_note_renders_before_any_cell_runs(imports_mo):
     # With marimo's default `auto_instantiate = false`, nothing runs on open. marimo still
     # renders a cell that is just `mo.md(...)`, as long as some cell defines `mo`.
     from marimo._ast.compiler import compile_cell
+    from marimo._types.ids import CellId_t
 
     out = student(PURE) if imports_mo else student_of("\n@app.cell\ndef _():\n    x = 1\n")
     nb = parse_notebook(out)
     defines_mo = [
         cell
         for cell in nb.cells
-        if "mo" in compile_cell(nb.cell_body_source(cell), cell_id="c").defs
+        if "mo" in compile_cell(nb.cell_body_source(cell), cell_id=CellId_t("c")).defs
     ]
 
-    assert compile_cell(submit_cell(out), cell_id="submit").markdown is not None
+    assert compile_cell(submit_cell(out), cell_id=CellId_t("submit")).markdown is not None
     assert len(defines_mo) == 1
 
 
