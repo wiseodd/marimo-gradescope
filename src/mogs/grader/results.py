@@ -82,9 +82,9 @@ def find_submission(sub_dir: Path, notebook: str, name: str | None = None) -> Su
 
     files = sorted(_regular_files(sub_dir))
     scripts = [path for path in files if path.suffix == ".py"]
-    exact = [path for path in scripts if path.name == notebook]
-    # The public tests the student copy ships in `tests/`.
+    # Not the public tests the student copy ships in `tests/`.
     others = [path for path in scripts if path.parent.name != TESTS_FOLDER]
+    exact = [path for path in others if path.name == notebook]
     pdfs = [path for path in files if path.suffix.lower() == ".pdf"]
     fallback = f"{name or Path(notebook).stem}_answers.md".casefold()
     markdown = [path for path in files if path.name.casefold() == fallback]

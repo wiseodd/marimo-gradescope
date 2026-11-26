@@ -191,6 +191,14 @@ def test_public_test_files_are_not_notebooks(tmp_path):
     assert found.py == tmp_path / "hw2" / "student_file.py"
 
 
+def test_notebook_named_like_a_public_test_file_is_found(tmp_path):
+    touch(tmp_path, "hw/q1.py", "hw/tests/q1.py")
+
+    found = find_submission(tmp_path, "q1.py")
+
+    assert found.py == tmp_path / "hw" / "q1.py"
+
+
 def test_two_py_files_are_not_called_notebooks(tmp_path):
     touch(tmp_path, "one.py", "two.py")
 
