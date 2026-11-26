@@ -479,8 +479,9 @@ def test_report_says_a_zero_point_manual_question_is_not_graded(tmp_path):
 
     text = report(result)
 
-    assert "- q5 Proof: collected in the PDF, not graded" in text
+    assert "Not in the autograder total:\n- q5 Proof: collected in the PDF, not graded" in text
     assert "graded by hand" not in text
+    assert "graded on Gradescope" not in text
 
 
 def test_report_shows_public_and_hidden_test_counts(tmp_path):

@@ -125,7 +125,7 @@ def report(result: BuildResult) -> str:
     ]
 
     if manual:
-        lines += ["", "Not in the total (graded on Gradescope):"]
+        lines += ["", "Not in the autograder total:"]
         lines += [f"- {line}" for line in manual]
 
     if result.warnings:
