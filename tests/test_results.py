@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from marimo_gradescope.config import AssignmentConfig, Question
-from marimo_gradescope.grader.bundle import GradingBundle, TestCell
-from marimo_gradescope.grader.results import build_results, failure_results, find_submission
-from marimo_gradescope.runner import MAX_BYTES, FailureReason, Outcome
+from marimogs.config import AssignmentConfig, Question
+from marimogs.grader.bundle import GradingBundle, TestCell
+from marimogs.grader.results import build_results, failure_results, find_submission
+from marimogs.runner import MAX_BYTES, FailureReason, Outcome
 
 PUBLIC = ("test_q1_a", "test_q1_b")
 HIDDEN = ("test_q1_secret_x", "test_q1_secret_y")

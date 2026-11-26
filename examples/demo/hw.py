@@ -16,7 +16,7 @@ with app.setup:
 
     import marimo as mo
 
-    import marimo_gradescope as mogs
+    import marimogs as mogs
 
     SCORES = mo.notebook_dir() / "data" / "scores.csv"
 

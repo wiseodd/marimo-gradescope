@@ -8,15 +8,15 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from marimo_gradescope import __version__
-from marimo_gradescope.config import (
+from marimogs import __version__
+from marimogs.config import (
     AssignmentConfig,
     Question,
     read_config,
     read_header,
 )
-from marimo_gradescope.source import SourceError, parse_notebook
-from marimo_gradescope.transform import (
+from marimogs.source import SourceError, parse_notebook
+from marimogs.transform import (
     export_cells,
     pinned_requirement,
     public_test_files,
@@ -46,7 +46,7 @@ import marimo
 app = marimo.App()
 
 with app.setup:
-    import marimo_gradescope as mogs
+    import marimogs as mogs
 
 """
 
@@ -472,7 +472,7 @@ def _():
 
 @app.cell
 def _():
-    from marimo_gradescope import grade as c
+    from marimogs import grade as c
     panel = c(
         "q1",
     )  # comment
@@ -683,7 +683,7 @@ def test_export_cells_appended_before_main_guard():
     assert tail.index("## Submit") < tail.index("export_button = mogs.export_button()")
     assert tail.index("export_button = mogs.export_button()") < tail.index("mogs.export(")
     assert tail.index("mogs.export(") < tail.index('if __name__ == "__main__":')
-    assert "import marimo_gradescope" not in tail
+    assert "import marimogs" not in tail
     assert "    export_button\n" in tail
     assert (
         'mogs.export(export_button, name="solution", manual=["q3"], titles={"q1": "Question 1", '
@@ -729,7 +729,7 @@ def test_export_cells_import_the_package_when_setup_does_not():
 
     assert "mogs.export(export_button" in out
     assert "mogs" in nb.student_names()
-    assert out.count("import marimo_gradescope as mogs") == 1
+    assert out.count("import marimogs as mogs") == 1
 
 
 def test_export_cells_refuse_a_taken_mgs_name():
@@ -737,7 +737,7 @@ def test_export_cells_refuse_a_taken_mgs_name():
         "    import marimo as mo\n", "    import marimo as mo\n    mogs = 1\n"
     )
 
-    with pytest.raises(SourceError, match="marimo_gradescope"):
+    with pytest.raises(SourceError, match="marimogs"):
         student_notebook(src, parse_notebook(src), PURE_CONFIG, REQUIREMENT)
 
 

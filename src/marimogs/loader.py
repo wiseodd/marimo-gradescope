@@ -26,7 +26,7 @@ from typing import cast
 
 import marimo
 
-from marimo_gradescope.runner import cap, exception_summary
+from marimogs.runner import cap, exception_summary
 
 NOT_DEFINED = "it is not defined in your notebook"
 
@@ -98,7 +98,7 @@ def load(path: Path) -> Loaded:
         return _modules[path]
 
     digest = hashlib.sha256(str(path).encode()).hexdigest()[:16]
-    name = f"_marimo_gradescope_submission_{digest}"
+    name = f"_marimogs_submission_{digest}"
 
     try:
         spec = importlib.util.spec_from_file_location(name, path)

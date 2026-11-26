@@ -21,9 +21,9 @@ from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from marimo_gradescope.grader.results import code_block
-from marimo_gradescope.runner import exception_summary
-from marimo_gradescope.source import (
+from marimogs.grader.results import code_block
+from marimogs.runner import exception_summary
+from marimogs.source import (
     Cell,
     CellKind,
     Notebook,

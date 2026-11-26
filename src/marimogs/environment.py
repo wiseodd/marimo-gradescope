@@ -13,10 +13,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
-from marimo_gradescope import __version__
-from marimo_gradescope._env import clean_env
-from marimo_gradescope.config import TOOL, normalized_name
-from marimo_gradescope.requirements import RequirementsError
+from marimogs import __version__
+from marimogs._env import clean_env
+from marimogs.config import TOOL, normalized_name
+from marimogs.requirements import RequirementsError
 
 
 def grading_python(requirements: str, folder: Path, python_version: str) -> Path:

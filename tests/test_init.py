@@ -8,7 +8,7 @@ NEW_MODULES = """\
 import sys
 import sysconfig
 
-import marimo_gradescope
+import marimogs
 
 before = set(sys.modules)
 sysconfig.get_paths()

@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Self
 
-from marimo_gradescope.config import AssignmentConfig, Question
-from marimo_gradescope.source import Notebook, SourceError, cell_names, question_id
+from marimogs.config import AssignmentConfig, Question
+from marimogs.source import Notebook, SourceError, cell_names, question_id
 
 
 class Phase(StrEnum):

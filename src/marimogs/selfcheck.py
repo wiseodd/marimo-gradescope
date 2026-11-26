@@ -1,6 +1,6 @@
 """Run the public tests of a saved notebook and print a summary as JSON.
 
-Usage: `python -m marimo_gradescope.selfcheck NOTEBOOK [FOLDER]`. The export button runs this
+Usage: `python -m marimogs.selfcheck NOTEBOOK [FOLDER]`. The export button runs this
 in a subprocess on the saved file, so the tests see the file on disk, not the kernel. It runs
 from FOLDER, by default the notebook's folder, as marimo does, so relative paths in the
 notebook work.
@@ -23,17 +23,17 @@ import os
 import sys
 from pathlib import Path
 
-from marimo_gradescope.config import AssignmentConfig
-from marimo_gradescope.grader.bundle import Phase, TestCell, bundle_from_notebook
-from marimo_gradescope.loader import bind
-from marimo_gradescope.runner import (
+from marimogs.config import AssignmentConfig
+from marimogs.grader.bundle import Phase, TestCell, bundle_from_notebook
+from marimogs.loader import bind
+from marimogs.runner import (
     FailureReason,
     Outcome,
     cap,
     exception_summary,
     run_test_source,
 )
-from marimo_gradescope.source import (
+from marimogs.source import (
     Notebook,
     SourceError,
     cell_names,
@@ -153,4 +153,4 @@ if __name__ == "__main__":
         case [path, folder]:
             sys.exit(main(path, folder))
         case _:
-            sys.exit("Usage: python -m marimo_gradescope.selfcheck NOTEBOOK [FOLDER]")
+            sys.exit("Usage: python -m marimogs.selfcheck NOTEBOOK [FOLDER]")

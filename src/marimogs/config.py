@@ -18,7 +18,7 @@ from enum import StrEnum
 from pathlib import Path
 
 TOOL = "marimo-gradescope"
-PACKAGE = "marimo_gradescope"
+PACKAGE = "marimogs"
 ASSIGNMENT = "mogs.assignment()"
 MIN_MEMORY_MB = 2048
 

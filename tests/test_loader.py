@@ -9,7 +9,7 @@ from types import FunctionType
 
 import pytest
 
-from marimo_gradescope.loader import Missing, bind, load
+from marimogs.loader import Missing, bind, load
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -478,7 +478,7 @@ def test_missing_repr():
 SCRIPT = """\
 import sys
 from pathlib import Path
-from marimo_gradescope.loader import bind
+from marimogs.loader import bind
 
 found = bind(Path(sys.argv[1]), ["add", "double"])
 print(found["add"](1, 2), found["double"](5))

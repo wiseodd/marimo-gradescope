@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from marimo_gradescope import assignment
+from marimogs import assignment
 
 FIXTURE = Path(__file__).parent / "fixtures" / "solution.py"
 

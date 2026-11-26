@@ -2,9 +2,9 @@ import inspect
 import re
 from pathlib import Path
 
-import marimo_gradescope
+import marimogs
 
-PACKAGE = Path(marimo_gradescope.__file__).parent
+PACKAGE = Path(marimogs.__file__).parent
 PRIVATE_IMPORT = re.compile(r"^\s*(from|import)\s+_pytest\b", re.MULTILINE)
 
 

@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-exec /opt/mgs-venv/bin/python -m marimo_gradescope.grader.main

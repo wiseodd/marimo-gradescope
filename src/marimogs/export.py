@@ -31,9 +31,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from marimo_gradescope._env import grading
-from marimo_gradescope._run import run_capped
-from marimo_gradescope.check import (
+from marimogs._env import grading
+from marimogs._run import run_capped
+from marimogs.check import (
     FAIL,
     LIST_STYLE,
     MARK_STYLE,
@@ -44,10 +44,10 @@ from marimo_gradescope.check import (
     WARN,
     locate,
 )
-from marimo_gradescope.config import default_title
-from marimo_gradescope.pdf import PdfUnavailable, cell_markdown, quiet, render_manual_pdf
-from marimo_gradescope.runner import exception_summary, shorten
-from marimo_gradescope.source import Notebook, SourceError, answer_text, parse_notebook
+from marimogs.config import default_title
+from marimogs.pdf import PdfUnavailable, cell_markdown, quiet, render_manual_pdf
+from marimogs.runner import exception_summary, shorten
+from marimogs.source import Notebook, SourceError, answer_text, parse_notebook
 
 if TYPE_CHECKING:
     import marimo as mo
@@ -321,7 +321,7 @@ def tests_line(notebook: Path, folder: Path, titles: Mapping[str, str] | None = 
     """
 
     result = run_capped(
-        [sys.executable, "-m", "marimo_gradescope.selfcheck", str(notebook), str(folder)],
+        [sys.executable, "-m", "marimogs.selfcheck", str(notebook), str(folder)],
         cwd=folder,
         timeout=SELFCHECK_TIMEOUT,
     )

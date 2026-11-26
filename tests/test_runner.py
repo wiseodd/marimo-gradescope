@@ -7,8 +7,8 @@ from collections.abc import Callable
 
 import pytest
 
-from marimo_gradescope._assertrewrite import compile_tests
-from marimo_gradescope.runner import (
+from marimogs._assertrewrite import compile_tests
+from marimogs.runner import (
     MAX_BYTES,
     MAX_LINES,
     FailureReason,
@@ -79,8 +79,8 @@ def test_rewritten_assert_shows_values():
 def test_rewritten_assert_outside_pytest():
     script = textwrap.dedent(
         """
-        from marimo_gradescope._assertrewrite import compile_tests
-        from marimo_gradescope.runner import run_test
+        from marimogs._assertrewrite import compile_tests
+        from marimogs.runner import run_test
 
         ns = {}
         exec(compile_tests("def test_sum():\\n    assert sum([1, 2, 3]) == 7\\n", "<t>"), ns)

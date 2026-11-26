@@ -15,7 +15,7 @@ __generated_with = "0.25.2"
 app = marimo.App()
 
 with app.setup:
-    import marimo_gradescope as mogs
+    import marimogs as mogs
 
 
 @app.function

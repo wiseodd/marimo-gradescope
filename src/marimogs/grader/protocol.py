@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
-from marimo_gradescope.grader.bundle import GradingBundle
-from marimo_gradescope.runner import Outcome
+from marimogs.grader.bundle import GradingBundle
+from marimogs.runner import Outcome
 
 
 class ProtocolError(Exception):

@@ -1,6 +1,6 @@
 """Gradescope entry point: grade `/autograder/submission` and write `results.json`.
 
-`run_autograder` calls `python -m marimo_gradescope.grader.main`. It always writes
+`run_autograder` calls `python -m marimogs.grader.main`. It always writes
 `results.json` and exits with code 0, since Gradescope treats any other code as a crash and
 shows no results. Logs go to stderr, which students do not see.
 """
@@ -13,17 +13,17 @@ import shutil
 import sys
 from pathlib import Path
 
-from marimo_gradescope.grader._user import STUDENT_USER
-from marimo_gradescope.grader.bundle import GradingBundle
-from marimo_gradescope.grader.results import (
+from marimogs.grader._user import STUDENT_USER
+from marimogs.grader.bundle import GradingBundle
+from marimogs.grader.results import (
     Results,
     build_results,
     failure_results,
     find_submission,
     inline_code,
 )
-from marimo_gradescope.grader.sandbox import grade
-from marimo_gradescope.runner import FailureReason, Outcome
+from marimogs.grader.sandbox import grade
+from marimogs.runner import FailureReason, Outcome
 
 AUTOGRADER = Path("/autograder")
 WORKDIR = Path("/tmp/mgs")

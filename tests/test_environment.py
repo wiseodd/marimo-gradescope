@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from marimo_gradescope import __version__, environment
-from marimo_gradescope.environment import grading_python, tool_install_args
-from marimo_gradescope.requirements import RequirementsError
+from marimogs import __version__, environment
+from marimogs.environment import grading_python, tool_install_args
+from marimogs.requirements import RequirementsError
 
 
 def direct_url(**fields: object) -> str:
@@ -91,8 +91,8 @@ def test_environment_has_the_requirements_and_this_package(tmp_path):
     requirements = "tabulate==0.9.0\nmarimo-gradescope==0.0.0\n"
     python = grading_python(requirements, tmp_path / "env", "3.13")
     code = (
-        "import sys, tabulate, marimo_gradescope; "
-        "print(sys.version_info[:2], tabulate.__version__, marimo_gradescope.__version__)"
+        "import sys, tabulate, marimogs; "
+        "print(sys.version_info[:2], tabulate.__version__, marimogs.__version__)"
     )
 
     result = subprocess.run([python, "-c", code], capture_output=True, text=True, check=True)

@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import IO
 
-from marimo_gradescope._env import grading_env
+from marimogs._env import grading_env
 
 
 def run_capped(

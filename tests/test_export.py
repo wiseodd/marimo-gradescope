@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-import marimo_gradescope
-from marimo_gradescope._run import run_capped
-from marimo_gradescope.config import read_config
-from marimo_gradescope.export import (
+import marimogs
+from marimogs._run import run_capped
+from marimogs.config import read_config
+from marimogs.export import (
     Download,
     Line,
     Mark,
@@ -26,14 +26,14 @@ from marimo_gradescope.export import (
     package,
     panel,
 )
-from marimo_gradescope.pdf import PdfUnavailable
-from marimo_gradescope.source import parse_notebook
-from marimo_gradescope.transform import public_test_files, student_notebook
+from marimogs.pdf import PdfUnavailable
+from marimogs.source import parse_notebook
+from marimogs.transform import public_test_files, student_notebook
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SOLUTION = FIXTURES / "solution.py"
 # The package's `export` attribute is the function, so take the module from `sys.modules`.
-export_module = importlib.import_module("marimo_gradescope.export")
+export_module = importlib.import_module("marimogs.export")
 TITLES = {"q1": "Question 1", "q2": "Vowels", "q3": "Question 3"}
 ANSWER = "Because the order of the terms does not change the sum."
 # The student copy's answer cell is the source's, unchanged: its text is the placeholder.
@@ -114,8 +114,8 @@ def no_pdf(monkeypatch):
 
 
 def test_exported_from_package():
-    assert marimo_gradescope.export is export
-    assert marimo_gradescope.export_button is export_button
+    assert marimogs.export is export
+    assert marimogs.export_button is export_button
 
 
 def test_export_button_label():

@@ -89,7 +89,7 @@ The notebook's header lists the packages it needs:
 The source notebook is a regular marimo notebook with a few conventions.
 
 Put all imports in the setup cell (`with app.setup:`).
-This includes `import marimo_gradescope as mogs` and any library the tests need.
+This includes `import marimogs as mogs` and any library the tests need.
 
 ```python
 with app.setup:
@@ -98,7 +98,7 @@ with app.setup:
     import marimo as mo
     import numpy as np
 
-    import marimo_gradescope as mogs
+    import marimogs as mogs
 ```
 
 Write each function that the students have to fill in as an `@app.function` cell.

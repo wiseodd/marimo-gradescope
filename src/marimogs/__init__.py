@@ -3,9 +3,9 @@
 import sysconfig
 from importlib.metadata import version
 
-from marimo_gradescope.assignment import assignment
-from marimo_gradescope.check import grade
-from marimo_gradescope.export import export, export_button
+from marimogs.assignment import assignment
+from marimogs.check import grade
+from marimogs.export import export, export_button
 
 __all__ = ["assignment", "export", "export_button", "grade"]
 __version__ = version("marimo-gradescope")

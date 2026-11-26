@@ -25,4 +25,4 @@ chmod -R a+rX /opt/mgs-python /opt/mgs-venv
 chmod -R go-rwx /autograder/source
 
 # Fail the build here, not at grading time, if the student user cannot import the grader.
-runuser -u ${user} -- /opt/mgs-venv/bin/python -c "import marimo_gradescope, marimo"
+runuser -u ${user} -- /opt/mgs-venv/bin/python -c "import marimogs, marimo"

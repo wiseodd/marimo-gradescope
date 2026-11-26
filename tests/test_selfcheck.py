@@ -4,10 +4,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from marimo_gradescope import selfcheck
-from marimo_gradescope.config import read_config
-from marimo_gradescope.source import parse_notebook
-from marimo_gradescope.transform import public_test_files, student_notebook
+from marimogs import selfcheck
+from marimogs.config import read_config
+from marimogs.source import parse_notebook
+from marimogs.transform import public_test_files, student_notebook
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SOLUTION = FIXTURES / "solution.py"
@@ -35,7 +35,7 @@ def write_student(folder: Path, path: Path = SOLUTION, text: str | None = None) 
 def run(notebook: Path, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     env = {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
     return subprocess.run(
-        [sys.executable, "-m", "marimo_gradescope.selfcheck", str(notebook)],
+        [sys.executable, "-m", "marimogs.selfcheck", str(notebook)],
         capture_output=True,
         text=True,
         check=False,
@@ -168,7 +168,7 @@ def test_folder_argument_sets_the_working_directory(tmp_path):
     env = {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
 
     result = subprocess.run(
-        [sys.executable, "-m", "marimo_gradescope.selfcheck", str(notebook), str(data)],
+        [sys.executable, "-m", "marimogs.selfcheck", str(notebook), str(data)],
         capture_output=True,
         text=True,
         check=False,

@@ -29,9 +29,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 
-from marimo_gradescope import __version__
-from marimo_gradescope._env import clean_env
-from marimo_gradescope.config import (
+from marimogs import __version__
+from marimogs._env import clean_env
+from marimogs.config import (
     ASSIGNMENT,
     TOOL,
     Api,
@@ -40,15 +40,15 @@ from marimo_gradescope.config import (
     api_calls,
     read_config,
 )
-from marimo_gradescope.environment import grading_python
-from marimo_gradescope.grader.bundle import GradingBundle, bundle_from_notebook
-from marimo_gradescope.grader.datafiles import data_files as shared_data_files
-from marimo_gradescope.grader.results import Results, build_results
-from marimo_gradescope.grader.templates import run_autograder_script, setup_script
-from marimo_gradescope.requirements import gradescope_requirements
-from marimo_gradescope.runner import FailureReason, Outcome
-from marimo_gradescope.source import Notebook, parse_notebook, question_id, validate
-from marimo_gradescope.transform import (
+from marimogs.environment import grading_python
+from marimogs.grader.bundle import GradingBundle, bundle_from_notebook
+from marimogs.grader.datafiles import data_files as shared_data_files
+from marimogs.grader.results import Results, build_results
+from marimogs.grader.templates import run_autograder_script, setup_script
+from marimogs.requirements import gradescope_requirements
+from marimogs.runner import FailureReason, Outcome
+from marimogs.source import Notebook, parse_notebook, question_id, validate
+from marimogs.transform import (
     TESTS_FOLDER,
     pinned_requirement,
     public_test_files,
@@ -405,7 +405,7 @@ def grade_locally(
     """
 
     # Imported here: the sandbox needs POSIX, and the CLI must start on any platform.
-    from marimo_gradescope.grader.sandbox import grade
+    from marimogs.grader.sandbox import grade
 
     workdir.mkdir()
 
