@@ -200,6 +200,14 @@ def test_two_py_files_are_not_called_notebooks(tmp_path):
     assert "No `hw.py`" in error
 
 
+def test_markdown_answers_are_named_after_the_assignment(tmp_path):
+    touch(tmp_path, "hw2.py", "homework2_answers.md")
+
+    assert find_submission(tmp_path, "hw2.py", "homework2").answers == (
+        tmp_path / "homework2_answers.md"
+    )
+
+
 def test_no_py_file(tmp_path):
     touch(tmp_path, "notes.txt")
 

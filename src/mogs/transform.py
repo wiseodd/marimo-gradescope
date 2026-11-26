@@ -11,7 +11,7 @@ import tokenize
 from collections.abc import Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from enum import StrEnum
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 from mogs import __version__
 from mogs.config import (
@@ -309,12 +309,11 @@ def export_cells(
         marimo: Which cell has `import marimo as mo`; `MISSING` adds a cell that does.
     """
 
-    stem = Path(cfg.notebook).stem
     manual = [question.id for question in cfg.questions.values() if question.manual]
     titles = {qid: question.title for qid, question in cfg.questions.items()}
     name = alias or DEFAULT_ALIAS
     call = (
-        f"{name}.export({EXPORT_BUTTON}, name={python_literal(stem)}, "
+        f"{name}.export({EXPORT_BUTTON}, name={python_literal(cfg.name)}, "
         f"manual={python_literal(manual)}, titles={python_literal(titles)}, "
         f"placeholders={python_literal(dict(placeholders or {}))})"
     )

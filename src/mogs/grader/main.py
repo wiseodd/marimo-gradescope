@@ -68,7 +68,7 @@ def run(bundle: GradingBundle, source: Path, submission: Path, workdir: Path) ->
     """
 
     config = bundle.config
-    found = find_submission(submission, config.notebook)
+    found = find_submission(submission, config.notebook, config.name)
     notices = [] if found.error is None else [found.error]
 
     if any(question.manual for question in config.questions.values()):

@@ -62,17 +62,19 @@ class Submission:
     error: str | None
 
 
-def find_submission(sub_dir: Path, notebook: str) -> Submission:
+def find_submission(sub_dir: Path, notebook: str, name: str | None = None) -> Submission:
     """Find the notebook and the written answers anywhere under `sub_dir`.
 
     Skips `__MACOSX`, `__pycache__`, dot files and dot folders, and never follows or picks a
-    symlink. A file named `notebook` wins; otherwise the only `.py` file is taken. Any PDF
-    counts as the written answers. Of Markdown files, only the export's fallback
-    `<notebook stem>_answers.md` (any case) does, so a stray `README.md` does not.
+    symlink. A file named `notebook` wins; otherwise the only `.py` file outside a `tests/`
+    folder is taken. Any PDF counts as the written answers. Of Markdown files, only the
+    export's fallback `<name>_answers.md` (any case) does, so a stray `README.md` does not.
 
     Args:
         sub_dir: The unpacked upload.
         notebook: File name of the student notebook.
+        name: Assignment name, which the export names its files after. Defaults to the
+            notebook's stem.
 
     Returns:
         The files found, with an error message when the notebook is missing or ambiguous.
@@ -84,7 +86,7 @@ def find_submission(sub_dir: Path, notebook: str) -> Submission:
     # The public tests the student copy ships in `tests/`.
     others = [path for path in scripts if path.parent.name != TESTS_FOLDER]
     pdfs = [path for path in files if path.suffix.lower() == ".pdf"]
-    fallback = f"{Path(notebook).stem}_answers.md".casefold()
+    fallback = f"{name or Path(notebook).stem}_answers.md".casefold()
     markdown = [path for path in files if path.name.casefold() == fallback]
     answers = next(iter(pdfs or markdown), None)
     wanted = inline_code(notebook)

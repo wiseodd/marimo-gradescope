@@ -812,11 +812,17 @@ def test_export_cells_appended_before_main_guard():
     assert "import mogs" not in tail
     assert "    export_button\n" in tail
     assert (
-        'mogs.export(export_button, name="solution", manual=["q3"], titles={"q1": "Question 1", '
+        'mogs.export(export_button, name="Fixture", manual=["q3"], titles={"q1": "Question 1", '
         '"q2": "Vowels", "q3": "Question 3"}, '
         'placeholders={"answer_q3": "Because the order of the terms does not change the sum."})'
         in tail
     )
+
+
+def test_export_files_are_named_after_the_assignment():
+    cfg = AssignmentConfig("HW2", "hw2.py", {"q1": Question("q1", "Q1", 1)})
+
+    assert 'name="HW2"' in export_cells(cfg, None)
 
 
 def test_export_cells_parse_as_cells():
@@ -990,7 +996,7 @@ def test_export_cells_quote_titles_safely():
 
 def test_export_call_round_trips_non_bmp_text():
     config = AssignmentConfig(
-        name="nb",
+        name="nb 🎉",
         notebook="hw 🎉.py",
         questions={"q1": Question("q1", "Bonus 🎉", 1, manual=True)},
     )
@@ -1005,7 +1011,7 @@ def test_export_call_round_trips_non_bmp_text():
     values = {k.arg: ast.literal_eval(k.value) for k in call.keywords}
 
     assert values == {
-        "name": "hw 🎉",
+        "name": "nb 🎉",
         "manual": ["q1"],
         "titles": {"q1": "Bonus 🎉"},
         "placeholders": {"q1": "*Answer 🎉 here.*"},
