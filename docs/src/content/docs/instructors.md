@@ -223,7 +223,7 @@ def _():
 ```
 
 The build removes this cell from the student notebook, and only Gradescope runs it.
-A hidden cell can also hold data or helpers that the hidden tests need.
+Data or helpers that the hidden tests need go in a hidden cell of their own: `pytest notebook.py` skips the tests in a cell that holds anything else.
 
 The question ends with a grade cell, which also sets its points:
 

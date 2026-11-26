@@ -1497,6 +1497,21 @@ def test_hidden_on_the_first_line_does_not_warn(cell):
     assert source_warnings(parse_notebook(nb(cell))) == []
 
 
+def test_tests_next_to_other_code_warn_that_pytest_skips_them():
+    cell = hidden_cell("expected = 7\n\ndef test_q1_h():\n    assert expected == 7")
+
+    [warning] = source_warnings(parse_notebook(nb(PUBLIC + CHECK + cell)))
+
+    assert "test_q1_h" in warning
+    assert "pytest" in warning
+
+
+def test_cell_of_only_tests_does_not_warn():
+    cell = hidden_cell("def test_q1_h():\n    assert True\n\nclass TestMore:\n    pass")
+
+    assert source_warnings(parse_notebook(nb(PUBLIC + CHECK + cell))) == []
+
+
 @pytest.mark.parametrize(
     "statement", ["import pytest", "import pytest as pt", "from pytest import approx"]
 )

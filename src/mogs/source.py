@@ -692,13 +692,41 @@ def _returned_names(node: ast.stmt) -> set[str]:
 def source_warnings(nb: Notebook) -> list[str]:
     """Things in the notebook that build but may not do what the instructor meant."""
 
-    return [
+    late = [
         f"line {cell.late_hidden}: `{HIDDEN}` hides the whole cell at line {cell.start}, not "
         "only the code after it. Move it to the cell's first line, or move the hidden tests "
         "to a cell of their own."
         for cell in nb.cells
         if cell.late_hidden is not None
     ]
+    uncollected = [
+        f"line {cell.start}: `pytest` on the notebook skips {', '.join(cell.tests)}, since "
+        "marimo collects only cells that hold nothing but tests. Gradescope still runs them. "
+        "Move the other code to a cell of its own."
+        for cell in nb.cells
+        if cell.kind is CellKind.CELL and cell.tests and not _only_tests(nb, cell)
+    ]
+
+    return late + uncollected
+
+
+def _only_tests(nb: Notebook, cell: Cell) -> bool:
+    """Whether marimo's pytest plugin collects the cell: its body defines only `test*` names.
+
+    Mirrors `contains_only_tests` in marimo's compiler, without pytest fixtures, which the
+    grader doesn't support.
+    """
+
+    for node in ast.parse(nb.cell_body_source(cell)).body:
+        match node:
+            case ast.FunctionDef() | ast.AsyncFunctionDef() | ast.ClassDef() if (
+                node.name.lower().startswith("test")
+            ):
+                continue
+            case _:
+                return False
+
+    return True
 
 
 def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
