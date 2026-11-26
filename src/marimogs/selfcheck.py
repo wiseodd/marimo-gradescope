@@ -12,8 +12,10 @@ hold its public tests (`test_file`), and those run the same way. A file that can
 counts as one failed test named after it. There is no per-test timer here; the caller caps
 the whole run.
 
-The last line of stdout is the JSON summary, `{qid: {"passed": k, "total": n, "failed":
-[names]}}`. Prints from the notebook go to stderr. On a notebook that cannot be read or
+The last line of stdout is the JSON summary, `{"questions": {qid: {"passed": k, "total": n,
+"failed": [names]}}, "unavailable": {name: reason}}`. `unavailable` holds each name the tests
+use that the notebook could not provide, such as a name lost to a failed notebook run,
+with the reason. Prints from the notebook go to stderr. On a notebook that cannot be read or
 parsed, the exit status is 1 and stderr says why.
 """
 
@@ -22,10 +24,11 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import TypedDict
 
 from marimogs.config import AssignmentConfig
 from marimogs.grader.bundle import Phase, TestCell, bundle_from_notebook
-from marimogs.loader import bind
+from marimogs.loader import bind, unavailable
 from marimogs.runner import (
     FailureReason,
     Outcome,
@@ -41,7 +44,12 @@ from marimogs.source import (
     parse_notebook,
 )
 
-type Summary = dict[str, dict[str, object]]
+
+class Summary(TypedDict):
+    """The JSON summary: results per question, and the reason for each unavailable name."""
+
+    questions: dict[str, dict[str, object]]
+    unavailable: dict[str, str]
 
 
 def public_results(path: Path) -> Summary:
@@ -79,6 +87,7 @@ def public_results(path: Path) -> Summary:
 
     base: dict[str, object] = {"__name__": "__mgs_selfcheck__"}
     setup_error = None
+    missing: dict[str, str] = {}
 
     try:
         exec(compile(bundle.setup_code, "<mgs-setup>", "exec", dont_inherit=True), base)
@@ -87,7 +96,13 @@ def public_results(path: Path) -> Summary:
 
     if setup_error is None:
         uses = sorted({name for cell, _ in cells for name in cell.uses})
-        base.update(bind(path, uses))
+        bound = bind(path, uses)
+        base.update(bound)
+        missing = {
+            name: reason
+            for name, value in bound.items()
+            if (reason := unavailable(value)) is not None
+        }
 
     for cell, label in cells:
         results = outcomes.setdefault(cell.qid, [])
@@ -99,7 +114,7 @@ def public_results(path: Path) -> Summary:
 
         results += run_test_source(cell.source, label, cell.tests, dict(base))
 
-    return {
+    questions: dict[str, dict[str, object]] = {
         qid: {
             "passed": sum(outcome.passed for outcome in results),
             "total": len(results),
@@ -107,6 +122,8 @@ def public_results(path: Path) -> Summary:
         }
         for qid, results in outcomes.items()
     }
+
+    return {"questions": questions, "unavailable": missing}
 
 
 def test_files(nb: Notebook) -> list[tuple[str, str]]:

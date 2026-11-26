@@ -282,7 +282,7 @@ def package(
         snapshot.write_bytes(data)
 
         report("Running the public tests…")
-        lines.append(tests_line(notebook, notebook.parent, titles))
+        lines += test_lines(notebook, notebook.parent, titles)
 
         if manual:
             nb = _parse(data)
@@ -310,11 +310,14 @@ def package(
     return Package(tuple(lines), filename, build_zip(entries), note)
 
 
-def tests_line(notebook: Path, folder: Path, titles: Mapping[str, str] | None = None) -> Line:
+def test_lines(
+    notebook: Path, folder: Path, titles: Mapping[str, str] | None = None
+) -> tuple[Line, ...]:
     """Run the public tests of a notebook file in a subprocess and summarize them.
 
-    The line gives the total, with one line per question below it. The check under each
-    question names the failing tests.
+    The first line gives the total, with one line per question below it. The check under each
+    question names the failing tests. A warning follows for each name the tests use that the
+    notebook could not provide, such as a name lost to a failed notebook run, with why.
 
     Args:
         notebook: The notebook file.
@@ -329,28 +332,53 @@ def tests_line(notebook: Path, folder: Path, titles: Mapping[str, str] | None = 
     )
 
     if result is None:
-        return Line(Mark.WARN, f"Public tests: the check timed out after {SELFCHECK_TIMEOUT:g} s")
+        return (
+            Line(Mark.WARN, f"Public tests: the check timed out after {SELFCHECK_TIMEOUT:g} s"),
+        )
 
     summary = _summary(result.stdout) if result.returncode == 0 else None
 
     if summary is None:
         errors = [line.strip() for line in result.stderr.splitlines() if line.strip()]
         reason = shorten(errors[-1]) if errors else f"exit status {result.returncode}"
-        return Line(Mark.WARN, f"Public tests could not run: {reason}")
+        return (Line(Mark.WARN, f"Public tests could not run: {reason}"),)
 
-    passed = sum(passed for passed, _, _ in summary.values())
-    total = sum(total for _, total, _ in summary.values())
+    questions, missing = summary
+    passed = sum(passed for passed, _, _ in questions.values())
+    total = sum(total for _, total, _ in questions.values())
     items = tuple(
         Line(
             Mark.OK if done == count else Mark.FAIL,
             f"{(titles or {}).get(qid) or default_title(qid)}: {done}/{count} passed",
         )
-        for qid, (done, count, _) in summary.items()
+        for qid, (done, count, _) in questions.items()
+    )
+    mark = Mark.OK if passed == total else Mark.WARN
+
+    return (
+        Line(mark, f"Public tests: {passed}/{total} passed", items),
+        *unavailable_lines(missing),
     )
 
-    return Line(
-        Mark.OK if passed == total else Mark.WARN, f"Public tests: {passed}/{total} passed", items
-    )
+
+def unavailable_lines(missing: Mapping[str, str]) -> tuple[Line, ...]:
+    """One warning per reason, naming the names it made unavailable, in name order."""
+
+    names_by_reason: dict[str, list[str]] = {}
+
+    for name in sorted(missing):
+        names_by_reason.setdefault(missing[name], []).append(name)
+
+    lines = []
+
+    for reason, names in names_by_reason.items():
+        quoted = [f"`{name}`" for name in names]
+        listed = quoted[0] if len(quoted) == 1 else f"{', '.join(quoted[:-1])} and {quoted[-1]}"
+        verb, pronoun = ("is", "it") if len(names) == 1 else ("are", "them")
+        text = f"{listed} {verb} unavailable: {reason}."
+        lines.append(Line(Mark.WARN, f"{text} Tests that use {pronoun} fail, on Gradescope too."))
+
+    return tuple(lines)
 
 
 def unanswered_lines(
@@ -479,8 +507,15 @@ def _line(line: Line, style: str) -> str:
     return f'<li style="{style}">{mark} {html.escape(line.text)}{sublist}</li>'
 
 
-def _summary(stdout: str) -> dict[str, tuple[int, int, list[str]]] | None:
-    """The selfcheck summary: the last stdout line that is a valid one, else `None`."""
+type Summary = tuple[dict[str, tuple[int, int, list[str]]], dict[str, str]]
+
+
+def _summary(stdout: str) -> Summary | None:
+    """The selfcheck summary: the last stdout line that is a valid one, else `None`.
+
+    Returns:
+        `(passed, total, failed names)` per question, and the reason per unavailable name.
+    """
 
     for line in reversed(stdout.splitlines()):
         try:
@@ -489,16 +524,18 @@ def _summary(stdout: str) -> dict[str, tuple[int, int, list[str]]] | None:
             continue
 
         match data:
-            case dict():
-                summary = {}
-                for qid, entry in data.items():
+            case {"questions": dict() as entries, "unavailable": dict() as missing}:
+                questions = {}
+
+                for qid, entry in entries.items():
                     match entry:
                         case {"passed": int() as passed, "total": int() as total, "failed": list()}:
                             names = [str(name) for name in entry["failed"]]
-                            summary[str(qid)] = (passed, total, names)
+                            questions[str(qid)] = (passed, total, names)
                         case _:
                             return None
-                return summary
+
+                return questions, {str(name): str(reason) for name, reason in missing.items()}
 
     return None
 

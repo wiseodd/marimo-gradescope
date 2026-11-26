@@ -50,10 +50,11 @@ def test_source_passes_public_tests_only(tmp_path):
 
     results = selfcheck.public_results(notebook)
 
-    assert results == {
+    assert results["questions"] == {
         "q1": {"passed": 2, "total": 2, "failed": []},
         "q2": {"passed": 1, "total": 1, "failed": []},
     }
+    assert results["unavailable"] == {}
 
 
 def test_student_copy_fails_its_public_tests(tmp_path):
@@ -61,7 +62,7 @@ def test_student_copy_fails_its_public_tests(tmp_path):
 
     results = selfcheck.public_results(notebook)
 
-    assert results == {
+    assert results["questions"] == {
         "q1": {"passed": 0, "total": 2, "failed": ["test_q1_add", "test_q1_add_negative"]},
         "q2": {"passed": 0, "total": 1, "failed": ["test_q2_count"]},
     }
@@ -80,7 +81,7 @@ def test_solved_student_copy_passes_its_test_files(tmp_path):
 
     results = selfcheck.public_results(notebook)
 
-    assert results == {
+    assert results["questions"] == {
         "q1": {"passed": 2, "total": 2, "failed": []},
         "q2": {"passed": 1, "total": 1, "failed": []},
     }
@@ -92,8 +93,8 @@ def test_missing_test_file_fails_its_question(tmp_path):
 
     results = selfcheck.public_results(notebook)
 
-    assert results["q1"]["total"] == 2
-    assert results["q2"] == {"passed": 0, "total": 1, "failed": ["tests/q2.py"]}
+    assert results["questions"]["q1"]["total"] == 2
+    assert results["questions"]["q2"] == {"passed": 0, "total": 1, "failed": ["tests/q2.py"]}
 
 
 def test_module_prints_json_last_despite_student_prints(tmp_path):
@@ -107,7 +108,7 @@ def test_module_prints_json_last_despite_student_prints(tmp_path):
     last = result.stdout.strip().splitlines()[-1]
 
     assert result.returncode == 0, result.stderr
-    assert json.loads(last)["q1"] == {"passed": 2, "total": 2, "failed": []}
+    assert json.loads(last)["questions"]["q1"] == {"passed": 2, "total": 2, "failed": []}
     assert "{noise}" not in result.stdout
 
 
@@ -127,7 +128,7 @@ def test_reads_files_relative_to_the_notebook(tmp_path):
     for cwd in (tmp_path, elsewhere):
         result = run(notebook, cwd)
 
-        assert json.loads(result.stdout)["q2"]["passed"] == 2, result.stderr
+        assert json.loads(result.stdout)["questions"]["q2"]["passed"] == 2, result.stderr
 
 
 def test_unparsable_notebook_exits_with_message(tmp_path):
@@ -175,7 +176,7 @@ def test_folder_argument_sets_the_working_directory(tmp_path):
         env=env,
     )
 
-    assert json.loads(result.stdout)["q2"]["passed"] == 2, result.stderr
+    assert json.loads(result.stdout)["questions"]["q2"]["passed"] == 2, result.stderr
 
 
 def test_test_file_with_a_scope_error_fails_only_its_question(tmp_path):
@@ -186,5 +187,20 @@ def test_test_file_with_a_scope_error_fails_only_its_question(tmp_path):
 
     results = selfcheck.public_results(notebook)
 
-    assert results["q1"]["total"] == 2
-    assert results["q2"] == {"passed": 0, "total": 1, "failed": ["tests/q2.py"]}
+    assert results["questions"]["q1"]["total"] == 2
+    assert results["questions"]["q2"] == {"passed": 0, "total": 1, "failed": ["tests/q2.py"]}
+
+
+def test_names_a_failed_notebook_run_with_the_names_it_cost(tmp_path):
+    # Issue #26: `n` is right, but an ungraded cell calling the blank `double` raises.
+    source = FIXTURES / "variable_question.py"
+    notebook = write_student(tmp_path, source, student_copy(source).replace("n = ...", "n = 3"))
+    line = notebook.read_text(encoding="utf-8").splitlines().index("    demo = double(4) + 1") + 1
+
+    results = selfcheck.public_results(notebook)
+
+    assert results["questions"]["q1"] == {"passed": 0, "total": 1, "failed": ["test_q1_n"]}
+    assert results["unavailable"] == {
+        "n": f"running your notebook failed: line {line} raised TypeError: "
+        "unsupported operand type(s) for +: 'ellipsis' and 'int'"
+    }
