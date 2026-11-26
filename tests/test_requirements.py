@@ -16,13 +16,23 @@ TOOL = "marimo-gradescope==0.1.0"
 CODE = """
 import marimo
 
+import marimo_gradescope as mogs
+
 app = marimo.App()
+
+mogs.assignment()
+mogs.grade("q1", points=25)
 """
 
 
-def notebook(header: str) -> str:
+def notebook(header: str, settings: str = "") -> str:
     lines = [f"# {line}" if line else "#" for line in header.strip("\n").splitlines()]
-    return "# /// script\n" + "\n".join(lines) + "\n# ///\n" + CODE
+    code = CODE.replace("mogs.assignment()", f"mogs.assignment({settings})")
+    return "# /// script\n" + "\n".join(lines) + "\n# ///\n" + code
+
+
+def with_python(src: str, python: str) -> str:
+    return src.replace("mogs.assignment(", f'mogs.assignment(python="{python}", ', 1)
 
 
 TORCH = notebook(
@@ -37,9 +47,6 @@ torch = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
-
-[tool.marimo-gradescope]
-questions = { q1 = 25 }
 """
 )
 
@@ -105,10 +112,7 @@ def test_header_requirements_install(tmp_path):
 
 @pytest.mark.network
 def test_header_without_indexes(tmp_path):
-    src = notebook(
-        'dependencies = ["marimo-gradescope", "pytest"]\n\n'
-        "[tool.marimo-gradescope]\nquestions = { q1 = 1 }"
-    )
+    src = notebook('dependencies = ["marimo-gradescope", "pytest"]\n\n')
 
     text, _ = gradescope_requirements(src, config(src, tmp_path), TOOL)
 
@@ -122,8 +126,7 @@ def test_header_without_indexes(tmp_path):
 def test_default_index_becomes_index_url(tmp_path):
     src = notebook(
         'dependencies = ["pytest"]\n\n[[tool.uv.index]]\nname = "main"\n'
-        'url = "https://pypi.org/simple"\ndefault = true\n\n'
-        "[tool.marimo-gradescope]\nquestions = { q1 = 1 }"
+        'url = "https://pypi.org/simple"\ndefault = true\n'
     )
 
     text, _ = gradescope_requirements(src, config(src, tmp_path), TOOL)
@@ -143,18 +146,14 @@ def test_default_index_becomes_index_url(tmp_path):
     ],
 )
 def test_unsupported_index_config(uv, tmp_path):
-    src = notebook(
-        f'dependencies = ["pytest"]\n\n{uv}\n\n[tool.marimo-gradescope]\nquestions = {{ q1 = 1 }}'
-    )
+    src = notebook(f'dependencies = ["pytest"]\n\n{uv}\n')
 
     with pytest.raises(ConfigError, match="tool.uv"):
         gradescope_requirements(src, config(src, tmp_path), TOOL)
 
 
 def test_uv_export_error_shows_stderr(tmp_path):
-    src = notebook(
-        'dependencies = ["numpy >> 1"]\n\n[tool.marimo-gradescope]\nquestions = { q1 = 1 }'
-    )
+    src = notebook('dependencies = ["numpy >> 1"]\n')
 
     with pytest.raises(RequirementsError, match="uv export") as error:
         gradescope_requirements(src, config(src, tmp_path), TOOL)
@@ -168,11 +167,8 @@ def test_uv_export_error_shows_stderr(tmp_path):
 OVERRIDE = notebook(
     """
 dependencies = ["marimo-gradescope", "torch"]
-
-[tool.marimo-gradescope]
-questions = { q1 = 25 }
-requirements = "env/requirements.txt"
-"""
+""",
+    'requirements="env/requirements.txt"',
 )
 
 
@@ -290,7 +286,7 @@ def test_override_file_keeps_urls(tmp_path):
 )
 def test_python_outside_requires_python_warns(requires, python, warns, tmp_path):
     src = OVERRIDE.replace("# dependencies", f'# requires-python = "{requires}"\n# dependencies')
-    src = src.replace("# questions", f'# python = "{python}"\n# questions')
+    src = with_python(src, python)
     (tmp_path / "env").mkdir()
     (tmp_path / "env" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
 
@@ -358,7 +354,7 @@ def bash_check(script: str, tmp_path: Path) -> None:
 
 
 def test_setup_script(tmp_path):
-    cfg = config(OVERRIDE.replace("# questions", '# python = "3.12"\n# questions'), tmp_path)
+    cfg = config(with_python(OVERRIDE, "3.12"), tmp_path)
     assert cfg.python == "3.12"
 
     script = setup_script(cfg)
@@ -409,7 +405,7 @@ def test_templates_do_not_import_the_sandbox():
 
 @pytest.mark.parametrize("python", ["3.13; rm -rf /", "latest", "3", ""])
 def test_setup_script_rejects_bad_python(python, tmp_path):
-    cfg = config(OVERRIDE.replace("# questions", f'# python = "{python}"\n# questions'), tmp_path)
+    cfg = config(with_python(OVERRIDE, python), tmp_path)
 
     with pytest.raises(ConfigError, match="python"):
         setup_script(cfg)

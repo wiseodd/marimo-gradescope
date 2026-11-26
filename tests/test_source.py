@@ -20,8 +20,8 @@ HEADER = """\
 # /// script
 # dependencies = ["marimo"]
 #
-# [tool.marimo-gradescope]
-# questions = { q1 = 1 }
+# [tool.uv]
+# exclude-newer = "2026-01-01T00:00:00Z"
 #
 # [tool.marimo.runtime]
 # reactive_tests = false
@@ -32,7 +32,7 @@ import marimo
 app = marimo.App()
 
 with app.setup:
-    import marimo_gradescope as mgs
+    import marimo_gradescope as mogs
 
 """
 
@@ -69,7 +69,7 @@ def _():
 CHECK = """
 @app.cell
 def _():
-    mgs.check("q1")
+    mogs.grade("q1")
     return
 """
 
@@ -88,7 +88,7 @@ def test_parse_fixture_cells():
         "add",
         "count_vowels",
     ]
-    assert [cell.check_qid for cell in notebook.cells if cell.check_qid] == ["q1", "q2"]
+    assert [cell.grade_qid for cell in notebook.cells if cell.grade_qid] == ["q1", "q2", "q3"]
 
 
 def test_parse_cell_lines_include_decorators():
@@ -191,26 +191,26 @@ def _():
 
 
 def test_parse_check_with_alias():
-    src = nb(CHECK.replace("mgs.", "g."), header=HEADER.replace("as mgs", "as g"))
+    src = nb(CHECK.replace("mogs.", "g."), header=HEADER.replace("as mogs", "as g"))
 
-    assert parse_notebook(src).cells[-1].check_qid == "q1"
+    assert parse_notebook(src).cells[-1].grade_qid == "q1"
 
 
 def test_parse_check_imported_function():
     src = nb(
-        CHECK.replace("mgs.check", "check"),
+        CHECK.replace("mogs.grade", "grade"),
         header=HEADER.replace(
-            "import marimo_gradescope as mgs", "from marimo_gradescope import check"
+            "import marimo_gradescope as mogs", "from marimo_gradescope import grade"
         ),
     )
 
-    assert parse_notebook(src).cells[-1].check_qid == "q1"
+    assert parse_notebook(src).cells[-1].grade_qid == "q1"
 
 
 def test_parse_check_of_other_object_ignored():
-    src = nb(CHECK.replace("mgs.", "other."))
+    src = nb(CHECK.replace("mogs.", "other."))
 
-    assert parse_notebook(src).cells[-1].check_qid is None
+    assert parse_notebook(src).cells[-1].grade_qid is None
 
 
 def test_parse_check_needs_literal_id():
@@ -219,9 +219,9 @@ def test_parse_check_needs_literal_id():
 
 
 def test_parse_two_checks_in_one_cell():
-    cells = CHECK.replace('mgs.check("q1")', 'mgs.check("q1")\n    mgs.check("q2")')
+    cells = CHECK.replace('mogs.grade("q1")', 'mogs.grade("q1")\n    mogs.grade("q2")')
 
-    with pytest.raises(SourceError, match="one check"):
+    with pytest.raises(SourceError, match="one grade"):
         parse_notebook(nb(cells))
 
 
@@ -274,12 +274,53 @@ def _():
     assert parse_notebook(src).student_names() == {"a", "b", "c", "d"}
 
 
-def test_answer_and_prompt_cells():
+def test_written_cells_of_the_fixture():
     notebook, _ = fixture()
 
-    assert [cell.name for cell in notebook.answer_cells("q3")] == ["answer_q3"]
-    assert [cell.name for cell in notebook.prompt_cells("q3")] == ["prompt_q3"]
-    assert notebook.answer_cells("q1") == ()
+    prompts, answers = notebook.written_cells("q3")
+
+    assert ["## Question 3" in notebook.cell_body_source(cell) for cell in prompts] == [True]
+    assert ["<!-- BEGIN SOLUTION -->" in notebook.cell_body_source(cell) for cell in answers] == [
+        True
+    ]
+    assert notebook.written_cells("q1") == ((), ())
+
+
+def md(text: str) -> str:
+    return f'\n@app.cell\ndef _():\n    mo.md(r"""\n    {text}\n    """)\n    return\n'
+
+
+ANSWER_MD = md("<!-- BEGIN SOLUTION -->\n    Yes.\n    <!-- END SOLUTION -->")
+
+
+def grade_cell(qid: str) -> str:
+    return f'\n@app.cell\ndef _():\n    mogs.grade("{qid}", points=1)\n    return\n'
+
+
+def test_written_cells_are_found_by_position():
+    notebook = parse_notebook(
+        nb(
+            md("Intro")
+            + PUBLIC
+            + grade_cell("q1")
+            + md("Question 2")
+            + md("More text")
+            + ANSWER_MD
+            + md("A note")
+            + ANSWER_MD
+            + grade_cell("q2")
+        )
+    )
+    text = [notebook.cell_body_source(cell) for cell in notebook.cells]
+
+    prompts, answers = notebook.written_cells("q2")
+
+    assert [text[notebook.cells.index(cell)] for cell in prompts] == [
+        'mo.md(r"""\nQuestion 2\n""")\n',
+        'mo.md(r"""\nMore text\n""")\n',
+    ]
+    assert len(answers) == 2
+    assert notebook.question_cells("q9") == ()
 
 
 def test_answer_cells_with_suffix():
@@ -304,12 +345,12 @@ def answer_q10():
 def test_setup_source():
     notebook, _ = fixture()
 
-    assert notebook.setup_source() == "import marimo as mo\n\nimport marimo_gradescope as mgs\n"
+    assert notebook.setup_source() == "import marimo as mo\n\nimport marimo_gradescope as mogs\n"
 
 
 def test_setup_source_without_setup_cell():
     src = nb(
-        PUBLIC, header=HEADER.replace("with app.setup:\n    import marimo_gradescope as mgs\n", "")
+        PUBLIC, header=HEADER.replace("with app.setup:\n    import marimo_gradescope as mogs\n", "")
     )
 
     assert parse_notebook(src).setup_source() == ""
@@ -365,7 +406,49 @@ def test_cell_is_frozen():
 def test_cell_fields():
     cell = Cell(CellKind.CELL, "_", 1, 2, (), False, None)
 
-    assert cell.check_qid is None
+    assert cell.grade_qid is None
+    assert not cell.assignment
+    assert not cell.instructor
+
+
+def test_parse_grade_and_assignment_calls():
+    notebook = parse_notebook(
+        nb(
+            """
+@app.cell
+def _():
+    mogs.assignment(name="x")
+    return
+
+
+@app.cell
+def _():
+    mogs.grade("q2", points=1)
+    return
+"""
+        )
+    )
+    assignment, graded = notebook.cells[1:]
+
+    assert assignment.assignment
+    assert assignment.grade_qid is None
+    assert graded.grade_qid == "q2"
+    assert not graded.assignment
+
+
+def test_parse_grade_needs_literal_id():
+    with pytest.raises(SourceError, match="string literal"):
+        parse_notebook(nb("\n@app.cell\ndef _():\n    mogs.grade(qid)\n    return\n"))
+
+
+@pytest.mark.parametrize(
+    ("name", "instructor"),
+    [("instructor", True), ("instructor_guide", True), ("instructors", False), ("_", False)],
+)
+def test_instructor_cells_go_by_name(name, instructor):
+    notebook = parse_notebook(nb(f"\n@app.cell\ndef {name}():\n    return\n"))
+
+    assert notebook.cells[-1].instructor is instructor
 
 
 # validate
@@ -405,10 +488,10 @@ def test_validate_unknown_qid_in_test():
     assert "`q9`" in error
 
 
-def test_validate_unknown_qid_in_check():
+def test_validate_unknown_qid_in_grade():
     error = one_error(PUBLIC + CHECK + CHECK.replace("q1", "q9"))
 
-    assert "check" in error
+    assert "grade" in error
     assert "`q9`" in error
 
 
@@ -422,25 +505,21 @@ def test_validate_hidden_only_needs_no_check():
     assert errors(hidden) == []
 
 
-def test_validate_public_tests_without_check():
+def test_validate_public_tests_without_grade():
     error = one_error(PUBLIC)
 
     assert "q1" in error
-    assert 'mgs.check("q1")' in error
+    assert 'mogs.grade("q1", points=...)' in error
 
 
 def test_validate_manual_with_tests():
     config = AssignmentConfig(
         name="nb", notebook="nb.py", questions={"q1": Question("q1", "Q1", 1, manual=True)}
     )
-    answer = """
-@app.cell
-def answer_q1():
-    return
-"""
+    answer = ANSWER_MD + grade_cell("q1")
 
     assert errors(answer, config) == []
-    assert "manual" in one_error(answer + PUBLIC, config)
+    assert "manual" in one_error(PUBLIC + answer, config)
 
 
 def test_validate_manual_without_answer():
@@ -448,7 +527,7 @@ def test_validate_manual_without_answer():
         name="nb", notebook="nb.py", questions={"q1": Question("q1", "Q1", 1, manual=True)}
     )
 
-    assert "answer_q1" in one_error("", config)
+    assert "no written answer" in one_error("", config)
 
 
 def test_validate_impure_public_cell():
@@ -461,7 +540,7 @@ def test_validate_impure_public_cell():
 
 
 def test_validate_public_cell_with_check():
-    mixed = PUBLIC.replace("    return", '    mgs.check("q1")\n    return')
+    mixed = PUBLIC.replace("    return", '    mogs.grade("q1")\n    return')
 
     assert "only" in one_error(mixed)
 
@@ -531,17 +610,17 @@ def test_validate_hidden_cell_redefines_student_name():
 
 
 def test_validate_hidden_cell_redefines_setup_name():
-    shadow = hidden_cell("mgs = None\n\ndef test_q1_h():\n    assert mgs is None")
+    shadow = hidden_cell("mogs = None\n\ndef test_q1_h():\n    assert mogs is None")
     error = one_error(PUBLIC + CHECK + shadow)
 
-    assert "hidden cell defines `mgs`" in error
+    assert "hidden cell defines `mogs`" in error
     assert "setup cell" in error
 
 
 def test_validate_hidden_cell_may_reuse_private_names():
     setup = HEADER.replace(
-        "    import marimo_gradescope as mgs\n",
-        "    import marimo_gradescope as mgs\n    _here = 1\n",
+        "    import marimo_gradescope as mogs\n",
+        "    import marimo_gradescope as mogs\n    _here = 1\n",
     )
     student = "\n@app.cell\ndef _():\n    _x = 1\n    return\n"
     hidden = hidden_cell("_here = 7\n_x = 2\n\ndef test_q1_h():\n    assert True")
@@ -648,8 +727,87 @@ def test_parse_line_numbers_with_crlf():
     src = nb(PUBLIC + CHECK).replace("\n", "\r\n")
     notebook = parse_notebook(src)
 
-    assert notebook.cell_body_source(notebook.cells[-1]) == 'mgs.check("q1")\n'
+    assert notebook.cell_body_source(notebook.cells[-1]) == 'mogs.grade("q1")\n'
     assert validate(notebook, CONFIG) == []
+
+
+ASSIGNMENT = """
+@app.cell
+def _():
+    mogs.assignment(name="x")
+    return
+"""
+
+
+def test_validate_assignment_cell_ok():
+    assert errors(ASSIGNMENT + PUBLIC + CHECK) == []
+
+
+@pytest.mark.parametrize(
+    "cell",
+    [
+        '\n@app.cell\ndef _():\n    mogs.assignment(name="x")\n    x = 1\n    return (x,)\n',
+        '\n@app.cell\ndef _():\n    # HIDDEN\n    mogs.assignment(name="x")\n    return\n',
+        '\n@app.cell\ndef _():\n    mogs.grade("q1", points=1)\n    mogs.assignment()\n'
+        "    return\n",
+    ],
+)
+def test_validate_assignment_needs_a_cell_of_its_own(cell):
+    error = one_error(cell + PUBLIC + CHECK.replace("q1", "q1"))
+
+    assert "mogs.assignment" in error
+    assert "own" in error
+
+
+def test_validate_written_in_hidden_cell():
+    config = AssignmentConfig(
+        name="nb", notebook="nb.py", questions={"q1": Question("q1", "Q1", 1, manual=True)}
+    )
+    cells = ANSWER_MD + grade_cell("q1").replace("    mogs", "    # HIDDEN\n    mogs")
+
+    assert "grade() for q1 is in a hidden cell" in one_error(cells, config)
+
+
+INSTRUCTOR = """
+@app.cell(hide_code=True)
+def instructor_guide():
+    mo.md("Notes")
+    return
+"""
+
+
+def test_validate_instructor_cell_ok():
+    assert errors(INSTRUCTOR + ASSIGNMENT + PUBLIC + CHECK) == []
+
+
+@pytest.mark.parametrize(
+    ("body", "what"),
+    [
+        ("    x = 1\n    return (x,)\n", "x"),
+        ('    mogs.grade("q1", points=1)\n    return\n', "grade"),
+        ("    def test_q1_b():\n        assert True\n    return\n", "test_q1_b"),
+        ("    # HIDDEN\n    return\n", "HIDDEN"),
+    ],
+)
+def test_validate_instructor_cell_stays_out_of_the_assignment(body, what):
+    cell = f"\n@app.cell\ndef instructor_notes():\n{body}"
+
+    found = [error for error in errors(cell + PUBLIC + CHECK) if "instructor_notes" in error]
+
+    assert len(found) == 1, found
+    assert what in found[0]
+
+
+def test_validate_instructor_function_cell():
+    cell = "\n@app.function\ndef instructor_helper():\n    return 1\n"
+
+    assert "instructor_helper" in one_error(cell + PUBLIC + CHECK)
+
+
+def test_validate_unknown_qid_names_the_declaration():
+    error = one_error(PUBLIC + CHECK + PUBLIC.replace("q1", "q9"))
+
+    assert 'mogs.grade("q9", points=' in error
 
 
 def test_validate_check_in_hidden_cell():
@@ -664,13 +822,13 @@ def _():
 @app.cell
 def _():
     # HIDDEN
-    mgs.check("q1")
+    mogs.grade("q1")
     return
 """
 
     error = one_error(PUBLIC + hidden_check)
 
-    assert "check() for q1 is in a hidden cell" in error
+    assert "grade() for q1 is in a hidden cell" in error
 
 
 @pytest.mark.parametrize(
@@ -799,27 +957,27 @@ def test_module_tests_are_top_level_test_functions_in_order():
 
 def check_cell_of(code: str) -> tuple:
     nb = parse_notebook(HEADER + "import marimo\napp = marimo.App()\n" + code)
-    [cell] = [cell for cell in nb.cells if cell.check_qid is not None]
+    [cell] = [cell for cell in nb.cells if cell.grade_qid is not None]
     return nb, cell
 
 
-def test_check_test_file_reads_the_keyword():
+def test_grade_test_file_reads_the_keyword():
     nb, cell = check_cell_of(
-        "with app.setup:\n    import marimo_gradescope as mgs\n\n@app.cell\ndef _():\n"
-        '    mgs.check("q1", test_file="tests/q1.py", uses=[])\n    return\n'
+        "with app.setup:\n    import marimo_gradescope as mogs\n\n@app.cell\ndef _():\n"
+        '    mogs.grade("q1", test_file="tests/q1.py", uses=[])\n    return\n'
     )
 
-    assert nb.check_test_file(cell) == "tests/q1.py"
+    assert nb.grade_test_file(cell) == "tests/q1.py"
 
 
 @pytest.mark.parametrize("arguments", ["", ", test_file=name", ", tests=[]"])
-def test_check_test_file_is_none_without_a_literal(arguments):
+def test_grade_test_file_is_none_without_a_literal(arguments):
     nb, cell = check_cell_of(
-        "with app.setup:\n    import marimo_gradescope as mgs\n\n@app.cell\ndef _():\n"
-        f'    mgs.check("q1"{arguments})\n    return\n'
+        "with app.setup:\n    import marimo_gradescope as mogs\n\n@app.cell\ndef _():\n"
+        f'    mogs.grade("q1"{arguments})\n    return\n'
     )
 
-    assert nb.check_test_file(cell) is None
+    assert nb.grade_test_file(cell) is None
 
 
 # Public tests go to students as written
@@ -859,3 +1017,93 @@ def _():
 """
 
     assert errors(PUBLIC + cell + CHECK) == []
+
+
+# Markers in Markdown cells
+
+
+def test_markdown_markers_are_html_comments():
+    assert errors(ANSWER_MD) == errors("")
+
+
+@pytest.mark.parametrize(
+    "line", ["# BEGIN SOLUTION", "# END SOLUTION", "# PROMPT: Your answer", "# SOLUTION"]
+)
+def test_hash_markers_in_markdown_are_refused(line):
+    found = [error for error in errors(md(line)) if "Markdown" in error]
+
+    assert len(found) == 1, found
+    assert "<!--" in found[0]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "<!-- BEGIN SOLUTON -->",
+        "<!--BEGIN SOLUTION-->",
+        "<!-- begin solution -->",
+        "<!-- PROMT -->",
+    ],
+)
+def test_html_marker_near_miss_in_markdown(line):
+    found = [error for error in errors(md(line)) if "looks like" in error]
+
+    assert len(found) == 1, found
+    assert line in found[0]
+
+
+def test_html_markers_pair_up_in_markdown():
+    assert any("without a matching" in error for error in errors(md("<!-- BEGIN SOLUTION -->")))
+
+
+def test_html_markers_in_inline_text_are_ordinary_text():
+    code = '\n@app.cell\ndef _():\n    x = "<!-- BEGIN SOLUTION -->"\n    return\n'
+
+    assert errors(code) == errors("")
+
+
+@pytest.mark.parametrize("prefix", ["f", "rf", ""])
+def test_html_marker_outside_a_plain_markdown_cell_is_refused(prefix):
+    # The transform only reads markers in plain `mo.md("...")` cells; elsewhere the solution
+    # would reach students.
+    call = "mo.md" if prefix else "print"
+    cell = (
+        f'\n@app.cell\ndef _():\n    {call}({prefix}"""\n    <!-- BEGIN SOLUTION -->\n'
+        '    {x}\n    <!-- END SOLUTION -->\n    """)\n    return\n'
+    )
+
+    found = [error for error in errors(cell) if "plain string" in error]
+
+    assert len(found) == 2, found
+
+
+def test_written_prompts_include_markdown_that_is_not_a_plain_string():
+    dynamic = '\n@app.cell\ndef _():\n    mo.md(f"Question {n}")\n    return\n'
+    notebook = parse_notebook(nb(dynamic + ANSWER_MD + grade_cell("q2")))
+
+    prompts, answers = notebook.written_cells("q2")
+
+    assert len(prompts) == 1
+    assert len(answers) == 1
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '    mo.vstack([mogs.assignment(name="x"), mo.md("Read me")])\n    return\n',
+        '    print(mogs.assignment(name="x"))\n    return\n',
+    ],
+)
+def test_validate_assignment_must_be_the_cell_s_expression(body):
+    error = one_error(f"\n@app.cell\ndef _():\n{body}" + PUBLIC + CHECK)
+
+    assert "mogs.assignment" in error
+
+
+def test_written_answer_is_found_by_its_html_marker():
+    notebook = parse_notebook(nb(md("Question") + ANSWER_MD + grade_cell("q2")))
+
+    prompts, answers = notebook.written_cells("q2")
+
+    assert len(prompts) == 1
+    assert len(answers) == 1

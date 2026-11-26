@@ -16,6 +16,7 @@ marks. The student copy should get none; tests that pass
 on it come back as warnings.
 """
 
+import ast
 import re
 import shutil
 import stat
@@ -30,7 +31,15 @@ from pathlib import Path, PurePosixPath
 
 from marimo_gradescope import __version__
 from marimo_gradescope._env import clean_env
-from marimo_gradescope.config import TOOL, AssignmentConfig, ConfigError, read_config
+from marimo_gradescope.config import (
+    ASSIGNMENT,
+    TOOL,
+    Api,
+    AssignmentConfig,
+    ConfigError,
+    api_calls,
+    read_config,
+)
 from marimo_gradescope.environment import grading_python
 from marimo_gradescope.grader.bundle import GradingBundle, bundle_from_notebook
 from marimo_gradescope.grader.datafiles import data_files as shared_data_files
@@ -47,7 +56,10 @@ from marimo_gradescope.transform import (
 )
 
 DIST = "dist"
-TOOL_TABLE_RE = re.compile(rf"(?m)^#\s*\[tool\.{re.escape(TOOL)}[\].]")
+# A header table is the old config, which `read_config` names in its error.
+TOOL_TABLE_RE = re.compile(rf"^#\s*\[tool\.{re.escape(TOOL)}[\].]", re.MULTILINE)
+# What an `assignment(...)` call looks like in a file that is not valid Python.
+ASSIGNMENT_RE = re.compile(r"\bassignment\s*\(")
 SCRIPTS = ("setup.sh", "run_autograder")
 ZIP_FILES = (*SCRIPTS, "bundle.json", "requirements.txt")
 ZIP_DATE = (1980, 1, 1, 0, 0, 0)
@@ -93,7 +105,7 @@ class BuildResult:
         solution: Score and maximum of the solved copy.
         blank: Score and maximum of the student copy.
         warnings: Things the instructor should look at.
-        scores: Per-question scores, in header order.
+        scores: Per-question scores, in notebook order.
     """
 
     student: Path
@@ -156,7 +168,10 @@ def read_assignment(assignment_dir: Path) -> Assignment:
 
 
 def find_notebook(assignment_dir: Path) -> Path:
-    """The one `*.py` file in `assignment_dir` whose header has a `[tool.marimo-gradescope]` table.
+    """The one `*.py` file in `assignment_dir` that calls `assignment(...)`.
+
+    A file whose header still has a `[tool.marimo-gradescope]` table counts too, so that
+    reading it explains the change.
 
     Raises:
         BuildError: If `assignment_dir` is not a folder, or it holds no such file or several.
@@ -168,21 +183,41 @@ def find_notebook(assignment_dir: Path) -> Path:
     candidates = [
         path
         for path in sorted(assignment_dir.glob("*.py"))
-        if path.is_file()
-        and TOOL_TABLE_RE.search(path.read_text(encoding="utf-8", errors="replace"))
+        if path.is_file() and _is_notebook(path.read_text(encoding="utf-8", errors="replace"))
     ]
 
     match candidates:
         case [path]:
             return path
         case []:
-            raise BuildError(f"No notebook in {assignment_dir} has a [tool.{TOOL}] table.")
+            raise BuildError(
+                f"No notebook in {assignment_dir} calls `mogs.assignment(...)`. Add a cell with "
+                "that call, or start a new assignment with `marimo-gradescope init`."
+            )
         case _:
             names = "\n".join(f"  {path.name}" for path in candidates)
             raise BuildError(
-                f"Several notebooks in {assignment_dir} have a [tool.{TOOL}] table; keep "
+                f"Several notebooks in {assignment_dir} call `mogs.assignment(...)`; keep "
                 f"exactly one:\n{names}"
             )
+
+
+def _is_notebook(text: str) -> bool:
+    """A source notebook: it calls `assignment(...)`, under any name its imports give it.
+
+    A file that is not valid Python counts when it looks like it calls `assignment`, so that
+    reading it reports the syntax error. So does a file with the old header table.
+    """
+
+    if TOOL_TABLE_RE.search(text):
+        return True
+
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return bool(ASSIGNMENT_RE.search(text))
+
+    return bool(api_calls(tree, tree, Api.ASSIGNMENT))
 
 
 def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildResult:
@@ -312,14 +347,14 @@ def data_files(assignment_dir: Path, cfg: AssignmentConfig) -> dict[PurePosixPat
         first = PurePosixPath(name).parts[:1]
         if first and first[0].casefold() in reserved:
             raise ConfigError(
-                f"[tool.{TOOL}] `files` entry {name!r} would replace `{first[0]}` in the build "
+                f"{ASSIGNMENT} `files` entry {name!r} would replace `{first[0]}` in the build "
                 "output."
             )
 
     try:
         return shared_data_files(assignment_dir, cfg.files)
     except ValueError as error:
-        raise ConfigError(f"[tool.{TOOL}] `files`: {error}.") from error
+        raise ConfigError(f"{ASSIGNMENT} `files`: {error}.") from error
 
 
 def write_zip(path: Path, entries: Mapping[str, bytes]) -> None:

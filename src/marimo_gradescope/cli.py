@@ -1,6 +1,7 @@
 """The `marimo-gradescope` command."""
 
 import argparse
+import shlex
 import sys
 from copy import replace
 from pathlib import Path
@@ -8,8 +9,9 @@ from pathlib import Path
 from marimo_gradescope import __version__
 from marimo_gradescope.build import BuildError, BuildResult, build, failure_report
 from marimo_gradescope.config import ConfigError
-from marimo_gradescope.grade import GradeResult, grade_submission
+from marimo_gradescope.regrade import GradeResult, grade_submission
 from marimo_gradescope.requirements import RequirementsError
+from marimo_gradescope.scaffold import InitError, init
 from marimo_gradescope.source import SourceError
 
 
@@ -20,18 +22,33 @@ def main(argv: list[str] | None = None) -> int:
         argv: Arguments; `sys.argv[1:]` when `None`.
 
     Returns:
-        Exit code: 0 on success, 1 when the build fails.
+        Exit code: 0 on success, 1 when the command fails.
     """
 
     args = _parser().parse_args(argv)
 
     match args.command:
+        case "init":
+            return _init(args.dir)
         case "build":
             return _build(args.dir)
         case "grade":
             return _grade(args.dir, args.submission)
         case _:
             raise AssertionError(f"unhandled command {args.command!r}")
+
+
+def _init(folder: Path) -> int:
+    try:
+        path = init(folder)
+    except (InitError, ConfigError, OSError) as error:
+        print(f"Init failed.\n{error}", file=sys.stderr)
+        return 1
+
+    print(f"Created {path}")
+    print(f"Edit it  : marimo edit --sandbox {shlex.quote(str(path))}")
+    print(f"Build it : marimo-gradescope build {shlex.quote(str(folder))}")
+    return 0
 
 
 def _build(folder: Path) -> int:
@@ -154,6 +171,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = commands.add_parser(
+        "init",
+        help="start a new assignment",
+        description=(
+            "Create DIR with one notebook, DIR/<name of DIR>.py, holding the assignment cell, "
+            "a guide and two example questions."
+        ),
+    )
+    init_parser.add_argument("dir", type=Path, metavar="DIR", help="new assignment folder")
 
     build_parser = commands.add_parser(
         "build",

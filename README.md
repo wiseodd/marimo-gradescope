@@ -26,8 +26,15 @@ uv tool install marimo-gradescope
 
 ## Usage
 
-Prepare a marimo notebook (see docs; full example [here](https://github.com/wiseodd/marimo-gradescope/tree/main/examples/demo)).
-Say, it's in `examples/demo` directory (relative to the current working directory) and named `hw.py`.
+Start an assignment and write it in marimo's editor:
+
+```bash
+marimo-gradescope init hw
+marimo edit --sandbox hw/hw.py
+```
+
+The new notebook has a short guide and two example questions (see docs; full example [here](https://github.com/wiseodd/marimo-gradescope/tree/main/examples/demo)).
+Say, the assignment is in `examples/demo` directory (relative to the current working directory) and named `hw.py`.
 Then:
 
 ```bash

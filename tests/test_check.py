@@ -11,9 +11,9 @@ from typing import Any
 import pytest
 
 import marimo_gradescope
-from marimo_gradescope import check
+from marimo_gradescope import grade
 from marimo_gradescope.check import question_title
-from marimo_gradescope.config import read_config
+from marimo_gradescope.config import ConfigError, read_config
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TWO_CELL = FIXTURES / "two_cell_check.py"
@@ -72,20 +72,20 @@ def pick(*names: str):
 
 
 def test_header_counts_public_tests():
-    panel = check("q1", tests=pick("test_q1_add", "test_q1_zero", "test_q1_neg", "test_q1_ok"))
+    panel = grade("q1", tests=pick("test_q1_add", "test_q1_zero", "test_q1_neg", "test_q1_ok"))
 
     assert "Question 1 — " not in text_of(panel)
     assert "Question 1 · 3/4 public tests passed" in text_of(panel)
 
 
 def test_header_with_points():
-    panel = check("q1", tests=pick("test_q1_zero", "test_q1_add"), points=25)
+    panel = grade("q1", tests=pick("test_q1_zero", "test_q1_add"), points=25)
 
     assert "Question 1 — 25 pts · 1/2 public tests passed" in text_of(panel)
 
 
 def test_header_uses_the_given_title():
-    panel = check("q1", tests=pick("test_q1_zero"), points=4, title="Average <b>")
+    panel = grade("q1", tests=pick("test_q1_zero"), points=4, title="Average <b>")
 
     assert "Average <b> — 4 pts · 1/1 public tests passed" in text_of(panel)
     assert "Question 1" not in text_of(panel)
@@ -93,13 +93,13 @@ def test_header_uses_the_given_title():
 
 
 def test_fractional_points():
-    panel = check("q1", tests=pick("test_q1_zero"), points=2.5)
+    panel = grade("q1", tests=pick("test_q1_zero"), points=2.5)
 
     assert "Question 1 — 2.5 pts · 1/1 public tests passed" in text_of(panel)
 
 
 def test_passed_and_failed_lines():
-    panel = check("q1", tests=pick("test_q1_zero", "test_q1_add"), points=25)
+    panel = grade("q1", tests=pick("test_q1_zero", "test_q1_add"), points=25)
     text = text_of(panel)
 
     assert "✓ test_q1_zero" in text
@@ -108,7 +108,7 @@ def test_passed_and_failed_lines():
 
 
 def test_failure_message_has_rewritten_assert():
-    panel = check("q1", tests=pick("test_q1_add"))
+    panel = grade("q1", tests=pick("test_q1_add"))
     text = text_of(panel)
 
     assert "assert add(1, 2) == 3" in text
@@ -117,7 +117,7 @@ def test_failure_message_has_rewritten_assert():
 
 
 def test_failure_message_indented_below_name():
-    panel = check("q1", tests=pick("test_q1_add"))
+    panel = grade("q1", tests=pick("test_q1_add"))
     failed = re.search(r"✗</span>\s*test_q1_add\s*(<pre[^>]*>)", panel.text)
 
     assert failed is not None
@@ -125,22 +125,22 @@ def test_failure_message_indented_below_name():
 
 
 def test_hidden_line_only_when_hidden():
-    with_hidden = text_of(check("q1", tests=pick("test_q1_ok"), hidden=4))
-    without = text_of(check("q1", tests=pick("test_q1_ok")))
+    with_hidden = text_of(grade("q1", tests=pick("test_q1_ok"), hidden=4))
+    without = text_of(grade("q1", tests=pick("test_q1_ok")))
 
     assert "+ 4 hidden tests run on Gradescope" in with_hidden
     assert "hidden" not in without
 
 
 def test_no_tests_warning():
-    text = text_of(check("q1", tests=[], points=25))
+    text = text_of(grade("q1", tests=[], points=25))
 
     assert "No tests found for q1" in text
     assert "public tests passed" not in text
 
 
 def test_other_question_ids_shown_as_is():
-    text = text_of(check("bonus", tests=pick("test_q1_ok")))
+    text = text_of(grade("bonus", tests=pick("test_q1_ok")))
 
     assert "bonus · 1/1 public tests passed" in text
 
@@ -153,14 +153,14 @@ def test_names_and_messages_escaped():
         """
     )
 
-    panel = check("q1", tests=[ns["test_q1_html"]])
+    panel = grade("q1", tests=[ns["test_q1_html"]])
 
     assert "<script>" not in panel.text
     assert "&lt;script&gt;" in panel.text
 
 
 def test_no_hard_coded_text_colors():
-    panel = check("q1", tests=pick("test_q1_add", "test_q1_ok"), hidden=1)
+    panel = grade("q1", tests=pick("test_q1_add", "test_q1_ok"), hidden=1)
     colors = re.findall(r"(?<![-\w])color:\s*([^;\"]+)", panel.text)
 
     assert colors
@@ -169,7 +169,7 @@ def test_no_hard_coded_text_colors():
 
 
 def test_non_function_test_recorded_as_failure():
-    panel = check("q1", tests=[42])  # ty: ignore[invalid-argument-type] -- student code can pass anything
+    panel = grade("q1", tests=[42])  # ty: ignore[invalid-argument-type] -- student code can pass anything
 
     assert "0/1 public tests passed" in text_of(panel)
     assert "TypeError" in text_of(panel)
@@ -185,7 +185,7 @@ def test_does_not_mutate_test_globals():
     original = ns["test_q1_a"]
     keys = set(ns)
 
-    check("q1", tests=[original])
+    grade("q1", tests=[original])
 
     assert ns["test_q1_a"] is original
     assert set(ns) == keys
@@ -200,7 +200,7 @@ def test_closure_falls_back_to_direct_call():
 
         return test_q1_closure
 
-    text = text_of(check("q1", tests=[make()]))
+    text = text_of(grade("q1", tests=[make()]))
 
     assert "0/1 public tests passed" in text
     assert "AssertionError" in text
@@ -208,7 +208,7 @@ def test_closure_falls_back_to_direct_call():
 
 
 def test_lambda_runs_directly():
-    text = text_of(check("q1", tests=[lambda: None]))
+    text = text_of(grade("q1", tests=[lambda: None]))
 
     assert "1/1 public tests passed" in text
 
@@ -221,7 +221,7 @@ def test_lambda_line_not_run_again():
         """
     )
 
-    check("q1", tests=[ns["test_q1_l"]])
+    grade("q1", tests=[ns["test_q1_l"]])
 
     assert ns["calls"] == [1]
 
@@ -241,7 +241,7 @@ def test_decorator_not_run_again():
         """
     )
 
-    text = text_of(check("q1", tests=[ns["test_q1_marked"]]))
+    text = text_of(grade("q1", tests=[ns["test_q1_marked"]]))
 
     assert ns["calls"] == ["test_q1_marked"]
     assert "0/1 public tests passed" in text
@@ -257,7 +257,7 @@ def test_default_argument_not_run_again():
         """
     )
 
-    check("q1", tests=[ns["test_q1_default"]])
+    grade("q1", tests=[ns["test_q1_default"]])
 
     assert ns["calls"] == [1]
 
@@ -267,7 +267,7 @@ def test_hostile_repr_gives_placeholder_name():
         def __repr__(self):
             raise RuntimeError("no")
 
-    text = text_of(check("q1", tests=[Hostile()]))  # ty: ignore[invalid-argument-type] -- student code can pass anything
+    text = text_of(grade("q1", tests=[Hostile()]))  # ty: ignore[invalid-argument-type] -- student code can pass anything
 
     assert "✗ <test>" in text
 
@@ -280,7 +280,7 @@ def test_mangled_private_names_run_original():
     namespace: dict[str, Any] = {"_cell_abc_expected": 3}
     exec(compile(compiled, filename, "exec"), namespace)
 
-    text = text_of(check("q1", tests=[namespace["test_q1_private"]]))
+    text = text_of(grade("q1", tests=[namespace["test_q1_private"]]))
 
     assert "1/1 public tests passed" in text
     assert "NameError" not in text
@@ -296,7 +296,7 @@ def test_matching_source_still_rewritten():
         """
     )
 
-    text = text_of(check("q1", tests=[ns["test_q1_private"]]))
+    text = text_of(grade("q1", tests=[ns["test_q1_private"]]))
 
     assert "assert (1 + 2) == 4" in text
 
@@ -306,7 +306,7 @@ def test_hostile_repr_base_exception():
         def __repr__(self):
             raise SystemExit(1)
 
-    text = text_of(check("q1", tests=[Hostile()]))  # ty: ignore[invalid-argument-type] -- student code can pass anything
+    text = text_of(grade("q1", tests=[Hostile()]))  # ty: ignore[invalid-argument-type] -- student code can pass anything
 
     assert "✗ <test>" in text
 
@@ -320,7 +320,7 @@ def test_long_names_capped():
     )
     ns["test_q1_long"].__name__ = "x" * 5000
 
-    text = text_of(check("q1", tests=[ns["test_q1_long"]]))
+    text = text_of(grade("q1", tests=[ns["test_q1_long"]]))
 
     assert "x" * 5000 not in text
     assert "x" * 100 in text
@@ -328,7 +328,7 @@ def test_long_names_capped():
 
 @pytest.mark.parametrize(("points", "shown"), [(25, "25 pts"), (25.0, "25 pts"), (0.1, "0.1 pts")])
 def test_points_formatting(points, shown):
-    text = text_of(check("q1", tests=[], points=points))
+    text = text_of(grade("q1", tests=[], points=points))
 
     assert f"Question 1 — {shown}" in text
 
@@ -339,7 +339,7 @@ def test_points_formatting(points, shown):
 def test_discovers_question_tests_from_caller_globals():
     ns = define(
         """
-        from marimo_gradescope import check
+        from marimo_gradescope import grade
 
         def test_q1_a():
             assert 1 == 1
@@ -355,7 +355,7 @@ def test_discovers_question_tests_from_caller_globals():
 
         test_q1_not_callable = 3
 
-        panel = check("q1")
+        panel = grade("q1")
         """
     )
     text = text_of(ns["panel"])
@@ -370,9 +370,9 @@ def test_discovers_question_tests_from_caller_globals():
 def test_discovery_without_tests_warns():
     ns = define(
         """
-        from marimo_gradescope import check
+        from marimo_gradescope import grade
 
-        panel = check("q1")
+        panel = grade("q1")
         """
     )
 
@@ -383,7 +383,7 @@ def test_discovery_without_tests_warns():
 
 
 def test_check_exported():
-    assert marimo_gradescope.check is check
+    assert marimo_gradescope.grade is grade
 
 
 def test_import_stays_light():
@@ -464,7 +464,7 @@ def test_q1_zero():
 def check_in(folder: Path, call: str, **names: object) -> Any:
     """Run `call` the way a notebook cell in `folder/hw.py` would, and return its value."""
 
-    namespace: dict[str, Any] = {"__file__": str(folder / "hw.py"), "check": check, **names}
+    namespace: dict[str, Any] = {"__file__": str(folder / "hw.py"), "grade": grade, **names}
     exec(f"panel = {call}", namespace)
     return namespace["panel"]
 
@@ -478,7 +478,7 @@ def test_test_file_runs_against_the_notebook_names(tmp_path):
     write_tests(tmp_path)
 
     panel = check_in(
-        tmp_path, 'check("q1", test_file="tests/q1.py", uses=[add], points=2)', add=TESTS["add"]
+        tmp_path, 'grade("q1", test_file="tests/q1.py", uses=[add], points=2)', add=TESTS["add"]
     )
     text = text_of(panel)
 
@@ -494,7 +494,7 @@ def test_test_file_leaves_the_kernel_globals_alone(tmp_path):
     before = dict(namespace)
 
     exec(
-        'import marimo_gradescope\nmarimo_gradescope.check("q1", test_file="tests/q1.py")',
+        'import marimo_gradescope\nmarimo_gradescope.grade("q1", test_file="tests/q1.py")',
         namespace,
     )
 
@@ -508,13 +508,13 @@ def test_test_file_is_found_next_to_the_notebook_not_the_working_directory(tmp_p
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
 
-    text = text_of(check_in(tmp_path, 'check("q1", test_file="tests/q1.py")', add=TESTS["add"]))
+    text = text_of(check_in(tmp_path, 'grade("q1", test_file="tests/q1.py")', add=TESTS["add"]))
 
     assert "1/2 public tests passed" in text
 
 
 def test_missing_test_file_says_where_it_should_be(tmp_path):
-    text = text_of(check_in(tmp_path, 'check("q1", test_file="tests/q1.py")'))
+    text = text_of(check_in(tmp_path, 'grade("q1", test_file="tests/q1.py")'))
 
     assert "Cannot find tests/q1.py next to hw.py" in text
     assert "public tests passed" not in text
@@ -523,7 +523,7 @@ def test_missing_test_file_says_where_it_should_be(tmp_path):
 def test_test_file_that_is_not_python_says_so(tmp_path):
     write_tests(tmp_path, "def (:\n")
 
-    text = text_of(check_in(tmp_path, 'check("q1", test_file="tests/q1.py")'))
+    text = text_of(check_in(tmp_path, 'grade("q1", test_file="tests/q1.py")'))
 
     assert "tests/q1.py is not valid Python (line 1)" in text
 
@@ -531,7 +531,7 @@ def test_test_file_that_is_not_python_says_so(tmp_path):
 def test_test_file_that_fails_to_load_fails_each_test(tmp_path):
     write_tests(tmp_path, "raise ValueError('boom')\n" + Q1_FILE)
 
-    text = text_of(check_in(tmp_path, 'check("q1", test_file="tests/q1.py")', add=TESTS["add"]))
+    text = text_of(check_in(tmp_path, 'grade("q1", test_file="tests/q1.py")', add=TESTS["add"]))
 
     assert "0/2 public tests passed" in text
     assert text.count("the tests failed to load (ValueError: boom)") == 2
@@ -540,7 +540,7 @@ def test_test_file_that_fails_to_load_fails_each_test(tmp_path):
 def test_test_file_that_fails_before_any_test_says_so(tmp_path):
     write_tests(tmp_path, "raise ValueError('boom')\n")
 
-    text = text_of(check_in(tmp_path, 'check("q1", test_file="tests/q1.py")'))
+    text = text_of(check_in(tmp_path, 'grade("q1", test_file="tests/q1.py")'))
 
     assert "No tests found" not in text
     assert "✗ tests/q1.py" in text
@@ -548,15 +548,15 @@ def test_test_file_that_fails_before_any_test_says_so(tmp_path):
 
 
 def test_test_file_without_a_notebook_file_says_so():
-    namespace: dict[str, Any] = {"check": check}
-    exec('panel = check("q1", test_file="tests/q1.py")', namespace)
+    namespace: dict[str, Any] = {"grade": grade}
+    exec('panel = grade("q1", test_file="tests/q1.py")', namespace)
 
     assert "Cannot find this notebook's file" in text_of(namespace["panel"])
 
 
 def test_tests_and_test_file_together_raise(tmp_path):
     with pytest.raises(ValueError, match="test_file"):
-        check("q1", tests=[], test_file="tests/q1.py")
+        grade("q1", tests=[], test_file="tests/q1.py")
 
 
 def test_check_is_a_no_op_while_grading(monkeypatch):
@@ -566,7 +566,7 @@ def test_check_is_a_no_op_while_grading(monkeypatch):
     def test_q1_a():
         calls.append(1)
 
-    result = check("q1", tests=[test_q1_a], points=1)
+    result = grade("q1", tests=[test_q1_a], points=1)
 
     assert calls == []
     assert result.text == ""
@@ -574,7 +574,79 @@ def test_check_is_a_no_op_while_grading(monkeypatch):
 
 @pytest.mark.parametrize("qid", ["q1", "q12", "q1a", "bonus", "Q1"])
 def test_panel_title_matches_the_config_default(qid):
-    src = f"# /// script\n# [tool.marimo-gradescope]\n# questions = {{ {qid} = 1 }}\n# ///\n"
+    src = f'import marimo_gradescope as mogs\nmogs.assignment()\nmogs.grade("{qid}", points=1)\n'
     cfg = read_config(src, Path("nb.py"))
 
     assert question_title(qid) == cfg.questions[qid].title
+
+
+# Written questions
+
+
+def test_written_panel_shows_title_and_points():
+    panel = text_of(grade("q3", points=5, title="Empty lists", manual=True))
+
+    assert "Empty lists — 5 pts" in panel
+    assert "graded by hand" in panel
+
+
+def test_written_panel_defaults_to_the_question_title():
+    assert "Question 3 — 1 pt" in text_of(grade("q3", points=1, manual=True))
+
+
+def test_written_panel_for_zero_points_says_it_is_not_graded():
+    panel = text_of(grade("q3", points=0, manual=True))
+
+    assert "pts" not in panel
+    assert "not graded" in panel
+
+
+def test_written_is_a_no_op_while_grading(monkeypatch):
+    monkeypatch.setenv("MGS_GRADING", "1")
+
+    assert grade("q3", points=5, manual=True).text == ""
+
+
+WRITTEN_SOURCE = """\
+import marimo_gradescope as mogs
+
+mogs.assignment()
+
+
+def test_q1_a():
+    assert True
+
+
+mogs.grade("q1", points=1)
+mogs.grade("q2", points=5)
+"""
+
+
+@pytest.mark.parametrize(
+    ("qid", "shown"), [("q2", "Written answer, graded by hand"), ("q1", "No tests found")]
+)
+def test_grade_in_the_source_finds_written_questions_in_the_saved_notebook(qid, shown, tmp_path):
+    notebook = tmp_path / "hw.py"
+    notebook.write_text(WRITTEN_SOURCE, encoding="utf-8")
+    namespace: dict[str, Any] = {"__file__": str(notebook), "grade": grade}
+
+    exec(f'panel = grade("{qid}", points=5)', namespace)
+
+    assert shown in text_of(namespace["panel"])
+
+
+def test_grade_without_a_saved_notebook_shows_no_tests():
+    namespace: dict[str, Any] = {"grade": grade}
+
+    exec('panel = grade("q2", points=5)', namespace)
+
+    assert "No tests found" in text_of(namespace["panel"])
+
+
+def test_grade_in_the_source_names_a_config_error(tmp_path):
+    notebook = tmp_path / "hw.py"
+    notebook.write_text(WRITTEN_SOURCE.replace("points=5", 'points="five"'), encoding="utf-8")
+    namespace: dict[str, Any] = {"__file__": str(notebook), "grade": grade}
+
+    with pytest.raises(ConfigError, match="points"):
+        exec('panel = grade("q2", points=5)', namespace)

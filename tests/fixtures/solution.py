@@ -4,14 +4,6 @@
 #     "marimo",
 #     "marimo-gradescope",
 # ]
-#
-# [tool.marimo-gradescope]
-# name = "Fixture"
-#
-# [tool.marimo-gradescope.questions]
-# q1 = 4
-# q2 = { points = 6, title = "Vowels" }
-# q3 = { points = 5, manual = true }
 # ///
 
 import marimo
@@ -22,7 +14,13 @@ app = marimo.App()
 with app.setup:
     import marimo as mo
 
-    import marimo_gradescope as mgs
+    import marimo_gradescope as mogs
+
+
+@app.cell
+def _():
+    mogs.assignment(name="Fixture")
+    return
 
 
 @app.cell(hide_code=True)
@@ -68,7 +66,7 @@ def _():
 
 @app.cell
 def _():
-    mgs.check("q1")
+    mogs.grade("q1", points=4)
     return
 
 
@@ -110,12 +108,12 @@ def _():
 
 @app.cell
 def _():
-    mgs.check("q2")
+    mogs.grade("q2", points=6, title="Vowels")
     return
 
 
 @app.cell(hide_code=True)
-def prompt_q3():
+def _():
     mo.md(r"""
     ## Question 3
 
@@ -125,10 +123,19 @@ def prompt_q3():
 
 
 @app.cell
-def answer_q3():
+def _():
     mo.md(r"""
-    Because the order of the terms does not change the sum.
+    <!-- BEGIN SOLUTION -->
+    <!-- PROMPT: Because the order of the terms does not change the sum. -->
+    Addition of numbers is commutative: a + b = b + a.
+    <!-- END SOLUTION -->
     """)
+    return
+
+
+@app.cell
+def _():
+    mogs.grade("q3", points=5)
     return
 
 

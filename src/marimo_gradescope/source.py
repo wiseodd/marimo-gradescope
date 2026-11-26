@@ -1,6 +1,6 @@
 """Static parse of a marimo source notebook into cells, and checks of its authoring rules.
 
-The notebook is never imported or run. Cells, tests, hidden cells and check calls come from
+The notebook is never imported or run. Cells, tests, hidden cells and grade calls come from
 its AST and its text.
 """
 
@@ -15,13 +15,16 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from marimo_gradescope.config import (
-    TOOL,
+    ASSIGNMENT,
+    Api,
     AssignmentConfig,
+    api_calls,
     normalize_newlines,
+    question_id,
     split_lines,
 )
 
-PACKAGE = "marimo_gradescope"
+INSTRUCTOR = "instructor"
 
 
 class Marker(StrEnum):
@@ -40,7 +43,19 @@ END = Marker.END
 SOLUTION = Marker.SOLUTION
 PROMPT = Marker.PROMPT
 
+
+class HtmlMarker(StrEnum):
+    """Solution markers in a Markdown cell, where a `#` line would be a heading."""
+
+    BEGIN = "<!-- BEGIN SOLUTION -->"
+    END = "<!-- END SOLUTION -->"
+    PROMPT = "<!-- PROMPT: <text> -->"
+
+
+HTML_PROMPT_RE = re.compile(r"<!-- PROMPT:(?: (.*?))? -->")
+
 # Comments that look like a marker but are not spelled exactly like one.
+NEAR_HTML_RE = re.compile(r"<!--\s*(?:(?:begin|end)\s*)?(?:solu\w*|pro?m\w*)", re.IGNORECASE)
 NEAR_SOLUTION_RE = re.compile(r"#\s*((begin|end)\s*)?solutions?\b", re.IGNORECASE)
 NEAR_PROMPT_RE = re.compile(r"#\s*prompt\b", re.IGNORECASE)
 NEAR_HIDDEN_RE = re.compile(r"#\s*hidden\b", re.IGNORECASE)
@@ -70,7 +85,8 @@ class Cell:
         end: Last line, 1-based, inclusive.
         tests: Names of the `test_*` functions the cell defines at its top level.
         hidden: The cell holds a `# HIDDEN` line.
-        check_qid: Question id of the cell's `check(...)` call, if any.
+        grade_qid: Question id of the cell's `grade(...)` call, if any.
+        assignment: The cell holds an `assignment(...)` call.
     """
 
     kind: CellKind
@@ -79,7 +95,17 @@ class Cell:
     end: int
     tests: tuple[str, ...]
     hidden: bool
-    check_qid: str | None
+    grade_qid: str | None
+    assignment: bool = False
+
+    @property
+    def instructor(self) -> bool:
+        """Named `instructor` or `instructor_<suffix>`: for the instructor only.
+
+        The build leaves such cells out of the student and solved copies.
+        """
+
+        return self.name == INSTRUCTOR or self.name.startswith(f"{INSTRUCTOR}_")
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,14 +164,63 @@ class Notebook:
         )
 
     def answer_cells(self, qid: str) -> tuple[Cell, ...]:
-        """Cells named `answer_<qid>` or `answer_<qid>_<suffix>`."""
+        """Cells named `answer_<qid>` or `answer_<qid>_<suffix>`, as in the student copy."""
 
         return self._named("answer", qid)
 
     def prompt_cells(self, qid: str) -> tuple[Cell, ...]:
-        """Cells named `prompt_<qid>` or `prompt_<qid>_<suffix>`."""
+        """Cells named `prompt_<qid>` or `prompt_<qid>_<suffix>`, as in the student copy."""
 
         return self._named("prompt", qid)
+
+    def question_cells(self, qid: str) -> tuple[Cell, ...]:
+        """The cells of a question in the source: after the previous grade cell, up to its own.
+
+        The grade cell itself is not included. Empty when no grade cell names `qid`.
+        """
+
+        graded = [i for i, cell in enumerate(self.cells) if cell.grade_qid is not None]
+        end = next((i for i in graded if self.cells[i].grade_qid == qid), None)
+
+        if end is None:
+            return ()
+
+        start = max((i + 1 for i in graded if i < end), default=0)
+
+        return self.cells[start:end]
+
+    def written_cells(self, qid: str) -> tuple[tuple[Cell, ...], tuple[Cell, ...]]:
+        """Prompt and answer cells of a written question in the source, found by position.
+
+        Among the question's `mo.md(...)` cells (`question_cells`), the answers are plain
+        Markdown cells holding a `<!-- BEGIN SOLUTION -->` line, and the prompts are those
+        before the first answer. A prompt need not be a plain string; the PDF shows such a
+        cell as source.
+        """
+
+        lines = split_lines(self.src)
+        markdown = [
+            cell
+            for cell in self.question_cells(qid)
+            if not (cell.hidden or cell.tests or cell.assignment or cell.instructor)
+            and is_md_call(self, cell)
+        ]
+        answers = tuple(
+            cell
+            for cell in markdown
+            if is_markdown(self, cell)
+            and any(
+                line_marker(line, True)[0] is Marker.BEGIN
+                for line in lines[cell.start - 1 : cell.end]
+            )
+        )
+
+        if not answers:
+            return (), ()
+
+        prompts = tuple(cell for cell in markdown if cell.start < answers[0].start)
+
+        return prompts, answers
 
     def setup_source(self) -> str:
         """Dedented body of the setup cell, or `""` when the notebook has none."""
@@ -190,32 +265,41 @@ class Notebook:
 
         return textwrap.dedent("".join(line + "\n" for line in chunk))
 
-    def check_call(self, cell: Cell) -> ast.Call:
-        """The check call of a cell, with line numbers of the whole notebook.
+    def markdown_lines(self) -> frozenset[int]:
+        """Line numbers of the cells that are just `mo.md("...")`, decorators included."""
+
+        return frozenset(
+            number
+            for cell in self.cells
+            if is_markdown(self, cell)
+            for number in range(cell.start, cell.end + 1)
+        )
+
+    def grade_call(self, cell: Cell) -> ast.Call:
+        """The grade call of a cell, with line numbers of the whole notebook.
 
         Raises:
-            SourceError: If the cell does not hold exactly one check call.
+            SourceError: If the cell does not hold exactly one grade call.
         """
 
-        modules, functions = _check_names(ast.parse(self.src))
-        calls = _check_calls(_cell_node(self.src, cell), modules, functions)
+        calls = api_calls(ast.parse(self.src), _cell_node(self.src, cell), Api.GRADE)
 
         match calls:
             case [call]:
                 return call
             case _:
                 raise SourceError(
-                    f"line {cell.start}: expected one check call, found {len(calls)}."
+                    f"line {cell.start}: expected one grade call, found {len(calls)}."
                 )
 
-    def check_test_file(self, cell: Cell) -> str | None:
-        """The path a cell's check call passes as a string literal `test_file`, if it does.
+    def grade_test_file(self, cell: Cell) -> str | None:
+        """The path a cell's grade call passes as a string literal `test_file`, if it does.
 
         Raises:
-            SourceError: If the cell does not hold exactly one check call.
+            SourceError: If the cell does not hold exactly one grade call.
         """
 
-        for keyword in self.check_call(cell).keywords:
+        for keyword in self.grade_call(cell).keywords:
             match keyword:
                 case ast.keyword(arg="test_file", value=ast.Constant(value=str() as path)):
                     return path
@@ -256,12 +340,6 @@ def cell_names(source: str) -> tuple[set[str], set[str]]:
     return bound, read - bound
 
 
-def question_id(name: str) -> str:
-    """Question id in a test name: `test_q1_norm` → `q1`."""
-
-    return name.removeprefix("test_").split("_", 1)[0]
-
-
 def module_tests(source: str) -> tuple[str, ...]:
     """Names of the `test_*` functions that `source` defines at top level, in file order.
 
@@ -299,6 +377,38 @@ def answer_text(nb: Notebook, cell: Cell) -> str | None:
             return None
 
 
+def is_md_call(nb: Notebook, cell: Cell) -> bool:
+    """A plain cell that is just a call to `mo.md`, with any argument."""
+
+    if cell.kind is not CellKind.CELL:
+        return False
+
+    try:
+        tree = ast.parse(nb.cell_body_source(cell))
+    except (SyntaxError, SourceError):
+        return False
+
+    match tree.body:
+        case [ast.Expr(value=ast.Call(func=ast.Attribute(attr="md")))]:
+            return True
+        case _:
+            return False
+
+
+def is_markdown(nb: Notebook, cell: Cell) -> bool:
+    """A plain cell that is just `mo.md("...")`, the way marimo writes a Markdown cell."""
+
+    if cell.kind is not CellKind.CELL:
+        return False
+
+    try:
+        tree = ast.parse(nb.cell_body_source(cell))
+    except (SyntaxError, SourceError):
+        return False
+
+    return bool(tree.body) and answer_text(nb, cell) is not None
+
+
 def answer_placeholders(nb: Notebook, qids: Iterable[str]) -> dict[str, str]:
     """The text of each question's answer cell, as `answer_text` gives it.
 
@@ -328,9 +438,9 @@ def parse_notebook(src: str) -> Notebook:
     """Parse the cells of a marimo notebook.
 
     Raises:
-        SourceError: If the source is not valid Python, or a check call does not name its
-            question with a string literal, or a cell holds more than one check call, or an
-            `@app.*` decorator does not fit what it decorates.
+        SourceError: If the source is not valid Python, or a grade call does not name its
+            question with a string literal, or a cell holds more than one, or an `@app.*`
+            decorator does not fit what it decorates.
     """
 
     src = normalize_newlines(src)
@@ -341,7 +451,6 @@ def parse_notebook(src: str) -> Notebook:
         raise SourceError(f"The notebook is not valid Python (line {e.lineno}): {e.msg}") from e
 
     lines = split_lines(src)
-    modules, functions = _check_names(tree)
     cells = []
 
     for node in tree.body:
@@ -362,9 +471,11 @@ def parse_notebook(src: str) -> Notebook:
         text = lines[start - 1 : end]
         tests = _tests(node, kind)
         hidden = any(line.strip() == HIDDEN for line in text)
-        check = _check_qid(node, modules, functions) if kind is CellKind.CELL else None
+        plain = kind is CellKind.CELL
+        grade = _call_qid(tree, node, Api.GRADE) if plain else None
+        assignment = bool(api_calls(tree, node, Api.ASSIGNMENT))
 
-        cells.append(Cell(kind, name, start, end, tests, hidden, check))
+        cells.append(Cell(kind, name, start, end, tests, hidden, grade, assignment))
 
     return Notebook(tuple(cells), src)
 
@@ -420,54 +531,19 @@ def _tests(node: ast.stmt, kind: CellKind) -> tuple[str, ...]:
             return ()
 
 
-def _check_names(tree: ast.Module) -> tuple[set[str], set[str]]:
-    """Names bound to this package, and to its `check` function, by the notebook's imports."""
-
-    modules: set[str] = set()
-    functions: set[str] = set()
-
-    for node in ast.walk(tree):
-        match node:
-            case ast.Import(names=names):
-                modules |= {alias.asname or alias.name for alias in names if alias.name == PACKAGE}
-            case ast.ImportFrom(module=module, names=names) if module == PACKAGE:
-                functions |= {
-                    alias.asname or alias.name for alias in names if alias.name == "check"
-                }
-
-    return modules, functions
-
-
-def _check_calls(node: ast.stmt, modules: set[str], functions: set[str]) -> list[ast.Call]:
-    """Calls to this package's `check` in a cell, in AST walk order."""
-
-    calls: list[ast.Call] = []
-
-    for call in ast.walk(node):
-        match call:
-            case ast.Call(func=ast.Attribute(value=ast.Name(id=module), attr="check")) if (
-                module in modules
-            ):
-                calls.append(call)
-            case ast.Call(func=ast.Name(id=function)) if function in functions:
-                calls.append(call)
-
-    return calls
-
-
-def _check_qid(node: ast.stmt, modules: set[str], functions: set[str]) -> str | None:
-    """Question id of the single check call in a cell, or None if it has none."""
+def _call_qid(tree: ast.Module, node: ast.stmt, api: Api) -> str | None:
+    """Question id of the single `api` call in a cell, or None if it has none."""
 
     found: list[str] = []
 
-    for call in _check_calls(node, modules, functions):
+    for call in api_calls(tree, node, api):
         match call.args:
             case [ast.Constant(value=str() as qid), *_]:
                 found.append(qid)
             case _:
                 raise SourceError(
-                    f"line {call.lineno}: check() needs the question id as a string literal "
-                    'first argument, e.g. mgs.check("q1").'
+                    f"line {call.lineno}: {api}() needs the question id as a string literal "
+                    f'first argument, e.g. mogs.{api}("q1", points=10).'
                 )
 
     match found:
@@ -477,7 +553,7 @@ def _check_qid(node: ast.stmt, modules: set[str], functions: set[str]) -> str | 
             return qid
         case _:
             raise SourceError(
-                f"line {node.lineno}: a cell may hold only one check call, found {len(found)}."
+                f"line {node.lineno}: a cell may hold only one {api} call, found {len(found)}."
             )
 
 
@@ -565,7 +641,8 @@ def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
     """
 
     errors = _test_name_errors(nb, cfg) + _question_errors(nb, cfg)
-    errors += _hidden_check_errors(nb) + _public_cell_errors(nb) + _marker_errors(nb)
+    errors += _hidden_grade_errors(nb) + _public_cell_errors(nb) + _marker_errors(nb)
+    errors += _assignment_errors(nb) + _instructor_errors(nb)
     errors += _public_marker_errors(nb)
     errors += _near_marker_errors(nb) + _hidden_name_errors(nb)
 
@@ -573,7 +650,7 @@ def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
 
 
 def _test_name_errors(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
-    """Duplicate tests, cells mixing questions, and unknown questions in tests or checks."""
+    """Duplicate tests, cells mixing questions, and unknown questions in tests or grades."""
 
     errors = []
     seen: set[str] = set()
@@ -593,24 +670,25 @@ def _test_name_errors(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
             qid = question_id(name)
             if qid not in cfg.questions:
                 errors.append(
-                    f"`{name}` (line {cell.start}): no question `{qid}` in [tool.{TOOL}] questions."
+                    f"`{name}` (line {cell.start}): no question `{qid}`. Declare it in a cell "
+                    f'with `mogs.grade("{qid}", points=...)`.'
                 )
 
-        if cell.check_qid is not None and cell.check_qid not in cfg.questions:
+        if cell.grade_qid is not None and cell.grade_qid not in cfg.questions:
             errors.append(
-                f'check("{cell.check_qid}") (line {cell.start}): no question '
-                f"`{cell.check_qid}` in [tool.{TOOL}] questions."
+                f'grade("{cell.grade_qid}") (line {cell.start}): no question '
+                f"`{cell.grade_qid}` in the config."
             )
 
     return errors
 
 
 def _question_errors(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
-    """Each auto question has tests and a check cell; each manual one has an answer cell."""
+    """Each auto question has tests and a grade cell; each manual one has an answer cell."""
 
     errors = []
     tests = nb.tests_by_question()
-    checked = {cell.check_qid for cell in nb.cells}
+    graded = {cell.grade_qid for cell in nb.cells}
 
     for qid, question in cfg.questions.items():
         public, hidden = tests.get(qid, ([], []))
@@ -620,33 +698,99 @@ def _question_errors(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
                 errors.append(
                     f"Question `{qid}` is manual but has tests: {', '.join(public + hidden)}."
                 )
-            if not nb.answer_cells(qid):
+            if not nb.written_cells(qid)[1]:
                 errors.append(
-                    f"Manual question `{qid}` has no answer cell. Add a markdown cell named "
-                    f"`answer_{qid}`."
+                    f"Question `{qid}` has no tests and no written answer. Add `test_{qid}_*` "
+                    f'functions, or a Markdown cell before `mogs.grade("{qid}", ...)` with '
+                    f"your answer between `{HtmlMarker.BEGIN}` and `{HtmlMarker.END}`."
                 )
             continue
 
         if not public and not hidden:
             errors.append(f"Question `{qid}` has no tests. Add `test_{qid}_*` functions.")
-        elif public and qid not in checked:
+        elif public and qid not in graded:
             errors.append(
-                f"Question `{qid}` has public tests but no check cell. Add a cell with "
-                f'`mgs.check("{qid}")`.'
+                f"Question `{qid}` has public tests but no grade cell. Add a cell with "
+                f'`mogs.grade("{qid}", points=...)`.'
             )
 
     return errors
 
 
-def _hidden_check_errors(nb: Notebook) -> list[str]:
-    """Check calls sit outside `# HIDDEN` cells, which the student copy drops."""
+def _hidden_grade_errors(nb: Notebook) -> list[str]:
+    """Grade calls sit outside `# HIDDEN` cells, which the student copy drops."""
 
     return [
-        f"check() for {cell.check_qid} is in a hidden cell (line {cell.start}), so the student "
+        f"grade() for {cell.grade_qid} is in a hidden cell (line {cell.start}), so the student "
         f"copy would lose it. Move it to a cell without `{HIDDEN}`."
         for cell in nb.cells
-        if cell.hidden and cell.check_qid is not None
+        if cell.hidden and cell.grade_qid is not None
     ]
+
+
+def _assignment_errors(nb: Notebook) -> list[str]:
+    """The `assignment(...)` call sits alone in a plain cell, which the build drops."""
+
+    errors = []
+
+    for cell in nb.cells:
+        if not cell.assignment:
+            continue
+
+        node = _cell_node(nb.src, cell)
+        calls = api_calls(ast.parse(nb.src), node, Api.ASSIGNMENT)
+        match node:
+            case ast.FunctionDef(body=[ast.Expr(value=ast.Call() as call), *rest]) if (
+                cell.kind is CellKind.CELL
+                and not cell.hidden
+                and calls == [call]
+                and all(isinstance(stmt, ast.Return) and stmt.value is None for stmt in rest)
+                and len(rest) <= 1
+            ):
+                continue
+
+        errors.append(
+            f"line {cell.start}: put `{ASSIGNMENT}` in a cell of its own, without other code "
+            f"or `{HIDDEN}`. The build removes that cell from the student notebook."
+        )
+
+    return errors
+
+
+def _instructor_errors(nb: Notebook) -> list[str]:
+    """Instructor cells are plain cells that the rest of the notebook does not need.
+
+    The build drops them, so they define no names for other cells and hold no tests or grade
+    calls.
+    """
+
+    errors = []
+
+    for cell in nb.cells:
+        if not cell.instructor:
+            continue
+
+        where = f"Instructor cell `{cell.name}` (line {cell.start})"
+
+        if cell.kind is not CellKind.CELL:
+            errors.append(f"{where} must be a plain `@app.cell`; the build removes it.")
+            continue
+
+        returned = sorted(_returned_names(_cell_node(nb.src, cell)))
+        problems = [
+            *([f"returns {', '.join(returned)}"] if returned else []),
+            *([f"defines {', '.join(cell.tests)}"] if cell.tests else []),
+            *([f"calls grade() for {cell.grade_qid}"] if cell.grade_qid else []),
+            *([f"holds `{HIDDEN}`"] if cell.hidden else []),
+        ]
+
+        if problems:
+            errors.append(
+                f"{where} {'; '.join(problems)}. The build removes instructor cells from the "
+                "student notebook, so keep only notes for yourself in them."
+            )
+
+    return errors
 
 
 def _public_cell_errors(nb: Notebook) -> list[str]:
@@ -801,17 +945,55 @@ def _public_marker_errors(nb: Notebook) -> list[str]:
     ]
 
 
+def line_marker(line: str, markdown: bool) -> tuple[Marker | None, str]:
+    """The solution marker `line` is, and a prompt line's text.
+
+    In a Markdown cell the markers are HTML comments (`HtmlMarker`); elsewhere they are
+    Python comments. A line that is no marker gives `(None, "")`.
+    """
+
+    stripped = line.strip()
+
+    if markdown:
+        match stripped:
+            case HtmlMarker.BEGIN:
+                return Marker.BEGIN, ""
+            case HtmlMarker.END:
+                return Marker.END, ""
+
+        prompt = HTML_PROMPT_RE.fullmatch(stripped)
+        return (Marker.PROMPT, prompt.group(1) or "") if prompt else (None, "")
+
+    match stripped:
+        case Marker.BEGIN | Marker.END:
+            return Marker(stripped), ""
+        case _ if stripped.startswith(PROMPT):
+            return Marker.PROMPT, stripped.removeprefix(PROMPT).removeprefix(" ")
+        case _:
+            return None, ""
+
+
 def _marker_errors(nb: Notebook) -> list[str]:
-    """`# BEGIN SOLUTION` / `# END SOLUTION` pairs open and close in the same cell."""
+    """Solution markers pair up in the same cell, and Markdown cells use the HTML ones."""
 
     errors = []
     opened: int | None = None
+    markdown = nb.markdown_lines()
 
     def cell_at(number: int) -> Cell | None:
         return next((cell for cell in nb.cells if cell.start <= number <= cell.end), None)
 
     for number, line in enumerate(split_lines(nb.src), start=1):
-        match line.strip(), opened:
+        if number in markdown:
+            errors += _markdown_line_errors(number, line.strip())
+        elif line_marker(line, True)[0] is not None:
+            errors.append(
+                f"line {number}: `{line.strip()}` is read only in a Markdown cell written with "
+                'a plain string, `mo.md(r"""...""")`. Elsewhere the solution would reach '
+                "students."
+            )
+
+        match line_marker(line, number in markdown)[0], opened:
             case Marker.BEGIN, None:
                 opened = number
             case Marker.BEGIN, int():
@@ -833,6 +1015,39 @@ def _marker_errors(nb: Notebook) -> list[str]:
     return errors
 
 
+def _markdown_line_errors(number: int, stripped: str) -> list[str]:
+    """A `#` marker in a Markdown cell, or an HTML comment that looks like a marker."""
+
+    html = {
+        BEGIN: HtmlMarker.BEGIN,
+        END: HtmlMarker.END,
+        SOLUTION: f"{HtmlMarker.BEGIN} ... {HtmlMarker.END}",
+    }
+
+    for marker, replacement in html.items():
+        if stripped == marker or stripped.endswith(f" {marker}"):
+            return [
+                f"line {number}: `{marker}` in a Markdown cell is a heading. Write "
+                f"`{replacement}` instead."
+            ]
+
+    if stripped.startswith(PROMPT):
+        return [
+            f"line {number}: `{PROMPT}` in a Markdown cell is a heading. Write "
+            f"`{HtmlMarker.PROMPT}` instead."
+        ]
+
+    exact = stripped in (HtmlMarker.BEGIN, HtmlMarker.END) or HTML_PROMPT_RE.fullmatch(stripped)
+
+    if NEAR_HTML_RE.match(stripped) and not exact:
+        return [
+            f"line {number}: `{stripped}` looks like a solution marker. Write it exactly as "
+            f"`{HtmlMarker.BEGIN}`, `{HtmlMarker.END}` or `{HtmlMarker.PROMPT}`."
+        ]
+
+    return []
+
+
 def _near_marker_errors(nb: Notebook) -> list[str]:
     """Comments that look like a marker but are misspelled, or a `# HIDDEN` after code.
 
@@ -844,7 +1059,7 @@ def _near_marker_errors(nb: Notebook) -> list[str]:
     errors = []
     markers = (SOLUTION, BEGIN, END)
     lines = split_lines(nb.src)
-    regions = _region_lines(lines)
+    regions = _region_lines(lines, nb.markdown_lines())
 
     for token in tokenize.generate_tokens(io.StringIO(nb.src).readline):
         if token.type != tokenize.COMMENT:
@@ -874,8 +1089,8 @@ def _near_marker_errors(nb: Notebook) -> list[str]:
     return errors
 
 
-def _region_lines(lines: list[str]) -> set[int]:
-    """Line numbers inside `# BEGIN SOLUTION` ... `# END SOLUTION` regions, markers included.
+def _region_lines(lines: list[str], markdown: frozenset[int]) -> set[int]:
+    """Line numbers inside solution regions, markers included.
 
     A region left open runs to the end of the file.
     """
@@ -884,7 +1099,7 @@ def _region_lines(lines: list[str]) -> set[int]:
     start: int | None = None
 
     for number, line in enumerate(lines, start=1):
-        match line.strip(), start:
+        match line_marker(line, number in markdown)[0], start:
             case Marker.BEGIN, None:
                 start = number
             case Marker.END, int():

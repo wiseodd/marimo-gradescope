@@ -154,7 +154,7 @@ def test_bundle_cells_from_notebook():
         ("q2", False, ("test_q2_count",)),
         ("q2", True, ("test_q2_upper", "test_q2_empty")),
     ]
-    assert "import marimo_gradescope as mgs" in bundle.setup_code
+    assert "import marimo_gradescope as mogs" in bundle.setup_code
     assert bundle.cells[1].source.startswith("# HIDDEN\ndef big(n):")
 
 

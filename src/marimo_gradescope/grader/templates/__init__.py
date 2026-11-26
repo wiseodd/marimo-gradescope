@@ -4,7 +4,7 @@ import re
 from importlib.resources import files
 from string import Template
 
-from marimo_gradescope.config import TOOL, AssignmentConfig, ConfigError
+from marimo_gradescope.config import ASSIGNMENT, AssignmentConfig, ConfigError
 from marimo_gradescope.grader._user import STUDENT_USER
 
 # The uv that `setup.sh` installs on Gradescope.
@@ -21,7 +21,7 @@ def setup_script(cfg: AssignmentConfig) -> str:
 
     if not PYTHON_RE.fullmatch(cfg.python):
         raise ConfigError(
-            f'[tool.{TOOL}] `python` must be a version such as "3.13", got {cfg.python!r}.'
+            f'{ASSIGNMENT} `python` must be a version such as "3.13", got {cfg.python!r}.'
         )
 
     template = Template(_read("setup.sh"))
