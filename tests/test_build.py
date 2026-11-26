@@ -61,7 +61,7 @@ def demo(tmp_path_factory) -> tuple[Path, BuildResult]:
 def test_artifact_paths(demo):
     folder, result = demo
 
-    assert result.student == folder / "dist" / "student" / "hw.py"
+    assert result.student == folder / "dist" / "student" / "hw.zip"
     assert result.solved == folder / "dist" / "autograder" / "hw.py"
     assert result.zip.parent == folder / "dist" / "autograder"
     assert ZIP_RE.fullmatch(result.zip.name), result.zip.name
@@ -112,7 +112,9 @@ def test_bundle_has_hidden_tests_and_student_copy_does_not(demo):
         bundle = json.loads(archive.read("bundle.json"))
 
     sources = "\n".join(cell["source"] for cell in bundle["cells"])
-    student = result.student.read_text(encoding="utf-8")
+
+    with zipfile.ZipFile(result.student) as archive:
+        student = archive.read("hw/hw.py").decode()
 
     for name in ("test_q1_negative", "test_q2_floats"):
         assert name in sources
@@ -137,10 +139,7 @@ def test_dist_has_only_the_artifacts(demo):
             "autograder/requirements.txt",
             "autograder/tests/q1.py",
             "autograder/tests/q2.py",
-            "student/data/scores.csv",
-            "student/hw.py",
-            "student/tests/q1.py",
-            "student/tests/q2.py",
+            "student/hw.zip",
         ]
     )
     source = [name for name in tree(DEMO) if not name.startswith(("dist/", "__marimo__/"))]
@@ -148,12 +147,29 @@ def test_dist_has_only_the_artifacts(demo):
 
 
 @pytest.mark.network
+def test_student_zip_holds_one_folder_with_the_notebook_tests_and_data(demo):
+    folder, result = demo
+
+    with zipfile.ZipFile(result.student) as archive:
+        names = archive.namelist()
+        infos = archive.infolist()
+        data = archive.read("hw/data/scores.csv")
+
+    assert names == ["hw/data/scores.csv", "hw/hw.py", "hw/tests/q1.py", "hw/tests/q2.py"]
+    assert {info.date_time for info in infos} == {(1980, 1, 1, 0, 0, 0)}
+    assert data == (folder / "data" / "scores.csv").read_bytes()
+
+
+@pytest.mark.network
 def test_public_tests_sit_next_to_both_copies(demo):
-    folder, _ = demo
+    folder, result = demo
 
-    for part in ("student", "autograder"):
-        q1 = (folder / "dist" / part / "tests" / "q1.py").read_text(encoding="utf-8")
+    with zipfile.ZipFile(result.student) as archive:
+        student = archive.read("hw/tests/q1.py").decode()
 
+    autograder = (folder / "dist" / "autograder" / "tests" / "q1.py").read_text(encoding="utf-8")
+
+    for q1 in (student, autograder):
         assert "def test_q1_whole_numbers():" in q1
         assert "def test_q1_fractions():" in q1
         assert "test_q1_negative" not in q1
@@ -251,10 +267,8 @@ def test_blank_score_warning_names_passing_tests(tmp_path, capsys):
     assert code == 0
     assert "test_q1_trivial" in out
     [archive] = (folder / "dist" / "autograder").glob("*.zip")
-    assert f"{folder / 'dist'}/" in out
-    assert re.search(
-        rf"── {re.escape(archive.name)} +← upload to Gradescope as the autograder", out
-    )
+    assert f"Upload to Gradescope  : {archive}" in out
+    assert f"Distribute to students: {folder / 'dist' / 'student' / 'hw.zip'}" in out
     assert "Average" in out
     assert "Reading scores" in out
 
@@ -396,31 +410,9 @@ def test_cli_does_not_import_the_sandbox():
     assert "marimo_gradescope.grader._process" not in result.stdout
 
 
-def fake_dist(root: Path) -> Path:
-    """A `dist/` with the files a build of the demo writes, empty."""
-
-    dist = root / "dist"
-    for rel in (
-        "student/hw.py",
-        "student/data/scores.csv",
-        "student/tests/q1.py",
-        "student/tests/q2.py",
-        "autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
-        "autograder/hw.py",
-        "autograder/requirements.txt",
-        "autograder/data/scores.csv",
-        "autograder/tests/q1.py",
-        "autograder/tests/q2.py",
-    ):
-        (dist / rel).parent.mkdir(parents=True, exist_ok=True)
-        (dist / rel).write_text("", encoding="utf-8")
-
-    return dist
-
-
 def fake_result(dist: Path, **fields) -> BuildResult:
     return BuildResult(
-        student=dist / "student" / "hw.py",
+        student=dist / "student" / "hw.zip",
         zip=dist / "autograder" / "hw-autograder-2026_09_30T12_30_41_890583.zip",
         solved=dist / "autograder" / "hw.py",
         solution=(4.0, 4.0),
@@ -430,48 +422,33 @@ def fake_result(dist: Path, **fields) -> BuildResult:
     )
 
 
-def test_report_draws_the_dist_tree(tmp_path, monkeypatch):
-    dist = fake_dist(tmp_path / "demo")
+def test_report_starts_with_what_to_do(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 
-    lines = report(fake_result(dist, scores=())).splitlines()
+    lines = report(fake_result(tmp_path / "demo" / "dist", scores=())).splitlines()
 
-    assert lines[: lines.index("")] == [
-        "demo/dist/",
-        "├── autograder/",
-        "│   ├── hw-autograder-2026_09_30T12_30_41_890583.zip  "
-        "← upload to Gradescope as the autograder",
-        "│   ├── hw.py                                         "
-        "← submit on Gradescope to check the autograder",
-        "│   ├── requirements.txt",
-        "│   ├── data/",
-        "│   │   └── scores.csv",
-        "│   └── tests/",
-        "│       ├── q1.py",
-        "│       └── q2.py",
-        "└── student/                                          "
-        "← give this directory to your students",
-        "    ├── hw.py",
-        "    ├── data/",
-        "    │   └── scores.csv",
-        "    └── tests/",
-        "        ├── q1.py",
-        "        └── q2.py",
+    assert lines[:4] == [
+        "All done!",
+        "Upload to Gradescope  : demo/dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
+        "Distribute to students: demo/dist/student/hw.zip",
+        "",
     ]
 
 
-def test_report_shows_an_absolute_path_outside_the_working_directory(tmp_path, monkeypatch):
-    dist = fake_dist(tmp_path / "demo")
+def test_report_shows_absolute_paths_outside_the_working_directory(tmp_path, monkeypatch):
+    dist = tmp_path / "demo" / "dist"
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     monkeypatch.chdir(elsewhere)
 
-    assert report(fake_result(dist, scores=())).splitlines()[0] == f"{dist}/"
+    lines = report(fake_result(dist, scores=())).splitlines()
+
+    assert lines[2] == f"Distribute to students: {dist / 'student' / 'hw.zip'}"
 
 
 def test_report_shows_manual_questions(tmp_path):
     result = BuildResult(
-        student=fake_dist(tmp_path) / "student/hw.py",
+        student=tmp_path / "dist/student/hw.zip",
         zip=tmp_path / "dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
         solved=tmp_path / "dist/autograder/hw.py",
         solution=(4.0, 4.0),
@@ -493,7 +470,7 @@ def test_report_shows_manual_questions(tmp_path):
 
 def test_report_shows_public_and_hidden_test_counts(tmp_path):
     result = BuildResult(
-        student=fake_dist(tmp_path) / "student/hw.py",
+        student=tmp_path / "dist/student/hw.zip",
         zip=tmp_path / "dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
         solved=tmp_path / "dist/autograder/hw.py",
         solution=(4.0, 4.0),

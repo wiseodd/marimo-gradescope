@@ -2,7 +2,6 @@
 
 import argparse
 import sys
-from collections.abc import Mapping
 from copy import replace
 from pathlib import Path
 
@@ -86,14 +85,14 @@ def grade_report(result: GradeResult) -> str:
 
 
 def report(result: BuildResult) -> str:
-    """The tree of `dist/`, per-question test counts and self-check scores, and warnings."""
+    """The files to upload and distribute, then the self-check scores and the warnings."""
 
-    notes = {
-        result.student.parent: "give this directory to your students",
-        result.zip: "upload to Gradescope as the autograder",
-        result.solved: "submit on Gradescope to check the autograder",
-    }
-    lines = [*file_tree(result.student.parent.parent, notes), ""]
+    lines = [
+        "All done!",
+        f"Upload to Gradescope  : {_shown(result.zip)}",
+        f"Distribute to students: {_shown(result.student)}",
+        "",
+    ]
 
     rows = [("Question", "Public", "Hidden", "Solution", "Blank")]
     manual = []
@@ -129,34 +128,6 @@ def report(result: BuildResult) -> str:
         lines += [f"- {warning}" for warning in result.warnings]
 
     return "\n".join(lines)
-
-
-def file_tree(root: Path, notes: Mapping[Path, str]) -> list[str]:
-    """The files under `root` as a tree, with `notes` after the paths they name.
-
-    In each directory, files come before subdirectories, each sorted by name. `root` is shown
-    relative to the working directory when it is inside it.
-    """
-
-    entries = [(f"{_shown(root)}/", root)]
-
-    def walk(folder: Path, indent: str) -> None:
-        children = sorted(folder.iterdir(), key=lambda path: (path.is_dir(), path.name))
-
-        for index, child in enumerate(children):
-            last = index == len(children) - 1
-            name = f"{child.name}/" if child.is_dir() else child.name
-            entries.append((f"{indent}{'└── ' if last else '├── '}{name}", child))
-
-            if child.is_dir():
-                walk(child, indent + ("    " if last else "│   "))
-
-    walk(root, "")
-    width = max((len(text) for text, path in entries if path in notes), default=0)
-
-    return [
-        f"{text:<{width}}  ← {notes[path]}" if path in notes else text for text, path in entries
-    ]
 
 
 def _shown(path: Path) -> Path:

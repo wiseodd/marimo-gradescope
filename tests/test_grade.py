@@ -1,5 +1,6 @@
 import shutil
 import sys
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -60,7 +61,8 @@ def test_report_marks_hidden_failures(demo, tmp_path, capsys):
 def test_folder_submission_finds_the_notebook(demo, tmp_path):
     upload = tmp_path / "upload"
     upload.mkdir()
-    shutil.copyfile(demo / "dist" / "student" / "hw.py", upload / "hw.py")
+    with zipfile.ZipFile(demo / "dist" / "student" / "hw.zip") as archive:
+        (upload / "hw.py").write_bytes(archive.read("hw/hw.py"))
     (upload / "hw_answers.pdf").write_bytes(b"%PDF-1.4")
 
     result = grade_submission(demo, upload)

@@ -2,8 +2,8 @@
 
 The build writes, next to the source notebook, the layout Otter uses:
 
-- `dist/student/<notebook>.py`, its public tests in `tests/` and the data files, for
-  students;
+- `dist/student/<name>.zip`, for students: one `<name>/` folder with the student notebook, its
+  public tests in `tests/` and the data files;
 - `dist/autograder/<name>-autograder-<timestamp>.zip` with `setup.sh`, `run_autograder`,
   `bundle.json`, `requirements.txt` and the data files, for Gradescope;
 - `dist/autograder/<notebook>.py`, the solved copy: the student notebook with the solutions
@@ -87,7 +87,7 @@ class BuildResult:
     """What a build wrote and how the self-check went.
 
     Attributes:
-        student: The student notebook.
+        student: The zip for students: the student notebook, its public tests and the data.
         zip: The Gradescope autograder zip.
         solved: The solved copy of the student notebook.
         solution: Score and maximum of the solved copy.
@@ -261,20 +261,22 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
 
         # Output, written in full before it replaces the old one.
         out = stage / DIST
-        for part, text in (("student", student), ("autograder", solved)):
-            (out / part).mkdir(parents=True)
-            (out / part / cfg.notebook).write_text(text, encoding="utf-8")
-            for rel, source in data.items():
-                target = out / part / rel
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(source, target)
-            for rel, text in tests.items():
-                target = out / part / rel
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(text, encoding="utf-8")
+        (out / "student").mkdir(parents=True)
+        files = {str(rel): source.read_bytes() for rel, source in data.items()}
+        files |= {str(rel): text.encode() for rel, text in tests.items()}
+        student_files = {cfg.notebook: student.encode(), **files}
+        write_zip(
+            out / "student" / f"{cfg.name}.zip",
+            {f"{cfg.name}/{rel}": content for rel, content in student_files.items()},
+        )
 
-        (out / "autograder" / "requirements.txt").write_text(requirements, encoding="utf-8")
-        write_zip(out / "autograder" / zip_name, entries)
+        autograder = out / "autograder"
+        for rel, content in {cfg.notebook: solved.encode(), **files}.items():
+            (autograder / rel).parent.mkdir(parents=True, exist_ok=True)
+            (autograder / rel).write_bytes(content)
+
+        (autograder / "requirements.txt").write_text(requirements, encoding="utf-8")
+        write_zip(autograder / zip_name, entries)
 
         for part in ("student", "autograder"):
             if (dist / part).exists():
@@ -283,7 +285,7 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
             shutil.move(out / part, dist / part)
 
     return BuildResult(
-        student=dist / "student" / cfg.notebook,
+        student=dist / "student" / f"{cfg.name}.zip",
         zip=dist / "autograder" / zip_name,
         solved=dist / "autograder" / cfg.notebook,
         solution=total(solution.results),
