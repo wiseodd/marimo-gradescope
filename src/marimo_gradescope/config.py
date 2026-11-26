@@ -20,6 +20,8 @@ HEADER_RE = re.compile(r"(?m)^# /// script$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
 TABLE_RE = re.compile(r"^\[\[?\s*([A-Za-z0-9_-]+(?:\s*\.\s*[A-Za-z0-9_-]+)*)\s*\]\]?\s*(#.*)?$")
 NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 QID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
+# Characters Windows forbids in file names.
+WINDOWS_FORBIDDEN = frozenset('<>:"|?*')
 # Device names Windows reserves in any case, with or without an extension.
 WINDOWS_RESERVED = frozenset(
     {"con", "prn", "aux", "nul", *(f"{port}{n}" for port in ("com", "lpt") for n in range(1, 10))}
@@ -139,7 +141,7 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
         case _:
             raise ConfigError(f"[tool.{TOOL}] `questions` must be a non-empty table.")
 
-    config = AssignmentConfig(name=path.stem, notebook=path.name, questions=questions)
+    config = AssignmentConfig(name=_name(path.stem), notebook=path.name, questions=questions)
 
     for key, value in table.items():
         match key:
@@ -249,7 +251,10 @@ def _string(key: str, value: object) -> str:
 
 
 def _name(value: str) -> str:
-    """Check that the assignment name works as part of a file name."""
+    """Check that the assignment name works as a file name, on Windows too.
+
+    The name names the autograder zip, the student zip and the folder in the student zip.
+    """
 
     if (
         not value
@@ -259,6 +264,17 @@ def _name(value: str) -> str:
         raise ConfigError(
             f"[tool.{TOOL}] `name` names the autograder zip, so it must not be empty, start "
             f"with `.`, or hold `/`, `\\` or control characters; got {value!r}."
+        )
+
+    if (
+        value.split(".", 1)[0].casefold() in WINDOWS_RESERVED
+        or any(char in WINDOWS_FORBIDDEN for char in value)
+        or value.endswith((".", " "))
+    ):
+        raise ConfigError(
+            f"[tool.{TOOL}] `name` {value!r} is not a valid file name on Windows. It names the "
+            "student zip and its folder, which students on Windows must be able to unzip. Pick "
+            "another `name`, or set one if it comes from the notebook's file name."
         )
 
     return value

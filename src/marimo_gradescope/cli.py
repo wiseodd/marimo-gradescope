@@ -85,12 +85,12 @@ def grade_report(result: GradeResult) -> str:
 
 
 def report(result: BuildResult) -> str:
-    """Artifact paths, per-question test counts and self-check scores, and warnings, as text."""
+    """The files to upload and distribute, then the self-check scores and the warnings."""
 
     lines = [
-        f"Student notebook:  {result.student}",
-        f"Autograder zip:    {result.zip}",
-        f"Solved notebook:   {result.solved}",
+        "All done!",
+        f"Upload to Gradescope  : {_shown(result.zip)}",
+        f"Distribute to students: {_shown(result.student)}",
         "",
     ]
 
@@ -128,6 +128,14 @@ def report(result: BuildResult) -> str:
         lines += [f"- {warning}" for warning in result.warnings]
 
     return "\n".join(lines)
+
+
+def _shown(path: Path) -> Path:
+    """`path` relative to the working directory when it is inside it, else as it is."""
+
+    cwd = Path.cwd()
+
+    return path.relative_to(cwd) if path.is_relative_to(cwd) else path
 
 
 def _fraction(score: float, points: float) -> str:

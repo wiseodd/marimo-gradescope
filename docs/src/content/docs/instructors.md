@@ -3,11 +3,23 @@ title: Instructors
 description: Write the source notebook, build, and set up Gradescope.
 ---
 
-An assignment is a folder with one source notebook and its data files.
-`marimo-gradescope build examples/demo` turns it into a student notebook and an autograder zip.
-[`examples/demo`](https://github.com/wiseodd/marimo-gradescope/tree/main/examples/demo) is a complete one.
+An assignment is a directory with one source notebook and its data files, for example:
+
+```text
+hw1/
+├── hw.py
+└── data/
+    └── scores.csv
+```
+
+`marimo-gradescope build <directory name>` turns it into a student notebook and an autograder zip.
+[`examples/demo`](https://github.com/wiseodd/marimo-gradescope/tree/main/examples/demo) is a complete example.
+See also [marimo's official tutorial](https://docs.marimo.io/getting_started/quickstart/).
 
 ## Header
+
+A marimo notebook is just a plain Python `.py` file.
+The `marimo-gradescope` config must be put in the notebook's header:
 
 ```python
 # /// script
@@ -22,61 +34,109 @@ An assignment is a folder with one source notebook and its data files.
 # q1 = 25
 # q2 = { points = 25, title = "Gradient descent" }
 # q3 = { points = 10, title = "Discussion", manual = true }
-#
-# [tool.marimo.runtime]
-# reactive_tests = false
 # ///
 ```
 
-| Key | Default | |
-| --- | --- | --- |
-| `questions` | required | Points per question, or a table with `points`, `title`, `manual`. |
-| `name` | file name | The zip is `<name>-autograder-<timestamp>.zip`. |
-| `files` | `[]` | Data files and folders, relative to the notebook. |
-| `timeout` | `60` | Seconds per test. |
-| `budget` | `540` | Seconds for the whole grading run. |
-| `memory` | `4096` | MB per grading process, at least 2048. Linux only. |
-| `python` | `"3.13"` | Python on Gradescope. |
-| `requirements` | none | A requirements file to use on Gradescope instead of `dependencies`. |
+Available options are:
 
-Question ids are letters and digits, like `q1` or `bonus`.
-`reactive_tests = false` is required: `marimo` 0.25 and 0.26 crash when they run the notebook's tests on their own.
+| Key            | Default   | Example                                            | Description                                                                                                                          |
+| -------------- | --------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `questions`    | required  | `q2 = { points = 25, title = "Gradient descent" }` | Points per question, or a dict with `points`, `title` and `manual`.                                                                  |
+| `name`         | file name | `name = "HW1"`                                     | Names the student zip `<name>.zip` and the autograder zip `<name>-autograder-<timestamp>.zip`. Must be a valid file name on Windows. |
+| `files`        | `[]`      | `files = ["data/"]`                                | Data files and directories, relative to the notebook. `tests` is reserved for the public tests.                                      |
+| `timeout`      | `60`      | `timeout = 120`                                    | Seconds per test.                                                                                                                    |
+| `budget`       | `540`     | `budget = 900`                                     | Seconds for the whole grading run.                                                                                                   |
+| `memory`       | `4096`    | `memory = 8192`                                    | MB per grading process, at least 2048. Linux only.                                                                                   |
+| `python`       | `"3.13"`  | `python = "3.14"`                                  | Python version on Gradescope.                                                                                                        |
+| `requirements` | none      | `requirements = "requirements.txt"`                | A requirements file for Gradescope, relative to the notebook. It's used instead of `dependencies`.                                   |
+
+Question ids are letters and digits, and start with a letter, e.g., `q1` or `bonus`.
+They can't contain `_`: test names use `_` to separate the id from the rest of the name.
+Two ids can't differ only in case, like `q1` and `Q1`, and an id can't be a name Windows reserves, like `con` or `nul`.
+Each id names a file in the student zip, `tests/<id>.py`.
 
 ## Notebook
 
-Imports go in the setup cell, including `import marimo_gradescope as mgs` and whatever the tests need.
+The source notebook is a regular marimo notebook with a few conventions.
 
-Functions students write are `@app.function` cells.
-The grader imports them without running the rest of the notebook.
-A function that reads another cell's variable can only be graded by running the whole notebook, so avoid it.
+Put all imports in the setup cell (`with app.setup:`).
+This includes `import marimo_gradescope as mgs` and any library the tests need.
+
+```python
+with app.setup:
+    import csv
+
+    import marimo as mo
+    import numpy as np
+
+    import marimo_gradescope as mgs
+```
+
+Write each function that the students have to fill in as an `@app.function` cell.
+See below.
+The grader imports these functions directly, without running the rest of the notebook.
+A function that reads a variable defined in another cell can't be imported this way.
+The grader then has to run the whole notebook to get it.
+That's slower, and it fails if any cell in the notebook fails.
+So, avoid such functions.
 
 ### Solutions
+
+Mark a solution with `# BEGIN SOLUTION` and `# END SOLUTION`:
 
 ```python
 @app.function
 def step(x, lr):
     # BEGIN SOLUTION
     # PROMPT: return ...
-    return x - lr * 2 * x
+    grad = 2 * x
+    return x - lr * grad
     # END SOLUTION
 ```
 
-Students get the `# PROMPT:` lines, or `...` if there are none.
-A single line works too: `lr = 0.1  # SOLUTION` becomes `lr = ...`.
-A misspelled marker is a build error, so no solution leaks by accident.
+In the student notebook, everything between the markers is replaced by the `# PROMPT:` lines, without the `# PROMPT:` prefix:
 
-The markers work in any cell, Markdown cells included.
-An ungraded exercise therefore needs no entry in `questions`: write it in a plain cell and put its solution between the markers.
+```python
+@app.function
+def step(x, lr):
+    return ...
+```
+
+If there are no `# PROMPT:` lines, the student gets `...` instead.
+
+For a single line, put `# SOLUTION` at the end of it.
+For example, `lr = 0.1  # SOLUTION` becomes `lr = ...` in the student notebook.
+A misspelled marker (e.g., `# SOULTION`) will fail the build.
+
+The markers work in any cell, including Markdown cells.
+This is useful for ungraded exercises.
+An ungraded exercise doesn't need an entry in `questions`.
+Write it in a normal cell and put its solution between the markers.
 
 ### Tests
 
-Tests are functions named `test_<qid>_<name>`, one cell per question, and nothing else in that cell.
-`pytest notebook.py` runs them.
+A test is a function named `test_<qid>_<name>`, e.g., `test_q1_whole_numbers`.
+Put the public tests of each question in their own cell, with nothing else in it.
+A public test cell can't contain solution markers.
+Students get the public tests as written.
+The tests are plain `pytest` functions, and you can run them all with `pytest notebook.py`.
 
-A cell with a `# HIDDEN` line is removed from the student copy.
-Hidden cells hold hidden tests, and may hold data or helpers for them.
+Hidden tests go in a separate cell with a `# HIDDEN` line:
 
-Each question with public tests gets a check cell:
+```python
+@app.cell
+def _():
+    # HIDDEN
+    def test_q1_negative():
+        assert mean([-4, 4, -6]) == -2
+
+    return
+```
+
+The build removes this cell from the student notebook, and only Gradescope runs it.
+A hidden cell can also hold data or helpers that the hidden tests need.
+
+Each question with public tests needs a check cell:
 
 ```python
 @app.cell
@@ -85,55 +145,107 @@ def _():
     return
 ```
 
-Students see the question's points and a pass or fail per public test, updated as they edit.
+In the student notebook, the check cell shows the question's points and whether each public test passes.
+It updates whenever the student edits their code.
+
+The build command writes each question's public tests to `tests/<qid>.py` in the same directory as the student notebook.
+While the student can modify the tests and get a 100 locally, Gradescope has the ground-truth tests---public and hidden.
+So, tampering with the test files is useless for the student.
 
 ### Written answers
 
-A question with `manual = true` has no tests.
-It needs a Markdown cell named `answer_<qid>`, and optionally `prompt_<qid>` with the question.
-The student's export button puts these cells into a PDF, with LaTeX math rendered.
-LaTeX the PDF cannot render, such as TikZ, shows as source.
-Images show as their alt text, and a prompt cell that isn't plain `mo.md` shows as source.
+A question with `manual = true` is graded by hand on Gradescope and has no tests.
+It needs a Markdown cell named `answer_<qid>`, where the student writes the answer.
+Optionally, add a `prompt_<qid>` cell with the question.
+
+When the student clicks the export button, these cells go into a PDF, with the LaTeX math rendered.
+The PDF goes into the submission zip, together with the notebook.
+
+Some things can't be rendered.
+LaTeX that the PDF doesn't support (e.g., TikZ) shows as source, and so does a prompt cell that isn't plain `mo.md(...)`.
+Images show as their alt text.
 
 ## Build
+
+To build the assignment, run:
 
 ```bash
 marimo-gradescope build examples/demo
 ```
 
-This writes two folders, as Otter does:
+It prints what to do with the result:
 
-- `dist/student/`: the student notebook and its data files, for students.
-- `dist/autograder/`: `<name>-autograder-<timestamp>.zip`, for Gradescope, and the solved notebook: the student notebook with the solutions, next to its data files and `requirements.txt`.
+```text
+All done!
+Upload to Gradescope  : examples/demo/dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip
+Distribute to students: examples/demo/dist/student/hw.zip
+```
 
-Each build replaces both folders.
-Before that, the build grades the solved and the blank student notebook with the real grader.
-It grades them in a new environment with the pinned requirements Gradescope gets, so the build needs network, and the first build of an assignment downloads its dependencies.
-The solved notebook must get full marks.
-A test that passes on the blank copy is reported, since it gives free points.
+The build writes two directories next to the notebook:
+
+```text
+examples/demo/
+├── hw.py
+├── data/
+│   └── scores.csv
+└── dist/
+    ├── student/
+    │   └── hw.zip
+    └── autograder/
+        ├── hw-autograder-2026_09_30T12_30_41_890583.zip
+        ├── hw.py
+        ├── requirements.txt
+        ├── data/
+        │   └── scores.csv
+        └── tests/
+            ├── q1.py
+            └── q2.py
+```
+
+- `dist/student/<name>.zip` is what you give to your students.
+  It contains one directory with the student notebook, its public tests in `tests/`, and the data files.
+- `dist/autograder/` is for Gradescope.
+  Upload `<name>-autograder-<timestamp>.zip` to Gradescope as the autograder.
+  The directory also contains the solved notebook, i.e., the student notebook with the solutions, together with its public tests, the data files and `requirements.txt`.
+
+Each build replaces both directories.
+
+Before writing them, the build checks the assignment by grading two notebooks with the real grader: the solved notebook and the blank student notebook.
+It does this in a fresh environment with the same pinned requirements that Gradescope gets.
+That's why the build needs network access, and why the first build of an assignment takes a while: it has to download the dependencies.
+
+The solved notebook must get full marks, or the build fails.
+The blank student notebook should get zero.
+If a test passes on the blank notebook, it gives students free points, and the build warns you about it.
 
 `build` runs on Linux and macOS.
+On Windows, use WSL.
 
-## Grade one submission
+## Grade a single submission
+
+To grade one submission locally, run:
 
 ```bash
 marimo-gradescope grade examples/demo submission.py
 ```
 
-This grades one student notebook with the same grader and requirements as Gradescope, without uploading it.
-The submission can also be a folder, such as a downloaded upload.
-It prints the score per question and every failing test with its message, hidden tests included, which helps with regrade requests.
+This uses the same grader and the same requirements as Gradescope.
+The submission can be a notebook file or a directory, e.g., an upload downloaded from Gradescope.
+The command prints the score of each question and every failing test with its message, including the hidden tests.
+This is useful for answering regrade requests.
 
 :::caution
-The student's code runs as you, with your files and your environment variables.
-On Gradescope it runs as a separate user with fewer rights; that protection is missing here.
-Grade a submission you don't trust in a container or VM with no credentials or private files in it.
+This runs the student's code with your permissions.
+Use a container for untrusted submissions.
 :::
 
 ## Requirements
 
-Gradescope installs the header's `dependencies`, pinned at build time.
-`[[tool.uv.index]]` entries carry over, so CPU-only `torch` works:
+Gradescope installs the packages in the header's `dependencies`.
+The build pins their versions, and Gradescope installs exactly those.
+
+Custom package indexes in `[[tool.uv.index]]` carry over too.
+For example, this installs the CPU-only build of `torch`:
 
 ```python
 # dependencies = ["marimo", "marimo-gradescope", "torch"]
@@ -147,26 +259,32 @@ Gradescope installs the header's `dependencies`, pinned at build time.
 # explicit = true
 ```
 
-Data files in `files` sit next to the notebook on Gradescope too, at the same relative paths.
+The data files in `files` are copied next to the notebook on Gradescope, at the same relative paths as on your machine.
+So, code that opens `data/scores.csv` relative to the notebook works in both places.
 
 ## Gradescope
 
+To set up the assignment on Gradescope:
+
 1. Create a programming assignment.
-2. Pick an Ubuntu 22.04 base image and upload the zip.
+2. Pick an Ubuntu 22.04 base image and upload the autograder zip.
 3. Pick a container with more memory than `memory`, and a timeout longer than `budget`.
-4. For written answers, add manual-graded questions to the same assignment.
+4. If the assignment has written answers, add manually graded questions to the same assignment.
 
-Then upload `dist/autograder/hw.py` as a test submission; it should get full marks.
+Then, upload `dist/autograder/hw.py` as a test submission to check the autograder.
+It should get full marks.
 
-Each question gets one row.
-It shows the public tests with their messages and only the count of hidden tests that passed.
-Points are split evenly over a question's tests.
+In the results, each question gets one row.
+The row shows each public test with its message, but only the number of hidden tests that passed.
+A question's points are split evenly across its tests.
 
 ## Security
 
-Student code runs as an unprivileged user, with public and hidden tests in separate processes.
-It can't read the hidden tests from disk or write the results file.
-A crash or an endless loop fails only the test it happens in.
+On Gradescope, student code runs under a separate user account with limited permissions.
+The public and hidden tests also run in separate processes.
+As a result, the student's code can't read the hidden tests from disk, and it can't write the results file.
+If the code crashes or loops forever, only the test where it happens fails.
 
-A determined student can still fake a pass from inside their own code, and the container has internet access.
-Otter Grader has the same limits, and runs student code as root.
+There are limits, though.
+A determined student can still fake a passing test from inside their own code, and the container has internet access.
+Otter Grader has the same limits, and it runs student code as root.

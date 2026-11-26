@@ -28,13 +28,14 @@ Then:
 marimo-gradescope build examples/demo
 ```
 
-In `examples/demo/dist/student`, it will output a student notebook (`hw.py`) and any data attached to the notebook (if any).
-Distribute these to your students, e.g., by zipping them.
+In `examples/demo/dist/student`, it will output `hw.zip`.
+It contains the student notebook (`hw.py`), its public tests (`tests/`), and any data attached to the notebook (if any).
+Distribute it to your students.
 Refer your students to <https://marimo-gradescope.kristia.de/students/>.
 
 In `examples/demo/dist/autograder`, it will output `hw-autograder-*.zip` and `hw.py`.
 Upload the former to Gradescope.
-The file `hw.py` here is like the one in the `student` dir, but with full solution.
+The file `hw.py` here is like the one in the student zip, but with full solution.
 It's useful to check the autograder on Gradescope.
 
 More info: <https://marimo-gradescope.kristia.de>
