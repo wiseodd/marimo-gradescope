@@ -314,7 +314,7 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
             )
 
         blank = _self_grade(bundle, student_path, check / "blank", assignment_dir, python)
-        warnings += _blank_warnings(blank)
+        warnings += free_points_warnings(blank.outcomes, cfg)
 
         # Output, written in full before it replaces the old one.
         out = stage / DIST
@@ -472,8 +472,15 @@ def _failed_tests(names: list[str], load_failed: bool) -> str:
     return f"{tests} of {questions}"
 
 
-def _blank_warnings(blank: _Graded) -> list[str]:
-    passing = [outcome.name for outcome in blank.outcomes.values() if outcome.passed]
+def free_points_warnings(blank: Mapping[str, Outcome], cfg: AssignmentConfig) -> list[str]:
+    """A warning naming the tests that pass on the blank notebook, in questions worth points."""
+
+    passing = [
+        outcome.name
+        for outcome in blank.values()
+        if outcome.passed and cfg.questions[question_id(outcome.name)].points > 0
+    ]
+
     if not passing:
         return []
 

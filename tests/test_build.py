@@ -19,9 +19,10 @@ from mogs.build import (
     data_files,
     failure_report,
     find_notebook,
+    free_points_warnings,
 )
 from mogs.cli import main, report
-from mogs.config import ConfigError, read_config
+from mogs.config import AssignmentConfig, ConfigError, Question, read_config
 from mogs.runner import FailureReason, Outcome
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
@@ -643,3 +644,21 @@ def test_report_says_one_pt(tmp_path):
     text = report(result)
 
     assert "- q3 Proof: 1 pt, graded by hand" in text
+
+
+def test_free_points_warning_names_tests_that_pass_blank():
+    cfg = AssignmentConfig("A", "hw.py", {"q1": Question("q1", "Q", 4)})
+    outcomes = {"test_q1_a": Outcome("test_q1_a", True), "test_q1_b": Outcome("test_q1_b", False)}
+
+    [warning] = free_points_warnings(outcomes, cfg)
+
+    assert "test_q1_a" in warning
+    assert "test_q1_b" not in warning
+
+
+def test_free_points_warning_skips_zero_point_questions():
+    questions = {"q1": Question("q1", "Q", 4), "q2": Question("q2", "Practice", 0)}
+    cfg = AssignmentConfig("A", "hw.py", questions)
+    outcomes = {"test_q1_a": Outcome("test_q1_a", False), "test_q2_a": Outcome("test_q2_a", True)}
+
+    assert free_points_warnings(outcomes, cfg) == []
