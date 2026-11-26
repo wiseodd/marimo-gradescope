@@ -48,7 +48,7 @@ Then:
 mogs build demo
 ```
 
-In `emo/dist/student`, it will output `hw.zip`.
+In `demo/dist/student`, it will output `hw.zip`.
 It contains the student notebook (`hw.py`), its public tests (`tests/`), and any data attached to the notebook (if any).
 Distribute it to your students.
 Refer your students to <https://mogs.kristia.de/students/>.
