@@ -1218,3 +1218,10 @@ def test_html_end_marker_typo_is_named_first():
 @pytest.mark.parametrize("line", ["<!-- resolution notes -->", "<!-- evolution -->"])
 def test_html_solution_like_comment_ok(line):
     assert errors(md(line)) == errors("")
+
+
+@pytest.mark.parametrize(
+    "line", ["# Solution approach", "## Solutions to exercises", "# Soltuion sketch"]
+)
+def test_markdown_heading_like_solution_ok(line):
+    assert errors(md(line)) == errors("")

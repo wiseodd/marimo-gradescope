@@ -1087,7 +1087,11 @@ def _near_marker_errors(nb: Notebook) -> list[str]:
 
 
 def _near_html_marker_errors(nb: Notebook) -> list[str]:
-    """HTML comments in Markdown cells that look like a marker but are misspelled."""
+    """HTML comments in Markdown cells that look like a marker but are misspelled.
+
+    Only `<!--` lines count. A `#` line in Markdown is a heading, such as `# Solution
+    approach`; `_markdown_line_errors` handles the exact `#` markers there.
+    """
 
     errors = []
     lines = split_lines(nb.src)
@@ -1095,6 +1099,9 @@ def _near_html_marker_errors(nb: Notebook) -> list[str]:
 
     for number in sorted(nb.markdown_lines()):
         stripped = lines[number - 1].strip()
+
+        if not stripped.startswith("<!--"):
+            continue
 
         if stripped in exact or HTML_PROMPT_RE.fullmatch(stripped):
             continue
