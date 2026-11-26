@@ -122,15 +122,23 @@ def grade(
         found = discover(qid, namespace) if tests is None else tests
 
         if not found and tests is None and _written_in_source(qid, namespace):
-            return mo.Html(written_panel(qid, points, title))
+            return mo.Html(written_panel(qid, points, title, source=True))
 
         outcomes = [run_test(name_of(test), with_rewritten_asserts(test)) for test in found]
 
-    return mo.Html(panel(qid, outcomes, points, hidden, title, problem))
+    # Tests found in the source notebook include the hidden ones.
+    public = tests is not None or test_file is not None
+
+    return mo.Html(panel(qid, outcomes, points, hidden, title, problem, public=public))
 
 
-def written_panel(qid: str, points: float | None, title: str | None) -> str:
-    """HTML for a written question: its title and points, and where the answer goes."""
+def written_panel(
+    qid: str, points: float | None, title: str | None, *, source: bool = False
+) -> str:
+    """HTML for a written question: its title and points, and where the answer goes.
+
+    In the `source` notebook, which has no export button, it says where the student's answer goes.
+    """
 
     title = question_title(qid) if title is None else title
 
@@ -140,7 +148,10 @@ def written_panel(qid: str, points: float | None, title: str | None) -> str:
     else:
         note = "Written answer, not graded."
 
-    note += " Write it in the cell above. It goes into the PDF when you export."
+    if source:
+        note += " Students write it in the cell above, and it goes into the PDF they export."
+    else:
+        note += " Write it in the cell above. It goes into the PDF when you export."
 
     return (
         f'<div style="{PANEL_STYLE.format(accent=SHADE, shade=SHADE)}">'
@@ -333,10 +344,13 @@ def panel(
     hidden: int,
     title: str | None = None,
     problem: str | None = None,
+    *,
+    public: bool = True,
 ) -> str:
     """HTML for the panel, headed by `title`, or by `question_title(qid)` when it is `None`.
 
-    `problem` says why there are no outcomes; it defaults to "No tests found".
+    `problem` says why there are no outcomes; it defaults to "No tests found". `public` says the
+    outcomes are of public tests only, and the title calls them so.
     """
 
     title = question_title(qid) if title is None else title
@@ -351,7 +365,8 @@ def panel(
     else:
         passed = sum(outcome.passed for outcome in outcomes)
         accent = PASS if passed == len(outcomes) else FAIL
-        title += f" · {passed}/{len(outcomes)} public tests passed"
+        kind = "public tests" if public else "tests"
+        title += f" · {passed}/{len(outcomes)} {kind} passed"
         items = "".join(outcome_item(outcome) for outcome in outcomes)
         body = f'<ul style="{LIST_STYLE}">{items}</ul>'
 

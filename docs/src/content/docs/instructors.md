@@ -70,7 +70,7 @@ The questions appear on Gradescope in the order of these cells.
 | ----------- | ----------- | -------------------------- | ----------------------------------------------------------------------------------------- |
 | question id | required    | `"q1"`                     | The first argument.                                                                       |
 | `points`    | required    | `points=25`                | Points for the question. A written question can be worth 0.                               |
-| `title`     | from the id | `title="Gradient descent"` | Name on Gradescope and in the PDF. `q1` becomes `Question 1`; other ids stay as they are. |
+| `title`     | from the id | `title="Gradient descent"` | Name on Gradescope and in the PDF. `q1` and `question1` become `Question 1`; other ids stay as they are. |
 
 Question ids are letters and digits, and start with a letter, e.g., `q1` or `bonus`.
 They can't contain `_`: test names use `_` to separate the id from the rest of the name.
@@ -223,7 +223,7 @@ def _():
 ```
 
 The build removes this cell from the student notebook, and only Gradescope runs it.
-A hidden cell can also hold data or helpers that the hidden tests need.
+Data or helpers that the hidden tests need go in a hidden cell of their own: `pytest notebook.py` skips the tests in a cell that holds anything else.
 
 The question ends with a grade cell, which also sets its points:
 
@@ -341,7 +341,7 @@ examples/demo/
   Upload `<name>-autograder-<timestamp>.zip` to Gradescope as the autograder.
   The directory also contains the solved notebook, i.e., the student notebook with the solutions, together with its public tests, the data files and `requirements.txt`.
 
-Each build replaces both directories.
+Each build replaces both directories, and a failed build removes them.
 
 Before writing them, the build checks the assignment by grading two notebooks with the real grader: the solved notebook and the blank student notebook.
 It does this in a fresh environment with the same pinned requirements that Gradescope gets.

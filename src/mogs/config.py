@@ -20,6 +20,8 @@ from pathlib import Path
 TOOL = "mogs"
 PACKAGE = "mogs"
 ASSIGNMENT = "mogs.assignment()"
+# Folder next to the student notebook with its public tests, `tests/<qid>.py`.
+TESTS_FOLDER = "tests"
 MIN_MEMORY_MB = 2048
 
 # The reference regex from PEP 723, for the `script` block.
@@ -390,9 +392,9 @@ def _points(where: str, value: object) -> float:
 
 
 def default_title(qid: str) -> str:
-    """`q1` → `Question 1`, `q2b` → `Question 2b`; other ids stay as they are."""
+    """`q1` → `Question 1`, `question_2b` → `Question 2b`, any case; other ids stay as they are."""
 
-    match = re.fullmatch(r"q(\d\w*)", qid)
+    match = re.fullmatch(r"(?:q|question)_?(\d\w*)", qid, re.IGNORECASE)
     return f"Question {match.group(1)}" if match else qid
 
 

@@ -19,9 +19,10 @@ from mogs.build import (
     data_files,
     failure_report,
     find_notebook,
+    free_points_warnings,
 )
 from mogs.cli import main, report
-from mogs.config import ConfigError, read_config
+from mogs.config import AssignmentConfig, ConfigError, Question, read_config
 from mogs.runner import FailureReason, Outcome
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
@@ -413,11 +414,12 @@ def test_help_is_short(capsys):
 
 
 @pytest.mark.network
-def test_failed_write_keeps_the_old_dist(tmp_path, monkeypatch, capsys):
+def test_failed_write_removes_the_old_dist(tmp_path, monkeypatch, capsys):
     folder = demo_copy(tmp_path / "demo")
     old = folder / "dist" / "student" / "old.txt"
     old.parent.mkdir(parents=True)
     old.write_text("old", encoding="utf-8")
+    (folder / "dist" / "notes.txt").write_text("mine", encoding="utf-8")
 
     def broken(path, entries):
         raise OSError("disk full")
@@ -427,7 +429,20 @@ def test_failed_write_keeps_the_old_dist(tmp_path, monkeypatch, capsys):
 
     assert code == 1
     assert "disk full" in capsys.readouterr().err
-    assert tree(folder / "dist") == ["student/old.txt"]
+    assert tree(folder / "dist") == ["notes.txt"]
+
+
+def test_invalid_notebook_removes_the_old_dist(tmp_path, capsys):
+    folder = demo_copy(tmp_path / "demo")
+    old = folder / "dist" / "autograder" / "old.zip"
+    old.parent.mkdir(parents=True)
+    old.write_text("old", encoding="utf-8")
+    edit(folder / "hw.py", "def test_q1_single", "def test_q9_single")
+
+    code = main(["build", str(folder)])
+
+    assert code == 1
+    assert not old.parent.exists()
 
 
 def test_name_cannot_escape_dist(tmp_path):
@@ -635,3 +650,29 @@ def test_data_files_skip_junk(tmp_path):
     files = data_files(folder, read_config(src, folder / "hw.py"))
 
     assert [str(rel) for rel in files] == ["data/scores.csv"]
+
+
+def test_report_says_one_pt(tmp_path):
+    result = fake_result(tmp_path / "dist", scores=(QuestionScore("q3", "Proof", 1, None, None),))
+
+    text = report(result)
+
+    assert "- q3 Proof: 1 pt, graded by hand" in text
+
+
+def test_free_points_warning_names_tests_that_pass_blank():
+    cfg = AssignmentConfig("A", "hw.py", {"q1": Question("q1", "Q", 4)})
+    outcomes = {"test_q1_a": Outcome("test_q1_a", True), "test_q1_b": Outcome("test_q1_b", False)}
+
+    [warning] = free_points_warnings(outcomes, cfg)
+
+    assert "test_q1_a" in warning
+    assert "test_q1_b" not in warning
+
+
+def test_free_points_warning_skips_zero_point_questions():
+    questions = {"q1": Question("q1", "Q", 4), "q2": Question("q2", "Practice", 0)}
+    cfg = AssignmentConfig("A", "hw.py", questions)
+    outcomes = {"test_q1_a": Outcome("test_q1_a", False), "test_q2_a": Outcome("test_q2_a", True)}
+
+    assert free_points_warnings(outcomes, cfg) == []

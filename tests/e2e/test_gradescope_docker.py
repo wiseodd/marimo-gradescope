@@ -202,7 +202,7 @@ EXPECT = {
     "segfault": Expect(0, 6, shown="SIGSEGV"),
     "impure_fn": Expect(4, 6),
     "stdout_flood": Expect(4, 6),
-    "two_py": Expect(0, 0, notice="Found several notebooks"),
+    "two_py": Expect(0, 0, notice="several other `.py` files"),
     "nested_zip": Expect(4, 6),
     "macosx_zip": Expect(4, 6),
     "missing_pdf": Expect(4, 6, notice="No PDF"),

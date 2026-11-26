@@ -12,6 +12,7 @@ from mogs.source import (
     module_tests,
     parse_notebook,
     prompt_previews,
+    source_warnings,
     validate,
 )
 
@@ -554,6 +555,17 @@ def test_validate_unknown_qid_in_test():
 
     assert "test_q9_a" in error
     assert "`q9`" in error
+
+
+def test_validate_misnamed_test_next_to_good_ones_reports_only_the_name():
+    misnamed = PUBLIC.replace(
+        "    return", "    def test_row_count():\n        assert True\n    return"
+    )
+    error = one_error(misnamed + CHECK)
+
+    assert "`test_row_count`" in error
+    assert "no question `row`" in error
+    assert "`test_<qid>_<name>`" in error
 
 
 def test_validate_unknown_qid_in_grade():
@@ -1446,3 +1458,89 @@ def test_validate_test_reading_its_own_cell_names_ok():
     hidden = hidden_cell("n_missing = 3\n\ndef test_q1_h():\n    assert n_missing == 3")
 
     assert errors(PUBLIC + CHECK + hidden) == []
+
+
+# Warnings
+
+
+LATE_HIDDEN = """
+@app.cell
+def _():
+    def test_q1_a():
+        assert True
+
+    # HIDDEN
+    def test_q1_b():
+        assert True
+
+    return
+"""
+
+
+def test_hidden_after_code_warns_that_it_hides_the_whole_cell():
+    [warning] = source_warnings(parse_notebook(nb(LATE_HIDDEN)))
+
+    line = nb(LATE_HIDDEN).splitlines().index("    # HIDDEN") + 1
+    assert f"line {line}" in warning
+    assert "whole cell" in warning
+
+
+@pytest.mark.parametrize(
+    "cell",
+    [
+        "\n@app.cell\ndef _():\n    # HIDDEN\n    def test_q1_a():\n        assert True\n",
+        "\n@app.function\n# HIDDEN\ndef test_q1_a():\n    assert True\n",
+        "\n@app.function\ndef test_q1_a():\n    # HIDDEN\n    assert True\n",
+    ],
+)
+def test_hidden_on_the_first_line_does_not_warn(cell):
+    assert source_warnings(parse_notebook(nb(cell))) == []
+
+
+def test_tests_next_to_other_code_warn_that_pytest_skips_them():
+    cell = hidden_cell("expected = 7\n\ndef test_q1_h():\n    assert expected == 7")
+
+    [warning] = source_warnings(parse_notebook(nb(PUBLIC + CHECK + cell)))
+
+    assert "test_q1_h" in warning
+    assert "pytest" in warning
+
+
+def test_cell_of_only_tests_does_not_warn():
+    cell = hidden_cell("def test_q1_h():\n    assert True\n\nclass TestMore:\n    pass")
+
+    assert source_warnings(parse_notebook(nb(PUBLIC + CHECK + cell))) == []
+
+
+@pytest.mark.parametrize(
+    "statement", ["import pytest", "import pytest as pt", "from pytest import approx"]
+)
+def test_validate_pytest_import_needs_the_dependency(statement):
+    cell = f"\n@app.cell\ndef _():\n    {statement}\n    return\n"
+
+    error = one_error(cell + PUBLIC + CHECK)
+
+    assert "`pytest`" in error
+    assert "`dependencies`" in error
+
+
+BAD_HEADER = HEADER.replace('dependencies = ["marimo"]', "dependencies = [")
+
+
+def test_validate_does_not_read_a_broken_header_without_pytest_imports():
+    assert errors(PUBLIC + CHECK, header=BAD_HEADER) == []
+
+
+def test_validate_reports_a_broken_header_when_pytest_is_imported():
+    cell = "\n@app.cell\ndef _():\n    import pytest\n    return\n"
+
+    error = one_error(cell + PUBLIC + CHECK, header=BAD_HEADER)
+
+    assert "header" in error
+
+
+def test_validate_pytest_import_with_the_dependency_ok():
+    header = HEADER.replace('dependencies = ["marimo"]', 'dependencies = ["marimo", "pytest>=8"]')
+    cell = "\n@app.cell\ndef _():\n    import pytest\n    return\n"
+
+    assert errors(cell + PUBLIC + CHECK, header=header) == []

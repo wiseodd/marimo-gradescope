@@ -278,6 +278,53 @@ def test_two_py_files_are_both_named(tmp_path):
     assert "hw.py" in found.error
 
 
+def test_public_test_files_are_not_notebooks(tmp_path):
+    touch(tmp_path, "hw2/student_file.py", "hw2/tests/q1.py", "hw2/tests/q2.py")
+
+    found = find_submission(tmp_path, "hw.py")
+
+    assert found.py == tmp_path / "hw2" / "student_file.py"
+
+
+def test_notebook_named_like_a_public_test_file_is_found(tmp_path):
+    touch(tmp_path, "hw/q1.py", "hw/tests/q1.py")
+
+    found = find_submission(tmp_path, "q1.py")
+
+    assert found.py == tmp_path / "hw" / "q1.py"
+
+
+def test_assignment_named_tests_is_found(tmp_path):
+    touch(tmp_path, "tests/hw.py", "tests/tests/q1.py")
+
+    found = find_submission(tmp_path, "hw.py")
+
+    assert found.py == tmp_path / "tests" / "hw.py"
+
+
+def test_lone_tests_folder_still_counts(tmp_path):
+    touch(tmp_path, "tests/my_homework.py")
+
+    assert find_submission(tmp_path, "hw.py").py == tmp_path / "tests" / "my_homework.py"
+
+
+def test_two_py_files_are_not_called_notebooks(tmp_path):
+    touch(tmp_path, "one.py", "two.py")
+
+    error = find_submission(tmp_path, "hw.py").error or ""
+
+    assert "notebooks" not in error
+    assert "No `hw.py`" in error
+
+
+def test_markdown_answers_are_named_after_the_assignment(tmp_path):
+    touch(tmp_path, "hw2.py", "homework2_answers.md")
+
+    assert find_submission(tmp_path, "hw2.py", "homework2").answers == (
+        tmp_path / "homework2_answers.md"
+    )
+
+
 def test_no_py_file(tmp_path):
     touch(tmp_path, "notes.txt")
 

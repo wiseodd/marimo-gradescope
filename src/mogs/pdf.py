@@ -338,7 +338,36 @@ def manual_question(
     if not answers:
         parts += (Part(f"*No answer cell `answer_{qid}` found.*", Role.ANSWER),)
 
+    match parts:
+        case (Part(role=Role.PROMPT, style=Style.MARKDOWN) as first, *rest):
+            parts = (replace(first, text=without_title_heading(first.text, title)), *rest)
+
     return Question(title, parts)
+
+
+def without_title_heading(text: str, title: str) -> str:
+    """`text` without a leading Markdown heading whose words `title` already has.
+
+    `## Derive the slope` goes under the title `Question 4: Derive the slope`; `## Question 4:
+    Derive the slope` stays under the title `Question 4`, since it says more.
+    """
+
+    match = re.match(r"\s*#{1,6}[ \t]+(.+?)[ \t#]*(?:\n|$)", text)
+
+    if match is None or _words(match.group(1)) not in _words(title):
+        return text
+
+    return text[match.end() :].lstrip("\n")
+
+
+def _words(text: str) -> str:
+    """The words and symbols of `text` in lower case, spaced: `x + y.` → ` x + y `.
+
+    Sentence punctuation is dropped, so `Question 4:` matches `Question 4`; other symbols, such
+    as `+` and `-` in math, are kept.
+    """
+
+    return f" {' '.join(re.findall(r'\w+|[^\w\s.,:;!?]', text.casefold()))} "
 
 
 def cell_markdown(nb: Notebook, cell: Cell) -> str:

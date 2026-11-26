@@ -210,6 +210,47 @@ def test_pdf_has_title_prompt_and_answer(tmp_path):
     assert sorted(path.name for path in tmp_path.iterdir()) == ["answers.pdf", "hw.py"]
 
 
+@pytest.mark.parametrize(
+    ("title", "heading"),
+    [
+        ("Question 4: Derive the slope", "### Derive the slope"),
+        ("Question 4", "## Question 4"),
+        ("Derive the slope", "## Derive the Slope."),
+    ],
+)
+def test_prompt_heading_the_title_already_says_is_dropped(tmp_path, title, heading):
+    reader = render(
+        tmp_path,
+        {"q4": "It is 2."},
+        prompts={"q4": f"{heading}\n\nFind the slope of $y = 2x$."},
+        titles={"q4": title},
+    )
+
+    text = text_of(reader)
+    shown = heading.lstrip("#").strip().rstrip(".").casefold()
+    assert text.casefold().count(shown) == 1
+    assert "Find the slope" in text
+
+
+@pytest.mark.parametrize(
+    ("title", "heading"),
+    [
+        ("Question 4", "Question 4: Derive the slope"),
+        ("Question 10", "Question 1"),
+        ("Question 4: x + y", "x - y"),
+    ],
+)
+def test_prompt_heading_with_more_than_the_title_stays(tmp_path, title, heading):
+    reader = render(
+        tmp_path,
+        {"q4": "It is 2."},
+        prompts={"q4": f"## {heading}\n\nFind it."},
+        titles={"q4": title},
+    )
+
+    assert f"{title} {heading}" in text_of(reader)
+
+
 PART_B = """
 @app.cell
 def _():

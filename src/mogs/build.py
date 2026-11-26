@@ -48,7 +48,14 @@ from mogs.grader.results import Results, build_results
 from mogs.grader.templates import run_autograder_script, setup_script
 from mogs.requirements import gradescope_requirements
 from mogs.runner import FailureReason, Outcome
-from mogs.source import Notebook, parse_notebook, prompt_previews, question_id, validate
+from mogs.source import (
+    Notebook,
+    parse_notebook,
+    prompt_previews,
+    question_id,
+    source_warnings,
+    validate,
+)
 from mogs.transform import (
     TESTS_FOLDER,
     pinned_requirement,
@@ -247,7 +254,8 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
     """Build and self-check the assignment in `assignment_dir`.
 
     The output is written in full to a temporary folder first. Only when every step succeeds
-    does it replace `dist/student/` and `dist/autograder/`, so only the newest zip is kept.
+    does it replace `dist/student/` and `dist/autograder/`, so only the newest zip is kept. A
+    failed build removes them.
 
     Args:
         assignment_dir: Folder with the source notebook and its data files.
@@ -266,6 +274,18 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
         RequirementsError: If the dependencies cannot be pinned or installed.
     """
 
+    try:
+        return _build(assignment_dir, tool_requirement)
+    except Exception:
+        for part in ("student", "autograder"):
+            shutil.rmtree(assignment_dir / DIST / part, ignore_errors=True)
+
+        raise
+
+
+def _build(assignment_dir: Path, tool_requirement: str | None) -> BuildResult:
+    """`build` without the cleanup of a failed build."""
+
     require_posix()
     assignment = read_assignment(assignment_dir)
     src, cfg, nb = assignment.src, assignment.cfg, assignment.nb
@@ -277,6 +297,7 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
     tests = public_test_files(nb)
     requirement = tool_requirement or f"{TOOL}=={__version__}"
     requirements, warnings = gradescope_requirements(src, cfg, requirement)
+    warnings = source_warnings(nb) + warnings
     entries = {
         "setup.sh": setup_script(cfg).encode(),
         "run_autograder": run_autograder_script().encode(),
@@ -314,7 +335,7 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
             )
 
         blank = _self_grade(bundle, student_path, check / "blank", assignment_dir, python)
-        warnings += _blank_warnings(blank)
+        warnings += free_points_warnings(blank.outcomes, cfg)
 
         # Output, written in full before it replaces the old one.
         out = stage / DIST
@@ -472,8 +493,15 @@ def _failed_tests(names: list[str], load_failed: bool) -> str:
     return f"{tests} of {questions}"
 
 
-def _blank_warnings(blank: _Graded) -> list[str]:
-    passing = [outcome.name for outcome in blank.outcomes.values() if outcome.passed]
+def free_points_warnings(blank: Mapping[str, Outcome], cfg: AssignmentConfig) -> list[str]:
+    """A warning naming the tests that pass on the blank notebook, in questions worth points."""
+
+    passing = [
+        outcome.name
+        for outcome in blank.values()
+        if outcome.passed and cfg.questions[question_id(outcome.name)].points > 0
+    ]
+
     if not passing:
         return []
 

@@ -11,11 +11,12 @@ import tokenize
 from collections.abc import Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from enum import StrEnum
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 from mogs import __version__
 from mogs.config import (
     PACKAGE,
+    TESTS_FOLDER,
     AssignmentConfig,
     normalize_newlines,
     set_dependency,
@@ -41,7 +42,6 @@ EXPORT_BUTTON = "export_button"
 MARKDOWN_PLACEHOLDER = "*Write your answer here.*"
 DEFAULT_ALIAS = "mogs"
 MARIMO_ALIAS = "mo"
-TESTS_FOLDER = "tests"
 # Solution lines that may appear in the student copy by chance: no letters, or a bare keyword.
 TRIVIAL_LINE_RE = re.compile(r"[^A-Za-z]*|(?:pass|return|break|continue|else|try|finally):?")
 
@@ -309,12 +309,11 @@ def export_cells(
         marimo: Which cell has `import marimo as mo`; `MISSING` adds a cell that does.
     """
 
-    stem = Path(cfg.notebook).stem
     manual = [question.id for question in cfg.questions.values() if question.manual]
     titles = {qid: question.title for qid, question in cfg.questions.items()}
     name = alias or DEFAULT_ALIAS
     call = (
-        f"{name}.export({EXPORT_BUTTON}, name={python_literal(stem)}, "
+        f"{name}.export({EXPORT_BUTTON}, name={python_literal(cfg.name)}, "
         f"manual={python_literal(manual)}, titles={python_literal(titles)}, "
         f"placeholders={python_literal(dict(placeholders or {}))})"
     )

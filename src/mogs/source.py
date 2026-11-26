@@ -18,9 +18,12 @@ from mogs.config import (
     ASSIGNMENT,
     Api,
     AssignmentConfig,
+    ConfigError,
     api_calls,
     normalize_newlines,
+    normalized_name,
     question_id,
+    read_header,
     split_lines,
 )
 
@@ -94,6 +97,7 @@ class Cell:
         hidden: The cell holds a `# HIDDEN` line.
         grade_qid: Question id of the cell's `grade(...)` call, if any.
         assignment: The cell holds an `assignment(...)` call.
+        late_hidden: Line of a `# HIDDEN` that comes after the cell's first statement, if any.
     """
 
     kind: CellKind
@@ -104,6 +108,7 @@ class Cell:
     hidden: bool
     grade_qid: str | None
     assignment: bool = False
+    late_hidden: int | None = None
 
     @property
     def instructor(self) -> bool:
@@ -520,12 +525,14 @@ def parse_notebook(src: str) -> Notebook:
         end = _trailing_comments_end(lines, _end(node))
         text = lines[start - 1 : end]
         tests = _tests(node, kind)
-        hidden = any(line.strip() == HIDDEN for line in text)
+        markers = [start + i for i, line in enumerate(text) if line.strip() == HIDDEN]
+        first_statement = node.body[0].lineno
+        late = next((line for line in markers if line > first_statement), None)
         plain = kind is CellKind.CELL
         grade = _call_qid(tree, node, Api.GRADE) if plain else None
         assignment = bool(api_calls(tree, node, Api.ASSIGNMENT))
 
-        cells.append(Cell(kind, name, start, end, tests, hidden, grade, assignment))
+        cells.append(Cell(kind, name, start, end, tests, bool(markers), grade, assignment, late))
 
     return Notebook(tuple(cells), src)
 
@@ -683,6 +690,46 @@ def _returned_names(node: ast.stmt) -> set[str]:
 # Validation
 
 
+def source_warnings(nb: Notebook) -> list[str]:
+    """Things in the notebook that build but may not do what the instructor meant."""
+
+    late = [
+        f"line {cell.late_hidden}: `{HIDDEN}` hides the whole cell at line {cell.start}, not "
+        "only the code after it. Move it to the cell's first line, or move the hidden tests "
+        "to a cell of their own."
+        for cell in nb.cells
+        if cell.late_hidden is not None
+    ]
+    uncollected = [
+        f"line {cell.start}: `pytest` on the notebook skips {', '.join(cell.tests)}, since "
+        "marimo collects only cells that hold nothing but tests. Gradescope still runs them. "
+        "Move the other code to a cell of its own."
+        for cell in nb.cells
+        if cell.kind is CellKind.CELL and cell.tests and not _only_tests(nb, cell)
+    ]
+
+    return late + uncollected
+
+
+def _only_tests(nb: Notebook, cell: Cell) -> bool:
+    """Whether marimo's pytest plugin collects the cell: its body defines only `test*` names.
+
+    Mirrors `contains_only_tests` in marimo's compiler, without pytest fixtures, which the
+    grader doesn't support.
+    """
+
+    for node in ast.parse(nb.cell_body_source(cell)).body:
+        match node:
+            case ast.FunctionDef() | ast.AsyncFunctionDef() | ast.ClassDef() if (
+                node.name.lower().startswith("test")
+            ):
+                continue
+            case _:
+                return False
+
+    return True
+
+
 def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
     """Check the notebook against its config and the authoring rules.
 
@@ -694,7 +741,7 @@ def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
     errors = _near_marker_errors(nb) + _near_html_marker_errors(nb)
     errors += _test_name_errors(nb, cfg) + _question_errors(nb, cfg)
     errors += _hidden_grade_errors(nb) + _public_cell_errors(nb) + _marker_errors(nb)
-    errors += _assignment_errors(nb) + _instructor_errors(nb)
+    errors += _assignment_errors(nb) + _instructor_errors(nb) + _pytest_dependency_errors(nb)
     errors += _public_marker_errors(nb)
     errors += _hidden_name_errors(nb) + _cell_variable_errors(nb)
 
@@ -708,7 +755,10 @@ def _test_name_errors(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
     seen: set[str] = set()
 
     for cell in nb.cells:
-        if len({question_id(name) for name in cell.tests}) > 1:
+        # A test of an unknown question gets its own error below, usually a misnamed test.
+        known = {question_id(name) for name in cell.tests} & cfg.questions.keys()
+
+        if len(known) > 1:
             errors.append(
                 f"line {cell.start}: tests of different questions share a cell "
                 f"({', '.join(cell.tests)}). Put each question's tests in their own cell."
@@ -722,8 +772,9 @@ def _test_name_errors(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
             qid = question_id(name)
             if qid not in cfg.questions:
                 errors.append(
-                    f"`{name}` (line {cell.start}): no question `{qid}`. Declare it in a cell "
-                    f'with `mogs.grade("{qid}", points=...)`.'
+                    f"`{name}` (line {cell.start}): no question `{qid}`. Tests are named "
+                    f"`test_<qid>_<name>`, so rename it, or declare `{qid}` in a cell with "
+                    f'`mogs.grade("{qid}", points=...)`.'
                 )
 
         if cell.grade_qid is not None and cell.grade_qid not in cfg.questions:
@@ -777,6 +828,42 @@ def _hidden_grade_errors(nb: Notebook) -> list[str]:
         f"copy would lose it. Move it to a cell without `{HIDDEN}`."
         for cell in nb.cells
         if cell.hidden and cell.grade_qid is not None
+    ]
+
+
+def _pytest_dependency_errors(nb: Notebook) -> list[str]:
+    """A notebook that imports `pytest` lists it in the header's `dependencies`.
+
+    The grader has pytest either way, but marimo adds a pinned `pytest` to the header of a
+    student notebook that imports it without one.
+    """
+
+    lines = [
+        node.lineno
+        for node in ast.walk(ast.parse(nb.src))
+        if isinstance(node, ast.Import)
+        and any(alias.name.split(".")[0] == "pytest" for alias in node.names)
+        or isinstance(node, ast.ImportFrom)
+        and (node.module or "").split(".")[0] == "pytest"
+    ]
+
+    if not lines:
+        return []
+
+    try:
+        dependencies = read_header(nb.src).get("dependencies", [])
+    except ConfigError as error:
+        return [
+            f"line {lines[0]}: the notebook imports `pytest`, but its header is unreadable: {error}"
+        ]
+
+    if any(normalized_name(dep) == "pytest" for dep in dependencies):
+        return []
+
+    return [
+        f"line {lines[0]}: the notebook imports `pytest`, but the header's `dependencies` "
+        "doesn't list it. Add `pytest` there, or marimo adds a pinned one to each student's "
+        "header."
     ]
 
 

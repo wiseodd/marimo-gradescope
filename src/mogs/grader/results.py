@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
+from mogs.config import TESTS_FOLDER
 from mogs.grader.bundle import GradingBundle
 from mogs.runner import Outcome, cap
 
@@ -66,17 +67,20 @@ class Submission:
     error: str | None
 
 
-def find_submission(sub_dir: Path, notebook: str) -> Submission:
+def find_submission(sub_dir: Path, notebook: str, name: str | None = None) -> Submission:
     """Find the notebook and the written answers anywhere under `sub_dir`.
 
     Skips `__MACOSX`, `__pycache__`, dot files and dot folders, and never follows or picks a
-    symlink. A file named `notebook` wins; otherwise the only `.py` file is taken. Any PDF
-    counts as the written answers. Of Markdown files, only the export's fallback
-    `<notebook stem>_answers.md` (any case) does, so a stray `README.md` does not.
+    symlink. Public tests, the `.py` files in a `tests/` folder next to another `.py` file, are
+    never the notebook. Of the rest, a file named `notebook` wins; otherwise the only `.py` file
+    is taken. Any PDF counts as the written answers. Of Markdown files, only the export's
+    fallback `<name>_answers.md` (any case) does, so a stray `README.md` does not.
 
     Args:
         sub_dir: The unpacked upload.
         notebook: File name of the student notebook.
+        name: Assignment name, which the export names its files after. Defaults to the
+            notebook's stem.
 
     Returns:
         The files found, with an error message when the notebook is missing or ambiguous.
@@ -84,25 +88,42 @@ def find_submission(sub_dir: Path, notebook: str) -> Submission:
 
     files = sorted(_regular_files(sub_dir))
     scripts = [path for path in files if path.suffix == ".py"]
-    exact = [path for path in scripts if path.name == notebook]
+    # Not the public tests the student copy ships in `tests/`, next to the notebook.
+    folders = {path.parent for path in scripts}
+    others = [
+        path
+        for path in scripts
+        if path.parent.name != TESTS_FOLDER or path.parent.parent not in folders
+    ]
+    exact = [path for path in others if path.name == notebook]
     pdfs = [path for path in files if path.suffix.lower() == ".pdf"]
-    fallback = f"{Path(notebook).stem}_answers.md".casefold()
+    fallback = f"{name or Path(notebook).stem}_answers.md".casefold()
     markdown = [path for path in files if path.name.casefold() == fallback]
     answers = next(iter(pdfs or markdown), None)
+    wanted = inline_code(notebook)
 
-    match exact or scripts:
-        case [py]:
+    match exact, others:
+        case [py], _:
             return Submission(py, answers, None)
-        case []:
-            error = f"No `.py` file found in your upload. Upload {inline_code(notebook)}."
-        case several:
-            names = ", ".join(inline_code(str(path.relative_to(sub_dir))) for path in several)
-            error = (
-                f"Found several notebooks: {names}. Upload only {inline_code(notebook)}, "
-                "or a single `.py` file."
+        case [], [py]:
+            return Submission(py, answers, None)
+        case [], []:
+            error = f"No `.py` file found in your upload. Upload {wanted}."
+        case [], several:
+            names = _names(several, sub_dir)
+            error = f"No {wanted} in your upload, and several other `.py` files: {names}. " + (
+                f"Upload {wanted}, or a single `.py` file."
             )
+        case several, _:
+            error = f"Found {wanted} more than once: {_names(several, sub_dir)}. Upload one."
 
     return Submission(None, answers, error)
+
+
+def _names(paths: Sequence[Path], root: Path) -> str:
+    """The paths relative to `root`, as inline code, comma separated."""
+
+    return ", ".join(inline_code(str(path.relative_to(root))) for path in paths)
 
 
 def _regular_files(root: Path) -> list[Path]:

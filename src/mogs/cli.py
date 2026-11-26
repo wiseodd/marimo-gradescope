@@ -9,6 +9,7 @@ from pathlib import Path
 
 from mogs import __version__
 from mogs.build import BuildError, BuildResult, build, failure_report, source_notebook
+from mogs.check import format_points
 from mogs.config import ConfigError
 from mogs.regrade import GradeResult, grade_submission
 from mogs.requirements import RequirementsError
@@ -156,7 +157,7 @@ def report(result: BuildResult) -> str:
     for score in result.scores:
         if score.solution is None or score.blank is None:
             how = (
-                f"{score.points:g} pts, graded by hand"
+                f"{format_points(score.points)}, graded by hand"
                 if score.points
                 else "collected in the PDF, not graded"
             )

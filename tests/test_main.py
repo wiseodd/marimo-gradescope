@@ -110,13 +110,13 @@ def test_missing_pdf_gives_a_notice(paths):
 
 def test_markdown_answers_are_accepted_with_a_notice(paths):
     paths.add("solution.py")
-    paths.add("solution_answers.md", "Because.")
+    paths.add("Fixture_answers.md", "Because.")
 
     results = paths.run()
 
     first = results["tests"][0]
     assert first["name"] == "Submission"
-    assert "solution_answers.md" in first["output"]
+    assert "Fixture_answers.md" in first["output"]
     assert rows(results)["q2"]["score"] == 6
 
 
