@@ -1,7 +1,7 @@
 import { getCollection, type CollectionEntry } from 'astro:content';
 
 // The pages in llms.txt, in header order. Each has a Markdown copy at `/<id>.md`.
-export const PAGES = ['index', 'instructors', 'students'];
+export const PAGES = ['index', 'instructors', 'porting', 'students'];
 
 export async function pages(): Promise<CollectionEntry<'docs'>[]> {
 	const entries = await getCollection('docs');

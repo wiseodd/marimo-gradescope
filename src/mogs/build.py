@@ -72,6 +72,12 @@ ASSIGNMENT_RE = re.compile(r"\bassignment\s*\(")
 SCRIPTS = ("setup.sh", "run_autograder")
 ZIP_FILES = (*SCRIPTS, "bundle.json", "requirements.txt")
 ZIP_DATE = (1980, 1, 1, 0, 0, 0)
+PORTING_URL = "https://mogs.kristia.de/porting"
+# Otter Assign's own markers. Its solution and `# HIDDEN` markers are left out: mogs uses them
+# too.
+OTTER_RE = re.compile(
+    r"(?<![\w#])# (?:ASSIGNMENT CONFIG|(?:BEGIN|END) (?:QUESTION|TESTS|PROMPT|TEST CONFIG))\b"
+)
 # Otter's timestamp in the zip name, e.g. 2026_09_30T12_30_41_890583.
 STAMP = "%Y_%m_%dT%H_%M_%S_%f"
 
@@ -203,9 +209,15 @@ def find_notebook(assignment_dir: Path) -> Path:
         case [path]:
             return path
         case []:
+            otter = _otter_hint(
+                [*sorted(assignment_dir.glob("*.py")), *sorted(assignment_dir.glob("*.ipynb"))]
+            )
             raise BuildError(
-                f"No notebook in {assignment_dir} calls `mogs.assignment(...)`. Add a cell with "
-                "that call, or start a new assignment with `mogs init`."
+                f"No notebook in {assignment_dir} calls `mogs.assignment(...)`. "
+                + (
+                    otter
+                    or "Add a cell with that call, or start a new assignment with `mogs init`."
+                )
             )
         case _:
             names = "\n".join(f"  {path.name}" for path in candidates)
@@ -228,11 +240,34 @@ def source_notebook(path: Path) -> Path:
 
     if not _is_notebook(path.read_text(encoding="utf-8", errors="replace")):
         raise BuildError(
-            f"{path} does not call `mogs.assignment(...)`. Pass the source notebook or the "
-            "assignment folder."
+            f"{path} does not call `mogs.assignment(...)`. "
+            + (_otter_hint([path]) or "Pass the source notebook or the assignment folder.")
         )
 
     return path
+
+
+def _otter_hint(paths: Iterable[Path]) -> str | None:
+    """Where the first of `paths` with an Otter Assign marker has it, and where to read on.
+
+    Returns:
+        The hint, or `None` when no file has such a marker.
+    """
+
+    for path in paths:
+        if not path.is_file():
+            continue
+
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        for number, line in enumerate(lines, start=1):
+            found = OTTER_RE.search(line)
+            if found:
+                return (
+                    f"{path}:{number} has `{found.group()}`, which is otter-assign syntax. "
+                    f"Port the notebook to mogs by hand: {PORTING_URL}"
+                )
+
+    return None
 
 
 def _is_notebook(text: str) -> bool:

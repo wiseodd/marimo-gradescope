@@ -4,7 +4,7 @@ import { PAGES } from './llms';
 export const onRequest = defineRouteMiddleware((context) => {
 	const route = context.locals.starlightRoute;
 
-	// Three pages, linked from the header: no left sidebar.
+	// Pages linked from the header: no left sidebar.
 	route.hasSidebar = false;
 
 	// Point agents that fetch the HTML at the page's Markdown copy.

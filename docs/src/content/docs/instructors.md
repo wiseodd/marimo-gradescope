@@ -15,6 +15,7 @@ hw1/
 `mogs build <directory name>` turns it into a student notebook and an autograder zip.
 [`examples/demo`](https://github.com/wiseodd/mogs/tree/main/examples/demo) is a complete example.
 See also [marimo's official tutorial](https://docs.marimo.io/getting_started/quickstart/).
+To port an Otter Assign notebook, see [Porting from Otter](/porting/).
 
 ## Start
 
