@@ -28,27 +28,30 @@ The command is `marimogs`.
 
 ## Usage
 
-Start an assignment and write it in marimo's editor:
+Create an assignment (replace `<name`> with your assignment name) and edit it in marimo's editor:
 
 ```bash
-marimogs init hw
-marimogs edit hw
+marimogs init <name>
+marimogs edit <name>
 ```
 
-The new notebook has a short guide and two example questions (see docs; full example [here](https://github.com/wiseodd/marimo-gradescope/tree/main/examples/demo)).
-Say, the assignment is in `examples/demo` directory (relative to the current working directory) and named `hw.py`.
+This will create a directory called `<name>` with `<name>.py` inside.
+You can change `<name>.py` if you want.
+This Python file is a marimo notebook and it has a short guide and two example questions (see docs; full example [here](https://github.com/wiseodd/marimo-gradescope/tree/main/examples/demo)).
+
+Say, the assignment name is `demo` directory (relative to the current working directory) and named `hw.py`.
 Then:
 
 ```bash
-marimogs build examples/demo
+marimogs build demo
 ```
 
-In `examples/demo/dist/student`, it will output `hw.zip`.
+In `emo/dist/student`, it will output `hw.zip`.
 It contains the student notebook (`hw.py`), its public tests (`tests/`), and any data attached to the notebook (if any).
 Distribute it to your students.
 Refer your students to <https://marimo-gradescope.kristia.de/students/>.
 
-In `examples/demo/dist/autograder`, it will output `hw-autograder-*.zip` and `hw.py`.
+In `demo/dist/autograder`, it will output `hw-autograder-*.zip` and `hw.py`.
 Upload the former to Gradescope.
 The file `hw.py` here is like the one in the student zip, but with full solution.
 It's useful to check the autograder on Gradescope.
