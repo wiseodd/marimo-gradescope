@@ -156,12 +156,17 @@ def failure_location(exc: BaseException) -> list[str]:
     tb = exc.__traceback__
     tb = tb.tb_next if tb is not None else None
 
-    if tb is None:
+    # Frames that set `__tracebackhide__`, as pytest does, only raise a readable error.
+    frames = [
+        summary
+        for (frame, _), summary in zip(traceback.walk_tb(tb), traceback.extract_tb(tb), strict=True)
+        if not frame.f_locals.get("__tracebackhide__")
+    ]
+
+    if not frames:
         return []
 
-    first = traceback.extract_tb(tb, limit=1)[0]
-    last = traceback.extract_tb(tb, limit=-1)[0]
-    depth = sum(1 for _ in traceback.walk_tb(tb))
+    first, last, depth = frames[0], frames[-1], len(frames)
 
     lines = frame_lines(first)
 

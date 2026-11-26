@@ -4,13 +4,18 @@ Functions written with `@app.function` are plain module attributes, so importing
 runs only its setup cell and those definitions. A name that is not a module attribute, such as
 a function that depends on another cell, comes from a single `app.run()`, which executes the
 whole notebook. This fallback is designed behavior. It is all-or-nothing: if any cell raises,
-every name that needed the fallback becomes `Missing`, including names from healthy cells.
-When the run killed or hung an earlier grading child, the grader binds again with the run
-turned off (`run_failed`), so names that need no run still work.
+every name that needed the fallback becomes `Missing`, including names from healthy cells,
+such as a variable `n = 3` next to an unrelated cell that fails. The reason names the line
+that raised and the exception. When the run killed or hung an earlier grading child, the
+grader binds again with the run turned off (`run_failed`), so names that need no run still
+work.
 
-Loading never raises. Names that cannot be bound come back as `Missing` placeholders that raise
-a readable error when a test calls them or reads an attribute, so one broken name costs only
-the tests that use it.
+marimo has no public API to run only the cells some names depend on, so the fallback runs
+them all.
+
+Loading never raises. Names that cannot be bound come back as `Missing` placeholders. Using
+one in a test, by calling it, comparing it, reading an attribute and so on, raises a readable
+error with the reason, so one broken name costs only the tests that use it.
 
 `app.run()` behaves the same whether or not `PYTEST_CURRENT_TEST` is set (checked on marimo
 0.24.2 and 0.25.2), so binding inside a pytest test needs no environment changes.
@@ -19,10 +24,11 @@ the tests that use it.
 import hashlib
 import importlib.util
 import sys
+import traceback
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from types import ModuleType
-from typing import cast
+from typing import NoReturn, cast
 
 import marimo
 
@@ -40,8 +46,11 @@ _defs: dict[Path, Defs] = {}
 class Missing:
     """Stand-in for a name the notebook does not provide.
 
-    Calling it or reading a public attribute raises `RuntimeError` with the reason. Private
-    attributes raise `AttributeError`, so introspection, pickling and pytest leave it alone.
+    Any use a test is likely to make raises `RuntimeError` with the reason: calling it, reading
+    a public attribute, comparing it, arithmetic, `bool`, `len`, iteration, indexing, `in`,
+    `str`, `format`, number conversions and NumPy's `__array__`. So `assert n == 3` fails with
+    the reason rather than a bare `AssertionError`. Private attributes raise `AttributeError`,
+    and `repr`, `hash` and pickling work, so introspection, pickling and pytest leave it alone.
 
     Args:
         name: The name the tests asked for.
@@ -54,12 +63,26 @@ class Missing:
         self._name = name
         self._reason = reason
 
-    def __call__(self, *args: object, **kwargs: object) -> object:
+    def _unavailable(self, *args: object, **kwargs: object) -> NoReturn:
         """Raise the readable error."""
 
         __tracebackhide__ = True
 
         raise RuntimeError(f"`{self._name}` is unavailable: {self._reason}")
+
+    # Assigned, not defined, so each use raises from the one method above. Defining `__eq__`
+    # would make the class unhashable, hence the explicit `__hash__`.
+    __call__ = _unavailable
+    __eq__ = __ne__ = __lt__ = __le__ = __gt__ = __ge__ = _unavailable
+    __hash__ = object.__hash__
+    __bool__ = __len__ = __iter__ = __contains__ = _unavailable
+    __getitem__ = __setitem__ = __delitem__ = _unavailable
+    __add__ = __radd__ = __sub__ = __rsub__ = __mul__ = __rmul__ = _unavailable
+    __truediv__ = __rtruediv__ = __floordiv__ = __rfloordiv__ = _unavailable
+    __mod__ = __rmod__ = __pow__ = __rpow__ = __matmul__ = __rmatmul__ = _unavailable
+    __neg__ = __pos__ = __abs__ = __invert__ = _unavailable
+    __int__ = __float__ = __complex__ = __index__ = __round__ = _unavailable
+    __str__ = __format__ = __array__ = _unavailable
 
     def __getattr__(self, attr: str) -> object:
         __tracebackhide__ = True
@@ -67,7 +90,7 @@ class Missing:
         if attr.startswith("_"):
             raise AttributeError(attr)
 
-        return self()
+        self._unavailable()
 
     def __getstate__(self) -> tuple[str, str]:
         return self._name, self._reason
@@ -77,6 +100,16 @@ class Missing:
 
     def __repr__(self) -> str:
         return f"Missing({self._name!r}, {self._reason!r})"
+
+
+def unavailable(value: object) -> str | None:
+    """Why `value` is unavailable when it is a `Missing`, else `None`."""
+
+    # `type()` cannot be fooled by a `__class__` property, unlike `isinstance`.
+    if issubclass(type(value), Missing):
+        return cast(Missing, value)._reason
+
+    return None
 
 
 def load(path: Path) -> Loaded:
@@ -194,7 +227,32 @@ def _run(path: Path, app: marimo.App) -> Defs:
         _, defs = app.run()
         result: Defs = (dict(defs), None)
     except BaseException as exc:
-        result = ({}, cap(f"running your notebook failed ({exception_summary(exc)})"))
+        result = ({}, cap(run_failure(path, exc)))
 
     _defs[path] = result
     return result
+
+
+def run_failure(path: Path, exc: BaseException) -> str:
+    """Why `app.run()` failed: the notebook line that raised, when known, and the exception.
+
+    The line is that of the outermost traceback entry in the notebook file, which is the
+    statement in the failing cell.
+    """
+
+    summary = exception_summary(exc)
+
+    try:
+        lines = [
+            frame.lineno
+            for frame in traceback.extract_tb(exc.__traceback__)
+            if Path(frame.filename) == path
+        ]
+    except Exception:
+        lines = []
+
+    match lines:
+        case [int() as line, *_]:
+            return f"running your notebook failed: line {line} raised {summary}"
+        case _:
+            return f"running your notebook failed ({summary})"

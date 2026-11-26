@@ -1,3 +1,4 @@
+import operator
 import os
 import pickle
 import shutil
@@ -9,7 +10,11 @@ from types import FunctionType
 
 import pytest
 
-from marimogs.loader import Missing, bind, load
+from marimogs.config import read_config
+from marimogs.loader import Missing, bind, load, unavailable
+from marimogs.runner import run_test_source
+from marimogs.source import parse_notebook
+from marimogs.transform import student_notebook
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -196,7 +201,7 @@ def test_failing_run_makes_every_fallback_name_missing(tmp_path):
 
     assert call(found["add"], 1, 2) == 3
     assert message(found["double"]) == (
-        "`double` is unavailable: running your notebook failed (SystemExit: 3)"
+        "`double` is unavailable: running your notebook failed: line 19 raised SystemExit: 3"
     )
 
 
@@ -214,7 +219,7 @@ def test_named_cell_is_not_bound_without_run(tmp_path):
     found = bind(path, ["helper"])
 
     assert message(found["helper"]) == (
-        "`helper` is unavailable: running your notebook failed (RuntimeError: boom)"
+        "`helper` is unavailable: running your notebook failed: line 7 raised RuntimeError: boom"
     )
 
 
@@ -276,7 +281,9 @@ def test_failed_run_is_cached(tmp_path, side_effect):
     second = bind(path, ["double"])
 
     assert message(first["double"]) == message(second["double"])
-    assert "running your notebook failed (RuntimeError: boom)" in message(second["double"])
+    assert "running your notebook failed: line 14 raised RuntimeError: boom" in message(
+        second["double"]
+    )
     assert side_effect.read_text(encoding="utf-8") == "ran\n"
 
 
@@ -471,6 +478,109 @@ def test_missing_pickles():
 
 def test_missing_repr():
     assert repr(Missing("add", "why")) == "Missing('add', 'why')"
+
+
+REASON = "`n` is unavailable: why"
+
+
+@pytest.mark.parametrize(
+    "use",
+    [
+        lambda m: m == 3,
+        lambda m: 3 == m,
+        lambda m: m != 3,
+        lambda m: m < 3,
+        lambda m: m <= 3,
+        lambda m: m > 3,
+        lambda m: m >= 3,
+        bool,
+        lambda m: m + 1,
+        lambda m: 1 + m,
+        lambda m: m - 1,
+        lambda m: 1 - m,
+        lambda m: m * 2,
+        lambda m: m / 2,
+        lambda m: m // 2,
+        lambda m: m % 2,
+        lambda m: m**2,
+        lambda m: m @ m,
+        lambda m: -m,
+        lambda m: +m,
+        abs,
+        lambda m: ~m,
+        len,
+        iter,
+        list,
+        lambda m: m[0],
+        lambda m: operator.setitem(m, 0, 1),
+        lambda m: 1 in m,
+        str,
+        lambda m: f"{m}",
+        lambda m: format(m, ">5"),
+        int,
+        float,
+        round,
+        operator.index,
+    ],
+)
+def test_missing_raises_readable_error_on_use(use):
+    placeholder = Missing("n", "why")
+
+    with pytest.raises(RuntimeError) as info:
+        use(placeholder)
+
+    assert str(info.value) == REASON
+
+
+def test_missing_is_hashable():
+    placeholder = Missing("n", "why")
+
+    assert {placeholder: 1}[placeholder] == 1
+
+
+def test_missing_fails_numpy_conversion_readably():
+    np = pytest.importorskip("numpy")
+
+    with pytest.raises(RuntimeError, match="`n` is unavailable: why"):
+        np.asarray(Missing("n", "why"))
+
+
+def test_missing_in_a_rewritten_assert_shows_its_reason():
+    source = "def test_q1_n():\n    assert n == 3\n"
+    namespace: dict[str, object] = {"n": Missing("n", "why")}
+
+    [outcome] = run_test_source(source, "tests/q1.py", ["test_q1_n"], namespace)
+
+    assert outcome.message == "In test_q1_n, line 2:\n    assert n == 3\nRuntimeError: " + REASON
+
+
+def test_unavailable_gives_the_reason_of_a_missing_only():
+    assert unavailable(Missing("n", "why")) == "why"
+    assert unavailable(3) is None
+
+
+# The notebook of issue #26: q1 answered, `double` left blank, an ungraded cell calling it.
+
+
+def student_with_variable(tmp_path: Path) -> Path:
+    path = FIXTURES / "variable_question.py"
+    src = path.read_text(encoding="utf-8")
+    text = student_notebook(src, parse_notebook(src), read_config(src, path), "marimo-gradescope")
+    notebook = tmp_path / "hw.py"
+    notebook.write_text(text.replace("n = ...", "n = 3"), encoding="utf-8")
+    return notebook
+
+
+def test_failing_unrelated_cell_names_its_line_and_error(tmp_path):
+    notebook = student_with_variable(tmp_path)
+    line = notebook.read_text(encoding="utf-8").splitlines().index("    demo = double(4) + 1") + 1
+
+    found = bind(notebook, ["n", "double"])
+
+    assert message(found["n"]) == (
+        f"`n` is unavailable: running your notebook failed: line {line} raised TypeError: "
+        "unsupported operand type(s) for +: 'ellipsis' and 'int'"
+    )
 
 
 # Across marimo versions (needs network for `uv run --with` on a cold cache)
