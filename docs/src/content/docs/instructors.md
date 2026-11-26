@@ -70,7 +70,7 @@ The questions appear on Gradescope in the order of these cells.
 | ----------- | ----------- | -------------------------- | ----------------------------------------------------------------------------------------- |
 | question id | required    | `"q1"`                     | The first argument.                                                                       |
 | `points`    | required    | `points=25`                | Points for the question. A written question can be worth 0.                               |
-| `title`     | from the id | `title="Gradient descent"` | Name on Gradescope and in the PDF. `q1` becomes `Question 1`; other ids stay as they are. |
+| `title`     | from the id | `title="Gradient descent"` | Name on Gradescope and in the PDF. `q1` and `question1` become `Question 1`; other ids stay as they are. |
 
 Question ids are letters and digits, and start with a letter, e.g., `q1` or `bonus`.
 They can't contain `_`: test names use `_` to separate the id from the rest of the name.

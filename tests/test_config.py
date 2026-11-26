@@ -6,6 +6,7 @@ from mogs.config import (
     AssignmentConfig,
     ConfigError,
     Question,
+    default_title,
     read_config,
     read_header,
     remove_dependency,
@@ -398,3 +399,20 @@ def test_question_ids_must_make_portable_file_names(qids, message):
 
     with pytest.raises(ConfigError, match=message):
         read_config(src, Path("hw.py"))
+
+
+@pytest.mark.parametrize(
+    ("qid", "title"),
+    [
+        ("q1", "Question 1"),
+        ("q2b", "Question 2b"),
+        ("Q3", "Question 3"),
+        ("question6", "Question 6"),
+        ("Question7", "Question 7"),
+        ("question_8", "Question 8"),
+        ("bonus", "bonus"),
+        ("quiz1", "quiz1"),
+    ],
+)
+def test_default_title(qid, title):
+    assert default_title(qid) == title
