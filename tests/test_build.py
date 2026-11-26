@@ -259,14 +259,14 @@ def test_blank_score_warning_names_passing_tests(tmp_path, capsys):
 
 def test_validation_errors_all_listed_and_no_dist(tmp_path, capsys):
     folder = demo_copy(tmp_path / "demo")
-    edit(folder / "hw.py", "# [tool.marimo.runtime]\n# reactive_tests = false\n", "")
+    edit(folder / "hw.py", 'mgs.check("q2")', 'mgs.check("q7")')
     edit(folder / "hw.py", "def test_q1_single", "def test_q9_single")
 
     code = main(["build", str(folder)])
     err = capsys.readouterr().err
 
     assert code == 1
-    assert "reactive_tests = false" in err
+    assert 'check("q7")' in err
     assert "test_q9_single" in err
     assert not (folder / "dist").exists()
 

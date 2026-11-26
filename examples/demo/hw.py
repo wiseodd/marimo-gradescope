@@ -12,9 +12,6 @@
 # q1 = { points = 4, title = "Average" }
 # q2 = { points = 6, title = "Reading scores" }
 # q3 = { points = 5, title = "Empty lists", manual = true }
-#
-# [tool.marimo.runtime]
-# reactive_tests = false
 # ///
 
 import marimo

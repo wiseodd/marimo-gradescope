@@ -14,7 +14,6 @@ from marimo_gradescope.config import (
     Question,
     read_config,
     read_header,
-    split_lines,
 )
 from marimo_gradescope.source import SourceError, parse_notebook
 from marimo_gradescope.transform import (
@@ -602,19 +601,18 @@ def test_header_tool_table_stripped():
     assert "marimo-gradescope" not in header.get("tool", {})
 
 
-def test_header_pins_tool_and_sets_runtime_flag_once():
+def test_header_pins_tool_once():
     out = student(SOLUTION)
 
     assert read_header(out)["dependencies"] == ["marimo", REQUIREMENT]
-    assert out.count("reactive_tests = false") == 1
     assert out.count(REQUIREMENT) == 1
 
 
-def test_header_runtime_flag_added_when_missing():
+def test_header_gets_no_runtime_flag():
     src = HEADER.replace("#\n# [tool.marimo.runtime]\n# reactive_tests = false\n", "")
     out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT)
 
-    assert read_header(out)["tool"] == {"marimo": {"runtime": {"reactive_tests": False}}}
+    assert "tool" not in read_header(out)
 
 
 def test_pinned_requirement():
@@ -988,16 +986,21 @@ def test_export_html_source_and_student_copy(tmp_path):
 
 
 @pytest.mark.slow
-def test_export_html_without_runtime_flag_crashes(tmp_path):
-    lines = split_lines(PURE.read_text(encoding="utf-8"))
-    flag = lines.index("# [tool.marimo.runtime]")
-    assert lines[flag + 1] == "# reactive_tests = false"
-    notebook = tmp_path / "reactive.py"
-    notebook.write_text("\n".join(lines[: flag - 1] + lines[flag + 2 :]), encoding="utf-8")
+def test_export_html_with_reactive_tests_on(tmp_path):
+    # marimo runs pytest after each test cell. Without the package's import-time warm-up of
+    # `sysconfig`, marimo 0.25 and 0.26 crash with "dictionary changed size during iteration".
+    src = SOLUTION.read_text(encoding="utf-8")
+    assert "reactive_tests" not in src
+    notebook = tmp_path / "source.py"
+    notebook.write_text(src, encoding="utf-8")
 
     result = export_html(notebook, tmp_path)
+    output = result.stdout + result.stderr
+    page = (tmp_path / "source.html").read_text(encoding="utf-8")
 
-    assert "dictionary changed size during iteration" in result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "RuntimeError" not in output, output
+    assert "Passed Tests" in page
 
 
 @pytest.mark.slow

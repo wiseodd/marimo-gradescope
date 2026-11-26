@@ -4,9 +4,6 @@
 #     "marimo",
 #     "marimo-gradescope",
 # ]
-#
-# [tool.marimo.runtime]
-# reactive_tests = false
 # ///
 
 # A student copy in miniature: a test cell and the check cell that depends on it.
