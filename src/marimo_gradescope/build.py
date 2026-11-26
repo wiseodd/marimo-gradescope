@@ -2,12 +2,13 @@
 
 The build writes, next to the source notebook, the layout Otter uses:
 
-- `dist/student/<notebook>.py` and the data files, for students;
+- `dist/student/<notebook>.py`, its public tests in `tests/` and the data files, for
+  students;
 - `dist/autograder/<name>-autograder-<timestamp>.zip` with `setup.sh`, `run_autograder`,
   `bundle.json`, `requirements.txt` and the data files, for Gradescope;
 - `dist/autograder/<notebook>.py`, the solved copy: the student notebook with the solutions
-  kept, to upload to Gradescope as a test submission. The data files and `requirements.txt`
-  sit next to it.
+  kept, to upload to Gradescope as a test submission. The public tests, the data files and
+  `requirements.txt` sit next to it.
 
 Before it writes anything, it grades the solved copy and the student copy with the real
 grader, in a fresh environment with Gradescope's requirements. The solved copy must get full
@@ -38,7 +39,12 @@ from marimo_gradescope.grader.templates import run_autograder_script, setup_scri
 from marimo_gradescope.requirements import gradescope_requirements
 from marimo_gradescope.runner import FailureReason, Outcome
 from marimo_gradescope.source import Notebook, parse_notebook, question_id, validate
-from marimo_gradescope.transform import pinned_requirement, student_notebook
+from marimo_gradescope.transform import (
+    TESTS_FOLDER,
+    pinned_requirement,
+    public_test_files,
+    student_notebook,
+)
 
 DIST = "dist"
 TOOL_TABLE_RE = re.compile(rf"(?m)^#\s*\[tool\.{re.escape(TOOL)}[\].]")
@@ -210,6 +216,7 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
     student = student_notebook(src, nb, cfg, pinned_requirement(cfg))
     solved = student_notebook(src, nb, cfg, pinned_requirement(cfg), solutions=True)
     bundle = bundle_from_notebook(nb, cfg)
+    tests = public_test_files(nb)
     requirement = tool_requirement or f"{TOOL}=={__version__}"
     requirements, warnings = gradescope_requirements(src, cfg, requirement)
     warnings += question_warnings(cfg)
@@ -261,6 +268,10 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
                 target = out / part / rel
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(source, target)
+            for rel, text in tests.items():
+                target = out / part / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(text, encoding="utf-8")
 
         (out / "autograder" / "requirements.txt").write_text(requirements, encoding="utf-8")
         write_zip(out / "autograder" / zip_name, entries)
@@ -289,15 +300,16 @@ def data_files(assignment_dir: Path, cfg: AssignmentConfig) -> dict[PurePosixPat
 
     Raises:
         ConfigError: If an entry of `files` is missing, is not inside the notebook's folder, or
-            would replace the notebook, a file of the autograder zip or the grader's copy of
-            the submission.
+            would replace the notebook, its public tests folder, a file of the autograder zip
+            or the grader's copy of the submission.
     """
 
-    reserved = {*ZIP_FILES, cfg.notebook}
+    # Case-insensitive, as the file systems of macOS and Windows are.
+    reserved = {name.casefold() for name in (*ZIP_FILES, cfg.notebook, TESTS_FOLDER)}
 
     for name in cfg.files:
         first = PurePosixPath(name).parts[:1]
-        if first and first[0] in reserved:
+        if first and first[0].casefold() in reserved:
             raise ConfigError(
                 f"[tool.{TOOL}] `files` entry {name!r} would replace `{first[0]}` in the build "
                 "output."

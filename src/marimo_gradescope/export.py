@@ -42,6 +42,7 @@ from marimo_gradescope.check import (
     PASS,
     SHADE,
     WARN,
+    locate,
 )
 from marimo_gradescope.config import default_title
 from marimo_gradescope.pdf import PdfUnavailable, cell_markdown, quiet, render_manual_pdf
@@ -226,26 +227,6 @@ def export_panel(
     )
 
     return mo.Html(panel(result.lines, Download(download.text, result.filename, result.note)))
-
-
-def locate(namespace: Mapping[str, object]) -> Path | None:
-    """The notebook file: `__file__` in `namespace`, else marimo's running notebook, else `None`.
-
-    The second lookup uses marimo's private runtime context and gives `None` when that fails.
-    """
-
-    match namespace.get("__file__"):
-        case str() as file if file:
-            return Path(file).resolve()
-
-    try:
-        from marimo._runtime.context import get_context
-
-        filename = get_context().filename
-    except Exception:
-        return None
-
-    return Path(filename).resolve() if filename else None
 
 
 def package(

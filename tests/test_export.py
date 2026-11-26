@@ -28,7 +28,7 @@ from marimo_gradescope.export import (
 )
 from marimo_gradescope.pdf import PdfUnavailable
 from marimo_gradescope.source import parse_notebook
-from marimo_gradescope.transform import student_notebook
+from marimo_gradescope.transform import public_test_files, student_notebook
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SOLUTION = FIXTURES / "solution.py"
@@ -64,6 +64,20 @@ def solved_copy() -> str:
             '    """Number of vowels in `s`."""\n    return sum(c in "aeiou" for c in s.lower())\n',
         )
     )
+
+
+def write_tests(folder: Path, q2_extra: str = "") -> None:
+    """Write the public test files next to a student copy in `folder`.
+
+    `q2_extra` goes in front of the first q2 test.
+    """
+
+    src = SOLUTION.read_text(encoding="utf-8")
+
+    for rel, text in public_test_files(parse_notebook(src)).items():
+        text = text.replace("def test_q2_count():\n", q2_extra + "def test_q2_count():\n")
+        (folder / rel).parent.mkdir(parents=True, exist_ok=True)
+        (folder / rel).write_text(text, encoding="utf-8")
 
 
 def texts(lines: tuple[Line, ...]) -> list[str]:
@@ -147,6 +161,7 @@ def test_unlocated_notebook_says_so():
 def test_package_reports_disk_file_tests_and_download(tmp_path, no_pdf):
     notebook = tmp_path / "hw.py"
     notebook.write_text(student_copy(), encoding="utf-8")
+    write_tests(tmp_path)
     saved = datetime.fromtimestamp(notebook.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
 
     result = package(notebook, name="hw", manual=["q3"], titles=TITLES)
@@ -164,6 +179,7 @@ def test_package_uses_the_disk_file_not_the_kernel(tmp_path, no_pdf):
     # Review Focus #2: whatever the kernel holds, the saved file is what gets checked and sent.
     notebook = tmp_path / "hw.py"
     notebook.write_text(student_copy(), encoding="utf-8")
+    write_tests(tmp_path)
     assert (
         "0/3 passed" in texts(package(notebook, name="hw", manual=["q3"], titles=TITLES).lines)[0]
     )
@@ -326,16 +342,13 @@ def test_tests_reading_data_next_to_dunder_file_pass(tmp_path, no_pdf):
     # The grader keeps data files next to the graded copy, so this idiom passes there too.
     (tmp_path / "data.txt").write_text("42", encoding="utf-8")
     notebook = tmp_path / "hw.py"
-    notebook.write_text(
-        solved_copy().replace(
-            "    def test_q2_count():\n",
-            "    def test_q2_data():\n"
-            "        from pathlib import Path\n"
-            "        assert (Path(add.__globals__['__file__']).parent / 'data.txt').read_text()"
-            " == '42'\n\n"
-            "    def test_q2_count():\n",
-        ),
-        encoding="utf-8",
+    notebook.write_text(solved_copy(), encoding="utf-8")
+    write_tests(
+        tmp_path,
+        "def test_q2_data():\n"
+        "    from pathlib import Path\n"
+        "    folder = Path(add.__globals__['__file__']).parent\n"
+        "    assert (folder / 'data.txt').read_text() == '42'\n\n",
     )
 
     result = package(notebook, name="hw", manual=[], titles={})
@@ -346,14 +359,8 @@ def test_tests_reading_data_next_to_dunder_file_pass(tmp_path, no_pdf):
 def test_snapshot_tests_read_data_next_to_the_notebook(tmp_path, no_pdf):
     (tmp_path / "data.txt").write_text("42", encoding="utf-8")
     notebook = tmp_path / "hw.py"
-    notebook.write_text(
-        solved_copy().replace(
-            "    def test_q2_count():\n",
-            "    def test_q2_data():\n        assert open('data.txt').read() == '42'\n\n"
-            "    def test_q2_count():\n",
-        ),
-        encoding="utf-8",
-    )
+    notebook.write_text(solved_copy(), encoding="utf-8")
+    write_tests(tmp_path, "def test_q2_data():\n    assert open('data.txt').read() == '42'\n\n")
 
     result = package(notebook, name="hw", manual=[], titles={})
 
@@ -362,14 +369,8 @@ def test_snapshot_tests_read_data_next_to_the_notebook(tmp_path, no_pdf):
 
 def test_selfcheck_timeout_is_reported(tmp_path, monkeypatch, no_pdf):
     notebook = tmp_path / "hw.py"
-    notebook.write_text(
-        student_copy().replace(
-            "    def test_q2_count():\n",
-            "    def test_q2_slow():\n        import time\n        time.sleep(60)\n\n"
-            "    def test_q2_count():\n",
-        ),
-        encoding="utf-8",
-    )
+    notebook.write_text(student_copy(), encoding="utf-8")
+    write_tests(tmp_path, "def test_q2_slow():\n    import time\n    time.sleep(60)\n\n")
     monkeypatch.setattr(export_module, "SELFCHECK_TIMEOUT", 2.0)
 
     start = time.monotonic()

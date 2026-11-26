@@ -15,6 +15,7 @@ from marimo_gradescope.runner import (
     Outcome,
     cap,
     run_test,
+    run_test_source,
 )
 
 TESTS = """\
@@ -417,3 +418,47 @@ def test_same_filename_keeps_each_source():
 )
 def test_cap_holds_both_limits(message: str):
     assert within_caps(cap(message))
+
+
+# Tests from source
+
+
+def test_run_test_source_runs_each_test_against_the_namespace():
+    source = "def test_q1_a():\n    assert x == 1\n\ndef test_q1_b():\n    assert x == 2\n"
+    namespace: dict[str, object] = {"x": 1}
+
+    outcomes = run_test_source(source, "<tests>", ("test_q1_a", "test_q1_b"), namespace)
+
+    assert [outcome.passed for outcome in outcomes] == [True, False]
+    assert "assert 1 == 2" in outcomes[1].message
+
+
+def test_run_test_source_fails_every_test_when_loading_fails():
+    source = "raise ValueError('boom')\ndef test_q1_a():\n    pass\n"
+
+    outcomes = run_test_source(source, "<tests>", ("test_q1_a", "test_q1_b"), {})
+
+    assert [outcome.reason for outcome in outcomes] == [FailureReason.LOAD_FAILED] * 2
+    assert outcomes[0].message == "the tests failed to load (ValueError: boom)"
+
+
+def test_run_test_source_reports_a_name_the_source_does_not_define():
+    [outcome] = run_test_source("x = 1\n", "<tests>", ("test_q1_a",), {})
+
+    assert outcome.reason is FailureReason.ERROR
+    assert outcome.message == "`test_q1_a` is not defined by its tests"
+
+
+def test_run_test_source_reports_a_load_failure_before_any_test():
+    [outcome] = run_test_source("raise ValueError('boom')\n", "tests/q1.py", (), {})
+
+    assert outcome.name == "tests/q1.py"
+    assert outcome.reason is FailureReason.LOAD_FAILED
+    assert outcome.message == "the tests failed to load (ValueError: boom)"
+
+
+def test_run_test_source_catches_system_exit_while_loading():
+    outcomes = run_test_source("raise SystemExit(3)\n", "<tests>", ("test_q1_a",), {})
+
+    assert [outcome.reason for outcome in outcomes] == [FailureReason.LOAD_FAILED]
+    assert outcomes[0].message == "the tests failed to load (SystemExit: 3)"

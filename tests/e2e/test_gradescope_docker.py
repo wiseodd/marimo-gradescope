@@ -149,6 +149,9 @@ while frame is not None:
     frame = frame.f_back
 names = set(re.findall(r"test_q\\w+", "".join(seen + sources)))
 names -= set(re.findall(r"test_q\\w+", own))
+# Students get the public tests in `tests/` next to the notebook.
+names -= {"test_q1_whole_numbers", "test_q1_fractions", "test_q2_reads_scores"}
+names -= {"test_q2_fractional_score"}
 raise AssertionError("LEAK-DUMP " + repr(sorted(names)) + "\\n" + "\\n".join(sources + seen))
 """
 
@@ -684,7 +687,7 @@ def test_solution_keeps_the_answers_but_drops_the_hidden_tests(assignment):
     assert BEGIN not in solution
     assert "SOLUTION" not in solution
     assert "# HIDDEN" not in solution
-    assert "test_q1_whole_numbers" in solution
+    assert "def test_" not in solution
     for secret in assignment.hidden:
         assert secret not in solution
 

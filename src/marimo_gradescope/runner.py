@@ -7,7 +7,7 @@ import linecache
 import textwrap
 import time
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Self
@@ -233,3 +233,44 @@ def cap(message: str) -> str:
     head = data[:room].decode(errors="ignore").splitlines()[: MAX_LINES - 1]
 
     return "\n".join([*head, TRUNCATED])
+
+
+def run_test_source(
+    source: str, filename: str, names: Sequence[str], namespace: dict[str, object]
+) -> list[Outcome]:
+    """Run test source as a module in `namespace`, then each test it defines in `names`.
+
+    The source is compiled with assertion rewriting, so failed asserts show their values. When
+    it raises while loading, `SystemExit` included, every test fails with `LOAD_FAILED`. With
+    no tests named, one outcome named `filename` reports the failure.
+
+    Args:
+        source: Module source with the test functions.
+        filename: Name for tracebacks and for a load failure without tests.
+        names: The tests to run, in order.
+        namespace: Globals for the source. It gets the source's names.
+
+    Returns:
+        One outcome per name.
+    """
+
+    from marimo_gradescope._assertrewrite import compile_tests
+
+    try:
+        exec(compile_tests(source, filename), namespace)
+    except BaseException as exc:
+        message = cap(f"the tests failed to load ({exception_summary(exc)})")
+        failed = names or (filename,)
+        return [Outcome(name, False, message, FailureReason.LOAD_FAILED) for name in failed]
+
+    outcomes = []
+
+    for name in names:
+        match namespace.get(name):
+            case test if callable(test):
+                outcomes.append(run_test(name, test))
+            case _:
+                message = f"`{name}` is not defined by its tests"
+                outcomes.append(Outcome(name, False, message, FailureReason.ERROR))
+
+    return outcomes

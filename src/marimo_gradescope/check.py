@@ -5,13 +5,15 @@ import html
 import inspect
 import sys
 import textwrap
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from types import CodeType, FunctionType
 from typing import TYPE_CHECKING
 
 from marimo_gradescope._env import grading
 from marimo_gradescope.config import default_title
-from marimo_gradescope.runner import Outcome, run_test, shorten
+from marimo_gradescope.runner import Outcome, run_test, run_test_source, shorten
+from marimo_gradescope.source import module_tests
 
 if TYPE_CHECKING:
     import marimo as mo
@@ -36,12 +38,18 @@ MESSAGE_STYLE = (
     f"background: {SHADE}; color: inherit; white-space: pre-wrap; font-size: 0.85em;"
 )
 NOTE_STYLE = "margin-top: 0.4em; opacity: 0.75;"
+NO_NOTEBOOK = (
+    "Cannot find this notebook's file, so its public tests cannot run. Save the notebook, then "
+    "open it with `marimo edit <your notebook>.py`."
+)
 
 
 def check(
     qid: str,
     *,
     tests: Sequence[Callable[[], object]] | None = None,
+    test_file: str | None = None,
+    uses: Sequence[object] = (),
     points: float | None = None,
     hidden: int = 0,
     title: str | None = None,
@@ -49,8 +57,10 @@ def check(
     """Run a question's public tests and show the results as a panel.
 
     In the source notebook, `check("q1")` finds every `test_q1_*` callable among the caller's
-    globals, hidden tests included. The student copy passes the public tests explicitly, so the
-    check cell re-runs whenever a test or a function it uses changes.
+    globals, hidden tests included. The student copy keeps its public tests in a file next to
+    the notebook and passes its path as `test_file`. That file runs as a module in a copy of the
+    caller's globals, with assertion rewriting. The student copy also passes the names the
+    tests use as `uses`, so marimo runs the check cell again when one of them changes.
 
     Each test is compiled again from its source with pytest's assertion rewriting, so failed
     asserts show their values. The recompiled test runs against its own snapshot of its
@@ -63,26 +73,92 @@ def check(
 
     Args:
         qid: Question id, e.g. `"q1"`.
-        tests: The tests to run; `None` finds them in the caller's globals.
+        tests: The tests to run; `None` finds them in the caller's globals, unless `test_file`
+            is given.
+        test_file: Path of a file with the tests, relative to the notebook's folder.
+        uses: The names the tests use. Only marimo reads them, to know when to run the cell.
         points: Points for the question, shown in the title.
         hidden: Number of hidden tests, shown as a note.
         title: Question title for the panel; `None` gives `Question N` for `qN`, else `qid`.
 
     Returns:
         The panel, as marimo HTML.
+
+    Raises:
+        ValueError: If both `tests` and `test_file` are given.
     """
 
     import marimo as mo
 
+    if tests is not None and test_file is not None:
+        raise ValueError("check() takes `tests` or `test_file`, not both.")
+
     if grading():
         return mo.Html("")
 
-    if tests is None:
-        tests = discover(qid, sys._getframe(1).f_globals)
+    namespace = sys._getframe(1).f_globals
+    problem = None
 
-    outcomes = [run_test(name_of(test), with_rewritten_asserts(test)) for test in tests]
+    if test_file is not None:
+        outcomes, problem = file_outcomes(test_file, namespace)
+    else:
+        found = discover(qid, namespace) if tests is None else tests
+        outcomes = [run_test(name_of(test), with_rewritten_asserts(test)) for test in found]
 
-    return mo.Html(panel(qid, outcomes, points, hidden, title))
+    return mo.Html(panel(qid, outcomes, points, hidden, title, problem))
+
+
+def file_outcomes(
+    test_file: str, namespace: Mapping[str, object]
+) -> tuple[list[Outcome], str | None]:
+    """Run the tests in `test_file`, next to the notebook, in a copy of `namespace`.
+
+    Returns:
+        The outcomes, and why there are none when the file cannot be found or parsed.
+    """
+
+    notebook = locate(namespace)
+    if notebook is None:
+        return [], NO_NOTEBOOK
+
+    path = notebook.parent / test_file
+
+    try:
+        source = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return [], (
+            f"Cannot find {test_file} next to {notebook.name}. Keep the `tests` folder of the "
+            "assignment next to the notebook."
+        )
+    except (OSError, UnicodeDecodeError) as exc:
+        return [], f"Cannot read {test_file}: {exc}"
+
+    try:
+        names = module_tests(source)
+    except SyntaxError as exc:
+        return [], f"{test_file} is not valid Python (line {exc.lineno})."
+
+    return run_test_source(source, test_file, names, dict(namespace)), None
+
+
+def locate(namespace: Mapping[str, object]) -> Path | None:
+    """The notebook file: `__file__` in `namespace`, else marimo's running notebook, else `None`.
+
+    The second lookup uses marimo's private runtime context and gives `None` when that fails.
+    """
+
+    match namespace.get("__file__"):
+        case str() as file if file:
+            return Path(file).resolve()
+
+    try:
+        from marimo._runtime.context import get_context
+
+        filename = get_context().filename
+    except Exception:
+        return None
+
+    return Path(filename).resolve() if filename else None
 
 
 def discover(qid: str, namespace: dict[str, object]) -> list[Callable[[], object]]:
@@ -194,8 +270,12 @@ def panel(
     points: float | None,
     hidden: int,
     title: str | None = None,
+    problem: str | None = None,
 ) -> str:
-    """HTML for the panel, headed by `title`, or by `question_title(qid)` when it is `None`."""
+    """HTML for the panel, headed by `title`, or by `question_title(qid)` when it is `None`.
+
+    `problem` says why there are no outcomes; it defaults to "No tests found".
+    """
 
     title = question_title(qid) if title is None else title
 
@@ -204,7 +284,7 @@ def panel(
 
     if not outcomes:
         accent = WARN
-        warning = html.escape(f"No tests found for {qid}")
+        warning = html.escape(problem or f"No tests found for {qid}")
         body = f'<div style="{MARK_STYLE.format(accent=accent)}">{warning}</div>'
     else:
         passed = sum(outcome.passed for outcome in outcomes)

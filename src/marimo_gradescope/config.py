@@ -21,6 +21,10 @@ HEADER_RE = re.compile(r"(?m)^# /// script$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
 TABLE_RE = re.compile(r"^\[\[?\s*([A-Za-z0-9_-]+(?:\s*\.\s*[A-Za-z0-9_-]+)*)\s*\]\]?\s*(#.*)?$")
 NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 QID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
+# Device names Windows reserves in any case, with or without an extension.
+WINDOWS_RESERVED = frozenset(
+    {"con", "prn", "aux", "nul", *(f"{port}{n}" for port in ("com", "lpt") for n in range(1, 10))}
+)
 
 
 class ConfigError(Exception):
@@ -130,6 +134,7 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
     match table.get("questions"):
         case dict() as raw if raw:
             questions = {qid: _question(qid, value) for qid, value in raw.items()}
+            _check_file_names(list(questions))
         case None:
             raise ConfigError(f"[tool.{TOOL}] needs `questions`, e.g. questions = {{ q1 = 25 }}.")
         case _:
@@ -159,6 +164,34 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
                 raise ConfigError(f"[tool.{TOOL}]: unknown key `{key}`.")
 
     return config
+
+
+def _check_file_names(qids: list[str]) -> None:
+    """Question ids name the public test files, `tests/<id>.py`.
+
+    Raises:
+        ConfigError: If an id is a name Windows reserves, or two ids differ only in case. Such
+            files would collide on macOS and Windows.
+    """
+
+    seen: dict[str, str] = {}
+
+    for qid in qids:
+        folded = qid.casefold()
+
+        if folded in WINDOWS_RESERVED:
+            raise ConfigError(
+                f"[tool.{TOOL}] question id `{qid}` is a file name Windows reserves. Its public "
+                f"tests go to `tests/{qid}.py`; pick another id."
+            )
+
+        if folded in seen:
+            raise ConfigError(
+                f"[tool.{TOOL}] question ids `{qid}` and `{seen[folded]}` differ only in case. "
+                "Their public test files would be the same file on macOS and Windows."
+            )
+
+        seen[folded] = qid
 
 
 def _question(qid: str, value: object) -> Question:

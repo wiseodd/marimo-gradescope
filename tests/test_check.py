@@ -449,6 +449,116 @@ def test_editing_student_function_changes_panel(tmp_path):
     assert "assert -1 == 3" not in page
 
 
+# Tests from a file
+
+
+Q1_FILE = """\
+def test_q1_add():
+    assert add(1, 2) == 3
+
+def test_q1_zero():
+    assert add(0, 0) == 0
+"""
+
+
+def check_in(folder: Path, call: str, **names: object) -> Any:
+    """Run `call` the way a notebook cell in `folder/hw.py` would, and return its value."""
+
+    namespace: dict[str, Any] = {"__file__": str(folder / "hw.py"), "check": check, **names}
+    exec(f"panel = {call}", namespace)
+    return namespace["panel"]
+
+
+def write_tests(folder: Path, text: str = Q1_FILE) -> None:
+    (folder / "tests").mkdir(exist_ok=True)
+    (folder / "tests" / "q1.py").write_text(text, encoding="utf-8")
+
+
+def test_test_file_runs_against_the_notebook_names(tmp_path):
+    write_tests(tmp_path)
+
+    panel = check_in(
+        tmp_path, 'check("q1", test_file="tests/q1.py", uses=[add], points=2)', add=TESTS["add"]
+    )
+    text = text_of(panel)
+
+    assert "Question 1 — 2 pts · 1/2 public tests passed" in text
+    assert "✗ test_q1_add" in text
+    assert "assert -1 == 3" in text
+    assert "✓ test_q1_zero" in text
+
+
+def test_test_file_leaves_the_kernel_globals_alone(tmp_path):
+    write_tests(tmp_path)
+    namespace: dict[str, Any] = {"__file__": str(tmp_path / "hw.py"), "add": TESTS["add"]}
+    before = dict(namespace)
+
+    exec(
+        'import marimo_gradescope\nmarimo_gradescope.check("q1", test_file="tests/q1.py")',
+        namespace,
+    )
+
+    assert "test_q1_add" not in namespace
+    assert {key: namespace[key] for key in before} == before
+
+
+def test_test_file_is_found_next_to_the_notebook_not_the_working_directory(tmp_path, monkeypatch):
+    write_tests(tmp_path)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    text = text_of(check_in(tmp_path, 'check("q1", test_file="tests/q1.py")', add=TESTS["add"]))
+
+    assert "1/2 public tests passed" in text
+
+
+def test_missing_test_file_says_where_it_should_be(tmp_path):
+    text = text_of(check_in(tmp_path, 'check("q1", test_file="tests/q1.py")'))
+
+    assert "Cannot find tests/q1.py next to hw.py" in text
+    assert "public tests passed" not in text
+
+
+def test_test_file_that_is_not_python_says_so(tmp_path):
+    write_tests(tmp_path, "def (:\n")
+
+    text = text_of(check_in(tmp_path, 'check("q1", test_file="tests/q1.py")'))
+
+    assert "tests/q1.py is not valid Python (line 1)" in text
+
+
+def test_test_file_that_fails_to_load_fails_each_test(tmp_path):
+    write_tests(tmp_path, "raise ValueError('boom')\n" + Q1_FILE)
+
+    text = text_of(check_in(tmp_path, 'check("q1", test_file="tests/q1.py")', add=TESTS["add"]))
+
+    assert "0/2 public tests passed" in text
+    assert text.count("the tests failed to load (ValueError: boom)") == 2
+
+
+def test_test_file_that_fails_before_any_test_says_so(tmp_path):
+    write_tests(tmp_path, "raise ValueError('boom')\n")
+
+    text = text_of(check_in(tmp_path, 'check("q1", test_file="tests/q1.py")'))
+
+    assert "No tests found" not in text
+    assert "✗ tests/q1.py" in text
+    assert "the tests failed to load (ValueError: boom)" in text
+
+
+def test_test_file_without_a_notebook_file_says_so():
+    namespace: dict[str, Any] = {"check": check}
+    exec('panel = check("q1", test_file="tests/q1.py")', namespace)
+
+    assert "Cannot find this notebook's file" in text_of(namespace["panel"])
+
+
+def test_tests_and_test_file_together_raise(tmp_path):
+    with pytest.raises(ValueError, match="test_file"):
+        check("q1", tests=[], test_file="tests/q1.py")
+
+
 def test_check_is_a_no_op_while_grading(monkeypatch):
     monkeypatch.setenv("MGS_GRADING", "1")
     calls = []
