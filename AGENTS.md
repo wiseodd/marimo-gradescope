@@ -18,7 +18,8 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   vendored versions together.
 - `crates/mogs/`: the `mogs` executable, in Rust. It runs
   `python -P -m mogs.cli` with the interpreter in its own folder, found after
-  resolving symlinks. maturin builds it into platform wheels together with
+  resolving symlinks. If that folder has none, it uses the one in
+  `$(uv tool dir)/mogs`, because uv copies tool executables on Windows. maturin builds it into platform wheels together with
   `src/mogs/`. The version is `[workspace.package] version` in `Cargo.toml`.
   `src/mogs/_binary.py` finds and runs the installed executable.
 - `tests/`: pytest suite. `cargo test` runs the Rust tests.
