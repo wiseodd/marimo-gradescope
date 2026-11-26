@@ -426,7 +426,6 @@ It should get full marks.
 
 Students see their total, each question's score, and a "Public tests" row listing each public test with its failure message.
 Each question also gets a row, visible only to you, that lists all its tests and their messages, hidden ones included.
-A question's points are split evenly across its tests.
 
 ## Security
 
