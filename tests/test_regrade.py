@@ -139,3 +139,67 @@ def test_missing_data_file_is_an_error(tmp_path, capsys):
 
     assert code == 1
     assert "`files`" in capsys.readouterr().err
+
+
+@pytest.mark.network
+def test_zip_submission_is_unpacked_and_graded(demo, tmp_path, capsys):
+    upload = tmp_path / "hw_submission.zip"
+    with zipfile.ZipFile(upload, "w") as archive:
+        archive.write(demo / "dist" / "autograder" / "hw.py", "hw.py")
+        archive.writestr("hw_answers.pdf", b"%PDF-1.4")
+
+    code = main(["grade", str(demo), str(upload)])
+    out = capsys.readouterr().out
+
+    assert code == 0
+    assert f"Graded:  {upload / 'hw.py'}" in out
+    assert f"{TOTAL}/{TOTAL}" in out
+
+
+def test_zip_with_path_outside_is_refused(tmp_path, capsys):
+    folder = demo_copy(tmp_path / "demo")
+    upload = tmp_path / "upload.zip"
+    with zipfile.ZipFile(upload, "w") as archive:
+        archive.writestr("../escape.py", "x = 1\n")
+
+    code = main(["grade", str(folder), str(upload)])
+
+    assert code == 1
+    assert "../escape.py" in capsys.readouterr().err
+    assert not (tmp_path / "escape.py").exists()
+
+
+def test_broken_zip_is_an_error(tmp_path, capsys):
+    folder = demo_copy(tmp_path / "demo")
+    upload = tmp_path / "upload.zip"
+    upload.write_bytes(b"not a zip")
+
+    code = main(["grade", str(folder), str(upload)])
+
+    assert code == 1
+    assert "upload.zip" in capsys.readouterr().err
+
+
+def test_zip_without_notebook_is_an_error(tmp_path, capsys):
+    folder = demo_copy(tmp_path / "demo")
+    upload = tmp_path / "upload.zip"
+    with zipfile.ZipFile(upload, "w") as archive:
+        archive.writestr("notes.txt", "hello")
+
+    code = main(["grade", str(folder), str(upload)])
+
+    assert code == 1
+    assert "No `.py` file found" in capsys.readouterr().err
+
+
+def test_other_file_type_is_refused(tmp_path, capsys):
+    folder = demo_copy(tmp_path / "demo")
+    upload = tmp_path / "hw.txt"
+    upload.write_text("x = 1\n", encoding="utf-8")
+
+    code = main(["grade", str(folder), str(upload)])
+    err = capsys.readouterr().err
+
+    assert code == 1
+    assert "hw.txt" in err
+    assert ".zip" in err
