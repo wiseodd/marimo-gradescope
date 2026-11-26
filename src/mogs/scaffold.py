@@ -43,8 +43,8 @@ def instructor_guide():
     1. The question text, as Markdown.
     2. The function students write. Put your solution between `# BEGIN SOLUTION` and
        `# END SOLUTION`, or by putting an inline comment `# SOLUTION`.
-    3. Public tests: functions named `test_q1_<anything>`.
-    4. Hidden tests, optional: the same, with `# HIDDEN` as the first line.
+    3. Public tests: a cell of functions named `test_q1_<anything>`.
+    4. Hidden tests, optional: another such cell, with `# HIDDEN` as its first line.
     5. `mogs.grade("q1", points=4)`
 
     **Written question `q2`:**
@@ -72,15 +72,17 @@ def mean(xs):
     # END SOLUTION
 
 
-@app.function
-def test_q1_basic():
-    assert mean([1, 2, 3]) == 2
+@app.cell
+def _():
+    def test_q1_basic():
+        assert mean([1, 2, 3]) == 2
 
 
-@app.function
-# HIDDEN
-def test_q1_single():
-    assert mean([7]) == 7
+@app.cell
+def _():
+    # HIDDEN
+    def test_q1_single():
+        assert mean([7]) == 7
 
 
 @app.cell
