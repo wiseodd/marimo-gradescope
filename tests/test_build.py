@@ -20,6 +20,7 @@ from mogs.build import (
     failure_report,
     find_notebook,
     free_points_warnings,
+    source_notebook,
 )
 from mogs.cli import main, report
 from mogs.config import AssignmentConfig, ConfigError, Question, read_config
@@ -330,6 +331,106 @@ def test_no_candidate(tmp_path):
 
     with pytest.raises(BuildError, match=r"No notebook.*`mogs init`"):
         find_notebook(tmp_path)
+
+
+# What `marimo convert` makes of an otter-assign notebook's raw cells.
+CONVERTED_OTTER = """import marimo
+
+app = marimo.App()
+
+
+@app.cell
+def _(hw01):
+    # ASSIGNMENT CONFIG
+    _name: hw01
+    return
+
+
+@app.cell
+def _(q1):
+    # BEGIN QUESTION
+    _name: q1
+    points: 2
+
+
+if __name__ == "__main__":
+    app.run()
+"""
+
+
+def test_no_candidate_names_otter_syntax(tmp_path):
+    (tmp_path / "hw.py").write_text(CONVERTED_OTTER, encoding="utf-8")
+
+    with pytest.raises(BuildError) as raised:
+        find_notebook(tmp_path)
+
+    message = str(raised.value)
+    assert f"{tmp_path / 'hw.py'}:8 " in message
+    assert "`# ASSIGNMENT CONFIG`" in message
+    assert "otter-assign" in message
+    assert "https://mogs.kristia.de/porting" in message
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "# BEGIN QUESTION",
+        "# END QUESTION",
+        "# BEGIN TESTS",
+        "# END TESTS",
+        '""" # BEGIN PROMPT',
+        "# BEGIN TEST CONFIG",
+    ],
+)
+def test_no_candidate_names_each_otter_marker(tmp_path, marker):
+    text = f'x = 1\n\n\n@app.cell\ndef _():\n    """\n    {marker}\n    """\n'
+    (tmp_path / "hw.py").write_text(text, encoding="utf-8")
+
+    with pytest.raises(BuildError, match=r"hw\.py:7 .*otter-assign"):
+        find_notebook(tmp_path)
+
+
+def test_no_candidate_names_otter_syntax_in_an_unparsable_cell(tmp_path):
+    text = 'app._unparsable_cell(\n    r"""\n    # BEGIN QUESTION\n    name: q1\n    """,\n)\n'
+    (tmp_path / "hw.py").write_text(text, encoding="utf-8")
+
+    with pytest.raises(BuildError, match=r"hw\.py:3 .*`# BEGIN QUESTION`"):
+        find_notebook(tmp_path)
+
+
+def test_no_candidate_names_otter_syntax_in_an_ipynb(tmp_path):
+    cells = [
+        {"cell_type": "markdown", "metadata": {}, "source": ["# Homework 1\n"]},
+        {"cell_type": "raw", "metadata": {}, "source": ["# BEGIN QUESTION\n", "name: q1\n"]},
+    ]
+    notebook = {"cells": cells, "metadata": {}, "nbformat": 4, "nbformat_minor": 5}
+    (tmp_path / "hw.ipynb").write_text(json.dumps(notebook, indent=1), encoding="utf-8")
+
+    with pytest.raises(BuildError) as raised:
+        find_notebook(tmp_path)
+
+    message = str(raised.value)
+    assert f"{tmp_path / 'hw.ipynb'}:" in message
+    assert "`# BEGIN QUESTION`" in message
+    assert "https://mogs.kristia.de/porting" in message
+
+
+def test_no_candidate_ignores_solution_markers(tmp_path):
+    text = "def f():\n    # BEGIN SOLUTION\n    return 1\n    # END SOLUTION\n"
+    (tmp_path / "hw.py").write_text(text, encoding="utf-8")
+
+    with pytest.raises(BuildError) as raised:
+        find_notebook(tmp_path)
+
+    assert "otter" not in str(raised.value)
+
+
+def test_source_notebook_names_otter_syntax(tmp_path):
+    path = tmp_path / "hw.py"
+    path.write_text(CONVERTED_OTTER, encoding="utf-8")
+
+    with pytest.raises(BuildError, match=r"hw\.py:8 .*otter-assign.*/porting"):
+        source_notebook(path)
 
 
 def test_find_notebook_ignores_other_scripts(tmp_path):
