@@ -234,6 +234,39 @@ def test_missing_answer_cell_is_noted(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "answer", ["*Write your answer here.*", "  *Write your\n answer here.*", " "]
+)
+def test_untouched_or_blank_answer_says_no_answer(tmp_path, answer):
+    placeholders = {"answer_q1": "*Write your answer here.*"}
+
+    text = text_of(render(tmp_path, {"q1": answer}, placeholders=placeholders))
+
+    assert "No answer." in text
+    assert "Write your answer here" not in text
+
+
+def test_untouched_part_says_no_answer_next_to_an_answered_one(tmp_path):
+    notebook = tmp_path / "hw.py"
+    notebook.write_text(
+        student_copy().replace(
+            "def answer_q3():",
+            'def answer_q3_2():\n    mo.md("*Part (b).*")\n    return\n\n\n'
+            "@app.cell\ndef answer_q3():",
+        ),
+        encoding="utf-8",
+    )
+    out = tmp_path / "out.pdf"
+    placeholders = {"answer_q3": "Something else.", "answer_q3_2": "*Part (b).*"}
+
+    render_manual_pdf(notebook, ["q3"], {}, out, placeholders=placeholders)
+    text = text_of(PdfReader(out))
+
+    assert ANSWER in text
+    assert "No answer." in text
+    assert "Part (b)" not in text
+
+
+@pytest.mark.parametrize(
     "bad",
     [
         r"$\foobar{x} + \qux$",

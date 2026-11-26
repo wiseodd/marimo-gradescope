@@ -32,6 +32,7 @@ from marimogs.source import (
     answer_text,
     cell_source,
     parse_notebook,
+    unanswered,
 )
 
 if TYPE_CHECKING:
@@ -107,7 +108,13 @@ TEMPLATE = (
 )
 
 #let show-part(part) = block(width: 100%, {
-  if part.style == "markdown" { markdown(part.text) } else { raw(part.text, block: true) }
+  if part.style == "markdown" {
+    markdown(part.text)
+  } else if part.style == "note" {
+    text(fill: gray, emph(part.text))
+  } else {
+    raw(part.text, block: true)
+  }
   if part.note != none { block(above: 0.8em, text(size: 8pt, fill: gray, part.note)) }
 })
 
@@ -134,6 +141,7 @@ FORMULA = PREAMBLE + '#safe-math(sys.inputs.formula, block: sys.inputs.display =
 
 SOURCE_NOTE = "Some math in this cell could not be rendered and is shown as LaTeX source."
 PLAIN_NOTE = "This cell could not be rendered and is shown as plain text."
+NO_ANSWER = "No answer."
 
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
 BLANK_LINE = re.compile(r"\n[ \t]*\n")
@@ -157,6 +165,7 @@ class Style(StrEnum):
 
     MARKDOWN = "markdown"
     PLAIN = "plain"
+    NOTE = "note"
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,7 +173,7 @@ class Part:
     """One prompt or answer cell, as it goes into the PDF.
 
     Attributes:
-        text: Markdown, or plain text for `Style.PLAIN`.
+        text: Markdown, or plain text for `Style.PLAIN` and `Style.NOTE`.
         role: Whether it is a prompt or an answer.
         style: How `text` is rendered.
         note: A small note under the part, or `None`.
@@ -213,6 +222,7 @@ def render_manual_pdf(
     titles: Mapping[str, str],
     out: Path,
     *,
+    placeholders: Mapping[str, str] | None = None,
     status: Status | None = None,
 ) -> Path:
     """Render the prompts and answers of `qids` in `notebook` to a PDF at `out`.
@@ -224,6 +234,8 @@ def render_manual_pdf(
         qids: Questions to include, in order.
         titles: Heading per question id; the id itself when absent.
         out: Where to write the PDF.
+        placeholders: The text each answer cell starts with, by cell name. An answer still
+            equal to it, or blank, shows as "No answer."
         status: Called with a short message before slow steps.
 
     Returns:
@@ -249,7 +261,7 @@ def render_manual_pdf(
         raise PdfUnavailable(f"the notebook cannot be read ({exc})") from exc
 
     (status or quiet)("Creating the PDF of your written answers…")
-    questions = [manual_question(nb, qid, titles.get(qid, qid)) for qid in qids]
+    questions = [manual_question(nb, qid, titles.get(qid, qid), placeholders or {}) for qid in qids]
 
     # Any error left after the fallbacks is unexpected; the export then falls back to Markdown.
     try:
@@ -289,18 +301,29 @@ def _each_part(question: Question, change: Callable[[Part], Part]) -> Question:
     return replace(question, parts=tuple(change(part) for part in question.parts))
 
 
-def manual_question(nb: Notebook, qid: str, title: str) -> Question:
+def manual_question(
+    nb: Notebook, qid: str, title: str, placeholders: Mapping[str, str] | None = None
+) -> Question:
     """A question's prompt and answer cells in notebook order; a note when it has no answer.
 
     Each answer follows the prompts just before it in the notebook. A notebook built by an
     older release names all prompts before the first answer, and shows them the same way.
+    An answer cell that is blank or still its text in `placeholders` shows as "No answer."
     """
+
+    def part(cell: Cell, role: Role) -> Part:
+        match role:
+            case Role.ANSWER if unanswered(
+                answer_text(nb, cell), (placeholders or {}).get(cell.name)
+            ):
+                return Part(NO_ANSWER, role, Style.NOTE)
+            case _:
+                return Part(cell_markdown(nb, cell), role)
 
     prompts = [(cell, Role.PROMPT) for cell in _plain(nb.prompt_cells(qid))]
     answers = [(cell, Role.ANSWER) for cell in _plain(nb.answer_cells(qid))]
     parts = tuple(
-        Part(cell_markdown(nb, cell), role)
-        for cell, role in sorted(prompts + answers, key=lambda pair: pair[0].start)
+        part(cell, role) for cell, role in sorted(prompts + answers, key=lambda pair: pair[0].start)
     )
 
     if not answers:
@@ -422,7 +445,11 @@ def _rescue(part: Part) -> Part:
 
 
 def _as_plain(part: Part) -> Part:
-    return replace(part, style=Style.PLAIN, note=PLAIN_NOTE)
+    match part.style:
+        case Style.NOTE:
+            return part
+        case _:
+            return replace(part, style=Style.PLAIN, note=PLAIN_NOTE)
 
 
 def _as_code(text: str, formula: Formula) -> str:
