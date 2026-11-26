@@ -199,6 +199,20 @@ def test_notebook_named_like_a_public_test_file_is_found(tmp_path):
     assert found.py == tmp_path / "hw" / "q1.py"
 
 
+def test_assignment_named_tests_is_found(tmp_path):
+    touch(tmp_path, "tests/hw.py", "tests/tests/q1.py")
+
+    found = find_submission(tmp_path, "hw.py")
+
+    assert found.py == tmp_path / "tests" / "hw.py"
+
+
+def test_lone_tests_folder_still_counts(tmp_path):
+    touch(tmp_path, "tests/my_homework.py")
+
+    assert find_submission(tmp_path, "hw.py").py == tmp_path / "tests" / "my_homework.py"
+
+
 def test_two_py_files_are_not_called_notebooks(tmp_path):
     touch(tmp_path, "one.py", "two.py")
 
