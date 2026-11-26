@@ -1,7 +1,13 @@
 name: ci
 on:
+  # PRs run through `pull_request`; `push` covers main only, so a PR commit runs once.
   push:
+    branches: [main]
   pull_request:
+# A new commit on a PR cancels the PR's older runs. Runs on main all finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   # Ruff only, at the version in uv.lock: no project sync.
   lint:
