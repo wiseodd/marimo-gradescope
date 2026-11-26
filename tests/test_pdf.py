@@ -121,6 +121,36 @@ def test_find_formulas_ignores_an_unclosed_dollar():
     assert spans("Unbalanced: $\\frac{1}{2 end.\n\nNext paragraph $x$.") == ["$x$"]
 
 
+ALIGN = "\\begin{align}\na &= b \\\\\nc &= d\n\\end{align}"
+
+
+def test_find_formulas_bare_environment_paragraph():
+    text = f"Before.\n\n{ALIGN}\n\nAfter $x$."
+
+    assert spans(text) == [ALIGN, "$x$"]
+    assert find_formulas(text)[0] == Formula(
+        start=9, end=9 + len(ALIGN), source=ALIGN, display=True, environment=True
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"Before.\n{ALIGN}\n\nAfter.",
+        f"Before.\n\n{ALIGN}\nAfter.",
+        f"Before.\n\n   {ALIGN}\n\nAfter.",
+        "\\begin{align}\na &= b\n\nc\n\\end{align}",
+        "Text \\begin{equation}x\\end{equation} more.",
+        "\\begin{multline}\na\n\\end{multline}",
+        "\\begin{align}\na\n\\end{gather}",
+        f"```\n{ALIGN}\n```",
+        f"$$\n{ALIGN}\n$$",
+    ],
+)
+def test_find_formulas_skips_environments_marimo_shows_as_text(text):
+    assert not any(formula.environment for formula in find_formulas(text))
+
+
 # Markdown of a cell
 
 
@@ -220,6 +250,30 @@ def test_math_answers_render_one_page_per_question(tmp_path):
     assert "\\frac" not in first + second
     assert "\\begin" not in second
     assert "could not be rendered" not in first + second
+
+
+@pytest.mark.parametrize("env", ["align", "align*", "equation", "equation*", "gather", "gather*"])
+@pytest.mark.parametrize("dollars", [False, True])
+def test_display_environments_render(tmp_path, env, dollars):
+    rows = "a &= b \\\\\nc &= d" if env.startswith("align") else "a = b \\\\\nc = d"
+    block = f"\\begin{{{env}}}\n{rows}\n\\end{{{env}}}"
+    if dollars:
+        block = f"$$\n{block}\n$$"
+
+    text = text_of(render(tmp_path, {"q1": f"Before.\n\n{block}\n\nAfter."}))
+
+    assert "Before. 𝑎 = 𝑏 𝑐 = 𝑑 After." in text, text
+    assert "could not be rendered" not in text
+
+
+def test_failing_environment_is_shown_as_its_source(tmp_path):
+    bad = "\\begin{align}\n\\foobar{a} &= b \\\\\nc &= d\n\\end{align}"
+
+    text = text_of(render(tmp_path, {"q1": f"Before.\n\n{bad}\n\nAfter."}))
+
+    assert " ".join(bad.split()) in text
+    assert "$$" not in text
+    assert "shown as LaTeX source" in text
 
 
 def test_missing_answer_cell_is_noted(tmp_path):

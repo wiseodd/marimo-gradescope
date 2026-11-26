@@ -4,7 +4,8 @@ Typst renders the PDF in-process, from the `typst` package of the `pdf` extra. P
 the PDF has a heading, then the `prompt_<qid>` and `answer_<qid>` cells in notebook order, so
 each answer follows its own prompt. A page break separates questions. A cell that is just
 `mo.md("...")` shows as Markdown with LaTeX math (through the vendored Typst packages cmarker
-and mitex); any other cell shows its source.
+and mitex); any other cell shows its source. As in marimo, a paragraph that is just an `align`,
+`equation` or `gather` environment, starred or not, is display math too.
 
 The cell text reaches Typst as data in `sys.inputs`, never as Typst source. Typst cannot
 recover from an error inside a document, so a cell that breaks the document is rendered again
@@ -72,6 +73,8 @@ PREAMBLE = r"""
 }
 
 #let safe-math(src, block: false) = {
+  // mitex lacks `gather*`; its `gather` is unnumbered anyway.
+  let src = src.replace("{gather*}", "{gather}")
   if runs-code(src) { raw(src, block: block) } else { mitex(src, block: block) }
 }
 """.replace("ALIASES", ALIASES)
@@ -135,6 +138,9 @@ FORMULA = PREAMBLE + '#safe-math(sys.inputs.formula, block: sys.inputs.display =
 SOURCE_NOTE = "Some math in this cell could not be rendered and is shown as LaTeX source."
 PLAIN_NOTE = "This cell could not be rendered and is shown as plain text."
 
+# A paragraph that marimo shows as display math without dollar signs.
+ENVIRONMENT = re.compile(r"\\begin\{((?:align|equation|gather)\*?)\}.*\\end\{\1\}", re.DOTALL)
+PARAGRAPH_START = re.compile(r"(?:.*\n)?[ \t]*\n", re.DOTALL)
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
 BLANK_LINE = re.compile(r"\n[ \t]*\n")
 
@@ -192,19 +198,21 @@ class Question:
 
 @dataclass(frozen=True, slots=True)
 class Formula:
-    """A `$...$` or `$$...$$` formula in Markdown.
+    r"""A `$...$` or `$$...$$` formula in Markdown, or a bare display environment.
 
     Attributes:
-        start: Offset of the opening dollar sign.
-        end: Offset just past the closing dollar sign.
-        source: The LaTeX between the dollar signs.
-        display: Whether it is a `$$` formula.
+        start: Offset of the opening dollar sign or `\begin`.
+        end: Offset just past the closing dollar sign or `\end{...}`.
+        source: The LaTeX between the dollar signs, or the whole environment.
+        display: Whether it is display math.
+        environment: Whether it is a bare environment, which Typst gets inside `$$`.
     """
 
     start: int
     end: int
     source: str
     display: bool
+    environment: bool = False
 
 
 def render_manual_pdf(
@@ -323,7 +331,8 @@ def find_formulas(text: str) -> list[Formula]:
     r"""The `$...$` and `$$...$$` formulas in Markdown, in order.
 
     Code spans, fenced code blocks and `\$` are skipped. A formula does not span a blank
-    line; a dollar sign without a partner is text.
+    line; a dollar sign without a partner is text. A paragraph that is just an `align`,
+    `equation` or `gather` environment, starred or not, is a display formula, as in marimo.
     """
 
     formulas = []
@@ -333,6 +342,9 @@ def find_formulas(text: str) -> list[Formula]:
 
         while index < end:
             match text[index]:
+                case "\\" if environment := _environment(text, start, end, index):
+                    formulas.append(environment)
+                    index = environment.end
                 case "\\":
                     index += 2
                 case "`":
@@ -356,6 +368,34 @@ def find_formulas(text: str) -> list[Formula]:
                     index += 1
 
     return formulas
+
+
+def _environment(text: str, start: int, end: int, index: int) -> Formula | None:
+    """The bare environment whose paragraph starts at `index`, if there is one.
+
+    `start` and `end` bound the run of prose that holds `index`.
+    """
+
+    before = text[start:index]
+    if before and not PARAGRAPH_START.fullmatch(before):
+        return None
+
+    blank = BLANK_LINE.search(text, index, end)
+    paragraph = text[index : blank.start() if blank else end].rstrip()
+    if not ENVIRONMENT.fullmatch(paragraph):
+        return None
+
+    return Formula(index, index + len(paragraph), paragraph, display=True, environment=True)
+
+
+def _delimited(text: str) -> str:
+    """`text` with each bare environment put inside `$$`, so cmarker hands it to mitex."""
+
+    for formula in reversed(find_formulas(text)):
+        if formula.environment:
+            text = f"{text[: formula.start]}$$\n{formula.source}\n$$\n{text[formula.end :]}"
+
+    return text
 
 
 def _prose(text: str) -> list[tuple[int, int]]:
@@ -466,11 +506,15 @@ def _formula_renders(formula: Formula) -> bool:
 def _document(questions: list[Question]) -> bytes:
     """The PDF of `questions`."""
 
+    def text(part: Part) -> str:
+        match part.style:
+            case Style.MARKDOWN:
+                return _valid(_delimited(part.text))
+            case Style.PLAIN:
+                return _valid(part.text)
+
     def parts(parts: tuple[Part, ...]) -> list[dict[str, str | None]]:
-        return [
-            {"text": _valid(p.text), "role": p.role, "style": p.style, "note": p.note}
-            for p in parts
-        ]
+        return [{"text": text(p), "role": p.role, "style": p.style, "note": p.note} for p in parts]
 
     doc = [{"title": _valid(q.title), "parts": parts(q.parts)} for q in questions]
 
