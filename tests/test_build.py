@@ -21,7 +21,7 @@ from marimo_gradescope.build import (
     find_notebook,
 )
 from marimo_gradescope.cli import main, report
-from marimo_gradescope.config import AssignmentConfig, ConfigError, Question, read_config
+from marimo_gradescope.config import ConfigError, read_config
 from marimo_gradescope.runner import FailureReason, Outcome
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
@@ -468,6 +468,22 @@ def test_report_shows_manual_questions(tmp_path):
     assert "- careful" in text
 
 
+def test_report_says_a_zero_point_manual_question_is_not_graded(tmp_path):
+    result = fake_result(
+        tmp_path / "dist",
+        scores=(
+            QuestionScore("q1", "Average", 4, 4, 0),
+            QuestionScore("q5", "Proof", 0, None, None),
+        ),
+    )
+
+    text = report(result)
+
+    assert "Not in the autograder total:\n- q5 Proof: collected in the PDF, not graded" in text
+    assert "graded by hand" not in text
+    assert "graded on Gradescope" not in text
+
+
 def test_report_shows_public_and_hidden_test_counts(tmp_path):
     result = BuildResult(
         student=tmp_path / "dist/student/hw.zip",
@@ -500,20 +516,20 @@ def test_failure_report_merges_identical_messages():
     ]
 
 
-def test_zero_point_manual_question_warns():
-    questions = {
-        "q1": Question("q1", "Mean", 0),
-        "q2": Question("q2", "Proof", 0, manual=True),
-        "q3": Question("q3", "Essay", 5, manual=True),
-    }
-    cfg = AssignmentConfig("hw", "hw.py", questions)
+@pytest.mark.network
+def test_zero_point_manual_question_builds_without_warnings(tmp_path):
+    # A written answer collected in the PDF but not graded.
+    folder = demo_copy(tmp_path / "demo")
+    edit(
+        folder / "hw.py",
+        'q3 = { points = 5, title = "Empty lists", manual = true }',
+        'q3 = { points = 0, title = "Empty lists", manual = true }',
+    )
 
-    [warning] = build_module.question_warnings(cfg)
+    result = build(folder)
 
-    assert "q2" in warning
-    assert "q1" not in warning
-    assert "q3" not in warning
-    assert "SOLUTION" in warning
+    assert result.warnings == []
+    assert [(score.id, score.points) for score in result.scores][-1] == ("q3", 0)
 
 
 def test_failure_report_names_questions_for_load_failures():

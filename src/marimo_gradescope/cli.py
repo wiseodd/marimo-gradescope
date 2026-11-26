@@ -99,7 +99,12 @@ def report(result: BuildResult) -> str:
 
     for score in result.scores:
         if score.solution is None or score.blank is None:
-            manual.append(f"{score.id} {score.title}: {score.points:g} pts, graded by hand")
+            how = (
+                f"{score.points:g} pts, graded by hand"
+                if score.points
+                else "collected in the PDF, not graded"
+            )
+            manual.append(f"{score.id} {score.title}: {how}")
             continue
 
         rows.append(
@@ -120,7 +125,7 @@ def report(result: BuildResult) -> str:
     ]
 
     if manual:
-        lines += ["", "Not in the total (graded on Gradescope):"]
+        lines += ["", "Not in the autograder total:"]
         lines += [f"- {line}" for line in manual]
 
     if result.warnings:

@@ -112,6 +112,8 @@ The markers work in any cell, including Markdown cells.
 This is useful for ungraded exercises.
 An ungraded exercise doesn't need an entry in `questions`.
 Write it in a normal cell and put its solution between the markers.
+Its answer stays in the notebook and doesn't go into the PDF.
+To collect a written answer without grading it, see [Written answers](#written-answers).
 
 ### Tests
 
@@ -160,6 +162,10 @@ Optionally, add a `prompt_<qid>` cell with the question.
 
 When the student clicks the export button, these cells go into a PDF, with the LaTeX math rendered.
 The PDF goes into the submission zip, together with the notebook.
+
+A manual question can be worth 0 points, e.g., `q5 = { points = 0, title = "Proof", manual = true }`.
+Its answer goes into the PDF, but it doesn't count toward the total.
+Use this for a written exercise that you want to read but not grade.
 
 Some things can't be rendered.
 LaTeX that the PDF doesn't support (e.g., TikZ) shows as source, and so does a prompt cell that isn't plain `mo.md(...)`.

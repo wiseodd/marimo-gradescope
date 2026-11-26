@@ -219,7 +219,6 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
     tests = public_test_files(nb)
     requirement = tool_requirement or f"{TOOL}=={__version__}"
     requirements, warnings = gradescope_requirements(src, cfg, requirement)
-    warnings += question_warnings(cfg)
     entries = {
         "setup.sh": setup_script(cfg).encode(),
         "run_autograder": run_autograder_script().encode(),
@@ -403,18 +402,6 @@ def failure_report(failed: Iterable[Outcome], *, count_load_failures: bool = Tru
     return [
         f"- {_failed_tests(names, load_failed)}: " + message.replace("\n", "\n    ")
         for (message, load_failed), names in by_message.items()
-    ]
-
-
-def question_warnings(cfg: AssignmentConfig) -> list[str]:
-    """Warn about manual questions worth 0 points, which are better left out of `questions`."""
-
-    return [
-        f"Question `{q.id}` is graded by hand but worth 0 points, so its answer still goes into "
-        "the students' PDF. For an ungraded exercise, leave it out of `questions`: "
-        "`# BEGIN SOLUTION` ... `# END SOLUTION` works in any cell."
-        for q in cfg.questions.values()
-        if q.manual and q.points == 0
     ]
 
 
