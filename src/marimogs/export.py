@@ -45,7 +45,7 @@ from marimogs.check import (
     locate,
 )
 from marimogs.config import default_title
-from marimogs.pdf import PdfUnavailable, cell_markdown, quiet, render_manual_pdf
+from marimogs.pdf import NO_ANSWER, PdfUnavailable, cell_markdown, quiet, render_manual_pdf
 from marimogs.runner import exception_summary, shorten
 from marimogs.source import Notebook, SourceError, answer_text, parse_notebook, unanswered
 
@@ -289,11 +289,11 @@ def package(
 
             try:
                 out = Path(folder) / f"{name}.pdf"
-                render_manual_pdf(snapshot, manual, titles, out, status=report)
+                render_manual_pdf(snapshot, manual, titles, out, placeholders=starts, status=report)
                 entries[out.name] = out.read_bytes()
                 lines.append(Line(Mark.OK, f"Written answers → {name}.pdf"))
             except PdfUnavailable as exc:
-                answers = answers_markdown(nb, name, manual, titles)
+                answers = answers_markdown(nb, name, manual, titles, starts)
                 entries[f"{name}_answers.md"] = answers.encode()
                 lines.append(
                     Line(Mark.WARN, f"PDF not created: {exc}; answers included as Markdown")
@@ -396,8 +396,12 @@ def answers_markdown(
     name: str,
     manual: Sequence[str],
     titles: Mapping[str, str],
+    placeholders: Mapping[str, str] | None = None,
 ) -> str:
-    """The written answers as Markdown, for when the PDF cannot be made."""
+    """The written answers as Markdown, for when the PDF cannot be made.
+
+    An answer cell that is blank or still its text in `placeholders` shows as "No answer."
+    """
 
     parts = [f"# Written answers: {name}"]
 
@@ -412,7 +416,12 @@ def answers_markdown(
         if not cells:
             parts.append(f"*No answer cell `answer_{qid}` found.*")
 
-        parts += [cell_markdown(nb, cell) for cell in cells]
+        parts += [
+            f"*{NO_ANSWER}*"
+            if unanswered(answer_text(nb, cell), (placeholders or {}).get(cell.name))
+            else cell_markdown(nb, cell)
+            for cell in cells
+        ]
 
     return "\n\n".join(parts) + "\n"
 

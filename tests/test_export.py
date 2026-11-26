@@ -224,13 +224,18 @@ def test_pdf_goes_in_zip(tmp_path, monkeypatch):
     notebook = tmp_path / "hw.py"
     notebook.write_text(student_copy(), encoding="utf-8")
 
-    def render(notebook, qids, titles, out, *, status=None):
+    seen = []
+
+    def render(notebook, qids, titles, out, *, placeholders=None, status=None):
+        seen.append(placeholders)
         out.write_bytes(b"%PDF-1.4 answers")
         return out
 
     monkeypatch.setattr(export_module, "render_manual_pdf", render)
 
-    result = package(notebook, name="hw", manual=["q3"], titles=TITLES)
+    result = package(notebook, name="hw", manual=["q3"], titles=TITLES, placeholders={"q3": "x"})
+
+    assert seen == [{"answer_q3": "x"}]
 
     assert "✓ Written answers → hw.pdf" in texts(result.lines)
     assert zip_names(result.data) == ["hw.pdf", "hw.py"]
@@ -324,6 +329,17 @@ def test_solved_copy_exports_without_a_warning(tmp_path, no_pdf):
 
     assert texts(result.lines)[1].startswith("⚠ PDF not created")
     assert warnings == []
+
+
+def test_answers_file_says_an_untouched_answer_has_no_answer(tmp_path, no_pdf):
+    notebook = tmp_path / "hw.py"
+    notebook.write_text(student_copy(), encoding="utf-8")
+
+    result = package(notebook, name="hw", manual=["q3"], titles=TITLES, placeholders=PLACEHOLDERS)
+    answers = zip_text(result.data, "hw_answers.md")
+
+    assert "*No answer.*" in answers
+    assert ANSWER not in answers
 
 
 def test_one_line_answer_cell_still_packaged(tmp_path, no_pdf):

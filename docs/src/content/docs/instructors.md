@@ -223,6 +223,7 @@ Both list the first line of each text cell of a written question, or "no questio
 
 When the student clicks the export button, the answers go into a PDF, each after its text, with the LaTeX math rendered.
 The PDF goes into the submission zip, together with the notebook.
+An answer the student left blank or unchanged shows as *No answer.* in the PDF, and the export warns about it.
 
 A written question can be worth 0 points, e.g., `mogs.grade("q5", points=0)`.
 Its answer goes into the PDF, but it doesn't count toward the total.
