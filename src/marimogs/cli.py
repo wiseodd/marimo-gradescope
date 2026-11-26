@@ -63,11 +63,12 @@ def _edit(path: Path) -> int:
 
     try:
         notebook = source_notebook(path)
+        marimo = subprocess.Popen(
+            [sys.executable, "-m", "marimo", "edit", "--sandbox", str(notebook)]
+        )
     except (BuildError, OSError) as error:
         print(f"Edit failed.\n{error}", file=sys.stderr)
         return 1
-
-    marimo = subprocess.Popen([sys.executable, "-m", "marimo", "edit", "--sandbox", str(notebook)])
 
     # Ctrl+C reaches marimo too, and marimo asks whether to quit. Wait until it exits.
     while True:

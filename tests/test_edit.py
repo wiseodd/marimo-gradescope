@@ -111,3 +111,15 @@ def test_edit_names_a_missing_path(missing, tmp_path, monkeypatch, capsys):
 
     assert code == 1
     assert f"{missing} does not exist" in capsys.readouterr().err
+
+
+def test_edit_reports_a_failed_launch(assignment, monkeypatch, capsys):
+    def no_process(command: list[str]) -> None:
+        raise OSError("cannot start")
+
+    monkeypatch.setattr(subprocess, "Popen", no_process)
+
+    code = cli.main(["edit", str(assignment)])
+
+    assert code == 1
+    assert capsys.readouterr().err == "Edit failed.\ncannot start\n"
