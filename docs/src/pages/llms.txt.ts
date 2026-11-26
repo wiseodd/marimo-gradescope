@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { pages } from '../llms';
 
-const REPO = 'https://github.com/wiseodd/marimo-gradescope';
+const REPO = 'https://github.com/wiseodd/mogs';
 
 export const GET: APIRoute = async ({ site }) => {
 	const base = site!.href.replace(/\/$/, '');
@@ -9,7 +9,7 @@ export const GET: APIRoute = async ({ site }) => {
 		(e) => `- [${e.data.title}](${base}/${e.id}.md): ${e.data.description}`,
 	);
 	const text = [
-		'# marimo-gradescope',
+		'# mogs',
 		'',
 		'> Build Gradescope autograders from marimo notebooks.',
 		'',

@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from marimogs.config import AssignmentConfig, Question
-from marimogs.grader import _process, sandbox
-from marimogs.grader.bundle import GradingBundle, HiddenHelper, Phase, TestCell
-from marimogs.grader.sandbox import grade, run_phase
-from marimogs.runner import FailureReason, Outcome
+from mogs.config import AssignmentConfig, Question
+from mogs.grader import _process, sandbox
+from mogs.grader.bundle import GradingBundle, HiddenHelper, Phase, TestCell
+from mogs.grader.sandbox import grade, run_phase
+from mogs.runner import FailureReason, Outcome
 
 # The sandbox also runs on macOS, but these tests rely on Linux-only limits: the memory bomb
 # fixture needs RLIMIT_AS, and the process cap and `resource` checks are Linux values.
@@ -124,7 +124,7 @@ def test_misbehaving_test_fails_alone(tmp_path, name, reason, detail):
 
 
 def test_stdout_flood_finishes_and_keeps_only_the_tail(tmp_path, caplog):
-    caplog.set_level(logging.INFO, logger="marimogs.grader.sandbox")
+    caplog.set_level(logging.INFO, logger="mogs.grader.sandbox")
 
     start = time.monotonic()
     results = run(tmp_path, fixture("stdout_flood"), bundle())
@@ -303,7 +303,7 @@ def test_slow_check_cell_does_not_stall_the_notebook_run(tmp_path):
             with app.setup:
                 import time
 
-                import marimogs as mogs
+                import mogs
 
 
             @app.cell
@@ -549,17 +549,17 @@ def test_limits_on_macos_have_no_memory_cap(monkeypatch):
 
 def test_child_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "x")
-    monkeypatch.setenv("MGS_KEPT", "1")
+    monkeypatch.setenv("MOGS_KEPT", "1")
 
     env = _process.child_env(tmp_path)
 
     assert "PYTEST_CURRENT_TEST" not in env
-    assert env["MGS_KEPT"] == "1"
+    assert env["MOGS_KEPT"] == "1"
     assert env["MPLBACKEND"] == "Agg"
     assert env["OMP_NUM_THREADS"] == "4"
     assert env["HOME"] == env["MPLCONFIGDIR"] == str(tmp_path)
     assert env["PYTHONDONTWRITEBYTECODE"] == "1"
-    assert env["MGS_GRADING"] == "1"
+    assert env["MOGS_GRADING"] == "1"
 
 
 def test_launch_without_user(tmp_path):
@@ -573,7 +573,7 @@ def test_launch_without_user(tmp_path):
     assert _process.child_command(7, "/env/bin/python") == [
         "/env/bin/python",
         "-m",
-        "marimogs.grader.child",
+        "mogs.grader.child",
         "7",
     ]
 
@@ -659,8 +659,8 @@ def test_limits_never_exceed_the_hard_limit():
 def test_events_before_a_bad_line_still_count(tmp_path):
     source = """\
 import os, sys
-from marimogs.grader.protocol import Result, encode
-from marimogs.runner import Outcome
+from mogs.grader.protocol import Result, encode
+from mogs.runner import Outcome
 
 def test_q1_before():
     assert add(1, 2) == 3

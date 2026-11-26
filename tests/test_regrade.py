@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from marimogs import regrade
-from marimogs.build import BuildError, build
-from marimogs.cli import main
-from marimogs.regrade import GradeResult, grade_submission
+from mogs import regrade
+from mogs.build import BuildError, build
+from mogs.cli import main
+from mogs.regrade import GradeResult, grade_submission
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
 TOTAL = 10
@@ -109,8 +109,8 @@ def test_load_failures_keep_test_names_and_hidden_marks(demo, tmp_path, capsys):
     submission = edited(
         demo / "dist" / "autograder" / "hw.py",
         tmp_path / "hw.py",
-        "    import marimogs as mogs\n",
-        "    import marimogs as mogs\n    import os\n\n    os._exit(3)\n",
+        "    import mogs\n",
+        "    import mogs\n    import os\n\n    os._exit(3)\n",
     )
 
     code = main(["grade", str(demo), str(submission)])
@@ -177,7 +177,7 @@ HIDDEN_ONLY = """\
 # requires-python = ">=3.13"
 # dependencies = [
 #     "marimo",
-#     "marimo-gradescope",
+#     "mogs",
 # ]
 # ///
 
@@ -186,7 +186,7 @@ import marimo
 app = marimo.App()
 
 with app.setup:
-    import marimogs as mogs
+    import mogs
 
 
 @app.cell

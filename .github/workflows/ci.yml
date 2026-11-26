@@ -67,13 +67,13 @@ jobs:
           tests/test_config.py tests/test_source.py tests/test_transform.py
           tests/test_assertrewrite_guard.py tests/test_runner.py tests/test_check.py
           tests/test_loader.py tests/test_selfcheck.py tests/test_export.py tests/test_pdf.py
-  # The autograder graded in Gradescope's base image. MGS_REQUIRE_CONTAINER makes a missing
+  # The autograder graded in Gradescope's base image. MOGS_REQUIRE_CONTAINER makes a missing
   # Docker fail the job instead of skipping the tests.
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      MGS_REQUIRE_CONTAINER: "1"
+      MOGS_REQUIRE_CONTAINER: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

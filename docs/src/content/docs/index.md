@@ -3,7 +3,7 @@ title: Quickstart
 description: Build a Gradescope autograder from a single marimo notebook.
 ---
 
-`marimo-gradescope` turns a single `marimo` notebook into a student notebook and a Gradescope autograder.
+`mogs` (marimo + Gradescope) turns a single `marimo` notebook into a student notebook and a Gradescope autograder.
 The notebook contains the solutions and the tests, and the tests are plain `pytest` functions.
 
 ## Install
@@ -11,16 +11,16 @@ The notebook contains the solutions and the tests, and the tests are plain `pyte
 Install it as a `uv` tool:
 
 ```bash
-uv tool install marimo-gradescope
+uv tool install mogs
 ```
 
-The command is `marimogs`.
+The command is `mogs`.
 
 ## Start an assignment
 
 ```bash
-marimogs init A1
-marimogs edit A1
+mogs init A1
+mogs edit A1
 ```
 
 `init` creates `A1/A1.py`, a notebook with a short guide and two example questions.
@@ -79,7 +79,7 @@ Say the notebook is `examples/demo/hw.py`.
 Then:
 
 ```bash
-marimogs build examples/demo
+mogs build examples/demo
 ```
 
 The command prints what to do with the result:
@@ -98,4 +98,6 @@ It contains the student notebook, its public tests and its data files.
 Submit it on Gradescope to check the autograder.
 It should get full marks.
 
-See [`examples/demo`](https://github.com/wiseodd/marimo-gradescope/tree/main/examples/demo) for the complete assignment.
+See [`examples/demo`](https://github.com/wiseodd/mogs/tree/main/examples/demo) for the complete assignment.
+
+mogs is not affiliated with or endorsed by marimo or Gradescope.

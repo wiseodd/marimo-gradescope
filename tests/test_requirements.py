@@ -5,18 +5,18 @@ from pathlib import Path
 
 import pytest
 
-from marimogs.config import ConfigError, read_config
-from marimogs.grader._user import STUDENT_USER
-from marimogs.grader.templates import UV_VERSION, run_autograder_script, setup_script
-from marimogs.requirements import RequirementsError, gradescope_requirements
+from mogs.config import ConfigError, read_config
+from mogs.grader._user import STUDENT_USER
+from mogs.grader.templates import UV_VERSION, run_autograder_script, setup_script
+from mogs.requirements import RequirementsError, gradescope_requirements
 
 REPO = Path(__file__).parent.parent
-TOOL = "marimo-gradescope==0.1.0"
+TOOL = "mogs==0.1.0"
 
 CODE = """
 import marimo
 
-import marimogs as mogs
+import mogs
 
 app = marimo.App()
 
@@ -38,7 +38,7 @@ def with_python(src: str, python: str) -> str:
 TORCH = notebook(
     """
 requires-python = ">=3.13"
-dependencies = ["marimo", "marimo-gradescope==0.0.0", "torch"]
+dependencies = ["marimo", "mogs==0.0.0", "torch"]
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
@@ -52,7 +52,7 @@ explicit = true
 
 
 def tool_lines(text: str) -> list[str]:
-    return [line for line in text.splitlines() if line.startswith("marimo-gradescope")]
+    return [line for line in text.splitlines() if line.startswith("mogs")]
 
 
 def requirement_lines(text: str) -> list[str]:
@@ -84,7 +84,7 @@ def test_header_with_explicit_index(tmp_path):
 @pytest.mark.network
 def test_header_requirements_install(tmp_path):
     # The real tool line pins a release; a local path lets the dry run resolve it.
-    tool = f"marimo-gradescope @ {REPO.as_uri()}"
+    tool = f"mogs @ {REPO.as_uri()}"
     text, _ = gradescope_requirements(TORCH, config(TORCH, tmp_path), tool)
     requirements = tmp_path / "requirements.txt"
     requirements.write_text(text, encoding="utf-8")
@@ -112,7 +112,7 @@ def test_header_requirements_install(tmp_path):
 
 @pytest.mark.network
 def test_header_without_indexes(tmp_path):
-    src = notebook('dependencies = ["marimo-gradescope", "pytest"]\n\n')
+    src = notebook('dependencies = ["mogs", "pytest"]\n\n')
 
     text, _ = gradescope_requirements(src, config(src, tmp_path), TOOL)
 
@@ -166,7 +166,7 @@ def test_uv_export_error_shows_stderr(tmp_path):
 
 OVERRIDE = notebook(
     """
-dependencies = ["marimo-gradescope", "torch"]
+dependencies = ["mogs", "torch"]
 """,
     'requirements="env/requirements.txt"',
 )
@@ -206,7 +206,7 @@ def test_override_file_without_trailing_newline(tmp_path):
 def test_override_file_drops_its_own_tool_line(tmp_path):
     (tmp_path / "env").mkdir()
     (tmp_path / "env" / "requirements.txt").write_text(
-        "marimo-gradescope>=0.0.1\nnumpy\nmarimo_gradescope[pdf]\n", encoding="utf-8"
+        "mogs>=0.0.1\nnumpy\nMogs[pdf]\n", encoding="utf-8"
     )
 
     text, warnings = gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), TOOL)
@@ -214,7 +214,7 @@ def test_override_file_drops_its_own_tool_line(tmp_path):
     assert text == f"numpy\n{TOOL}\n"
     assert tool_lines(text) == [TOOL]
     assert len(warnings) == 1
-    assert "marimo-gradescope>=0.0.1" in warnings[0]
+    assert "mogs>=0.0.1" in warnings[0]
 
 
 @pytest.mark.parametrize(
@@ -320,7 +320,7 @@ def test_override_file_missing(tmp_path):
 def test_unreleased_version_warns(version, tmp_path):
     (tmp_path / "env").mkdir()
     (tmp_path / "env" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
-    tool = f"marimo-gradescope=={version}"
+    tool = f"mogs=={version}"
 
     text, warnings = gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), tool)
 
@@ -334,7 +334,7 @@ def test_tool_requirement_must_name_the_tool(tmp_path):
     (tmp_path / "env").mkdir()
     (tmp_path / "env" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="marimo-gradescope"):
+    with pytest.raises(ValueError, match="mogs"):
         gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), "numpy==1.0")
 
 
@@ -368,15 +368,15 @@ def test_setup_script(tmp_path):
     )
     assert f"https://astral.sh/uv/{UV_VERSION}/install.sh" in script
     assert "UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1" in script
-    assert "UV_PYTHON_INSTALL_DIR=/opt/mgs-python" in script
-    assert "uv venv --managed-python --python 3.12 /opt/mgs-venv" in script
+    assert "UV_PYTHON_INSTALL_DIR=/opt/mogs-python" in script
+    assert "uv venv --managed-python --python 3.12 /opt/mogs-venv" in script
     assert "--index-strategy unsafe-best-match" in script
     assert "--compile-bytecode" in script
     assert f"useradd --system --no-create-home --shell /usr/sbin/nologin {STUDENT_USER}" in script
-    assert "chmod -R a+rX /opt/mgs-python /opt/mgs-venv" in script
+    assert "chmod -R a+rX /opt/mogs-python /opt/mogs-venv" in script
     assert "chmod -R go-rwx /autograder/source" in script
-    sanity = 'python -c "import marimogs, marimo"'
-    assert script.rstrip().endswith(f"runuser -u {STUDENT_USER} -- /opt/mgs-venv/bin/{sanity}")
+    sanity = 'python -c "import mogs, marimo"'
+    assert script.rstrip().endswith(f"runuser -u {STUDENT_USER} -- /opt/mogs-venv/bin/{sanity}")
     assert "${" not in script
     bash_check(script, tmp_path)
 
@@ -394,9 +394,9 @@ def test_uv_installer_url_exists():
 
 def test_templates_do_not_import_the_sandbox():
     code = (
-        "import sys, marimogs.grader.templates\n"
+        "import sys, mogs.grader.templates\n"
         "assert 'resource' not in sys.modules, 'resource'\n"
-        "assert 'marimogs.grader.sandbox' not in sys.modules, 'sandbox'\n"
+        "assert 'mogs.grader.sandbox' not in sys.modules, 'sandbox'\n"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
 
@@ -417,7 +417,7 @@ def test_run_autograder_script(tmp_path):
     assert script == (
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        "exec /opt/mgs-venv/bin/python -m marimogs.grader.main\n"
+        "exec /opt/mogs-venv/bin/python -m mogs.grader.main\n"
     )
     bash_check(script, tmp_path)
 
@@ -436,12 +436,12 @@ def test_wheel_ships_templates_and_typst_packages(tmp_path):
         check=True,
     ).stdout
 
-    assert "marimogs/grader/templates/setup.sh" in names
-    assert "marimogs/grader/templates/run_autograder" in names
+    assert "mogs/grader/templates/setup.sh" in names
+    assert "mogs/grader/templates/run_autograder" in names
 
     # The Typst packages the PDF of written answers needs, with their licenses.
     for package in ("cmarker/0.1.10", "mitex/0.2.7"):
-        folder = f"marimogs/_typst/preview/{package}"
+        folder = f"mogs/_typst/preview/{package}"
         assert f"{folder}/typst.toml" in names
         assert f"{folder}/lib.typ" in names
         assert f"{folder}/LICENSE" in names

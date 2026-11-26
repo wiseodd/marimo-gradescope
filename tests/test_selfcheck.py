@@ -4,10 +4,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from marimogs import selfcheck
-from marimogs.config import read_config
-from marimogs.source import parse_notebook
-from marimogs.transform import public_test_files, student_notebook
+from mogs import selfcheck
+from mogs.config import read_config
+from mogs.source import parse_notebook
+from mogs.transform import public_test_files, student_notebook
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SOLUTION = FIXTURES / "solution.py"
@@ -15,7 +15,7 @@ SOLUTION = FIXTURES / "solution.py"
 
 def student_copy(path: Path) -> str:
     src = path.read_text(encoding="utf-8")
-    return student_notebook(src, parse_notebook(src), read_config(src, path), "marimo-gradescope")
+    return student_notebook(src, parse_notebook(src), read_config(src, path), "mogs")
 
 
 def write_student(folder: Path, path: Path = SOLUTION, text: str | None = None) -> Path:
@@ -35,7 +35,7 @@ def write_student(folder: Path, path: Path = SOLUTION, text: str | None = None) 
 def run(notebook: Path, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     env = {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
     return subprocess.run(
-        [sys.executable, "-m", "marimogs.selfcheck", str(notebook)],
+        [sys.executable, "-m", "mogs.selfcheck", str(notebook)],
         capture_output=True,
         text=True,
         check=False,
@@ -169,7 +169,7 @@ def test_folder_argument_sets_the_working_directory(tmp_path):
     env = {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
 
     result = subprocess.run(
-        [sys.executable, "-m", "marimogs.selfcheck", str(notebook), str(data)],
+        [sys.executable, "-m", "mogs.selfcheck", str(notebook), str(data)],
         capture_output=True,
         text=True,
         check=False,

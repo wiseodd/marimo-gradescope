@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from marimogs.config import AssignmentConfig, Question
-from marimogs.grader.bundle import GradingBundle, TestCell
-from marimogs.grader.results import build_results, failure_results, find_submission
-from marimogs.runner import MAX_BYTES, FailureReason, Outcome
+from mogs.config import AssignmentConfig, Question
+from mogs.grader.bundle import GradingBundle, TestCell
+from mogs.grader.results import build_results, failure_results, find_submission
+from mogs.runner import MAX_BYTES, FailureReason, Outcome
 
 PUBLIC = ("test_q1_a", "test_q1_b")
 HIDDEN = ("test_q1_secret_x", "test_q1_secret_y")

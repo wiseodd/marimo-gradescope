@@ -147,7 +147,7 @@ pre,
 	border-top: 0;
 }
 
-/* Keep short inline code like `marimogs build hw1/` on one line. */
+/* Keep short inline code like `mogs build hw1/` on one line. */
 .sl-markdown-content :not(pre) > code {
 	white-space: nowrap;
 }
@@ -157,9 +157,14 @@ pre,
 	white-space: nowrap;
 }
 
-/* Smallest phones: a slightly smaller site title keeps the header on one line. */
+/* The wordmark has a descender, so the nav-height default makes it too heavy. */
+.site-title img {
+	height: 1.6rem;
+}
+
+/* Smallest phones: a slightly smaller wordmark keeps the header on one line. */
 @media (max-width: 22rem) {
-	.site-title {
-		font-size: var(--sl-text-sm);
+	.site-title img {
+		height: 1.3rem;
 	}
 }

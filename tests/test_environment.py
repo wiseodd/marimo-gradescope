@@ -4,33 +4,33 @@ from pathlib import Path
 
 import pytest
 
-from marimogs import __version__, environment
-from marimogs.environment import grading_python, tool_install_args
-from marimogs.requirements import RequirementsError
+from mogs import __version__, environment
+from mogs.environment import grading_python, tool_install_args
+from mogs.requirements import RequirementsError
 
 
 def direct_url(**fields: object) -> str:
-    return json.dumps({"url": "file:///src/mgs"} | fields)
+    return json.dumps({"url": "file:///src/mogs"} | fields)
 
 
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        (None, [f"marimo-gradescope=={__version__}"]),
-        (direct_url(dir_info={"editable": True}), ["--editable", "/src/mgs"]),
-        (direct_url(dir_info={}), ["/src/mgs"]),
+        (None, [f"mogs=={__version__}"]),
+        (direct_url(dir_info={"editable": True}), ["--editable", "/src/mogs"]),
+        (direct_url(dir_info={}), ["/src/mogs"]),
         (
-            json.dumps({"url": "file:///w/mgs.whl", "archive_info": {}}),
-            ["marimo-gradescope @ file:///w/mgs.whl"],
+            json.dumps({"url": "file:///w/mogs.whl", "archive_info": {}}),
+            ["mogs @ file:///w/mogs.whl"],
         ),
         (
             json.dumps(
                 {
-                    "url": "https://github.com/o/mgs",
+                    "url": "https://github.com/o/mogs",
                     "vcs_info": {"vcs": "git", "commit_id": "abc123"},
                 }
             ),
-            ["marimo-gradescope @ git+https://github.com/o/mgs@abc123"],
+            ["mogs @ git+https://github.com/o/mogs@abc123"],
         ),
     ],
 )
@@ -52,7 +52,7 @@ def test_tool_install_args(text, expected):
         ),
         (
             {"url": "https://x.test/repo.tar.gz", "archive_info": {}, "subdirectory": "pkg"},
-            ["marimo-gradescope @ https://x.test/repo.tar.gz#subdirectory=pkg"],
+            ["mogs @ https://x.test/repo.tar.gz#subdirectory=pkg"],
         ),
         (
             {
@@ -60,7 +60,7 @@ def test_tool_install_args(text, expected):
                 "vcs_info": {"vcs": "git", "commit_id": "abc123"},
                 "subdirectory": "pkg",
             },
-            ["marimo-gradescope @ git+https://github.com/o/repo@abc123#subdirectory=pkg"],
+            ["mogs @ git+https://github.com/o/repo@abc123#subdirectory=pkg"],
         ),
     ],
 )
@@ -82,17 +82,17 @@ def test_uv_missing_is_an_error(tmp_path, monkeypatch):
 
 @pytest.mark.network
 def test_failed_install_names_the_requirements(tmp_path):
-    with pytest.raises(RequirementsError, match="no-such-package-mgs-test"):
-        grading_python("no-such-package-mgs-test==0.0.1\n", tmp_path / "env", "3.13")
+    with pytest.raises(RequirementsError, match="no-such-package-mogs-test"):
+        grading_python("no-such-package-mogs-test==0.0.1\n", tmp_path / "env", "3.13")
 
 
 @pytest.mark.network
 def test_environment_has_the_requirements_and_this_package(tmp_path):
-    requirements = "tabulate==0.9.0\nmarimo-gradescope==0.0.0\n"
+    requirements = "tabulate==0.9.0\nmogs==0.0.0\n"
     python = grading_python(requirements, tmp_path / "env", "3.13")
     code = (
-        "import sys, tabulate, marimogs; "
-        "print(sys.version_info[:2], tabulate.__version__, marimogs.__version__)"
+        "import sys, tabulate, mogs; "
+        "print(sys.version_info[:2], tabulate.__version__, mogs.__version__)"
     )
 
     result = subprocess.run([python, "-c", code], capture_output=True, text=True, check=True)

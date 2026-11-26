@@ -1,5 +1,5 @@
 [project]
-name = "marimo-gradescope"
+name = "mogs"
 version = "0.6.0"
 description = "Build Gradescope autograders from marimo notebooks."
 authors = [{ name = "Agustinus Kristiadi", email = "agustinus@kristia.de" }]
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-marimogs = "marimogs.cli:main"
+mogs = "mogs.cli:main"
 
 [project.optional-dependencies]
 # The vendored Typst packages in `_typst` need Typst 0.15.
@@ -29,8 +29,8 @@ requires = ["uv_build>=0.13.0,<0.14"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-# The distribution is `marimo-gradescope`; the import name is shorter.
-module-name = "marimogs"
+# The distribution is `mogs`; the import name is shorter.
+module-name = "mogs"
 
 [dependency-groups]
 dev = [
@@ -39,7 +39,7 @@ dev = [
   "ruff>=0.14",
   "pypdf>=5",
   # The PDF tests need the pdf extra.
-  "marimo-gradescope[pdf]",
+  "mogs[pdf]",
 ]
 
 [tool.ty.src]

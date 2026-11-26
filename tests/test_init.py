@@ -8,7 +8,7 @@ NEW_MODULES = """\
 import sys
 import sysconfig
 
-import marimogs
+import mogs
 
 before = set(sys.modules)
 sysconfig.get_paths()

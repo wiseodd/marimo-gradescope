@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from marimogs import assignment
+from mogs import assignment
 
 FIXTURE = Path(__file__).parent / "fixtures" / "solution.py"
 
@@ -36,7 +36,7 @@ def test_summary_lists_the_questions_and_the_total(tmp_path):
     assert "q1 Question 1 4 pts auto-graded: 2 public, 1 hidden" in text
     assert "q2 Vowels 6 pts auto-graded: 1 public, 2 hidden" in text
     assert "q3 Question 3 5 pts written ## Question 3" in text
-    assert "marimogs build" in text
+    assert "mogs build" in text
 
 
 def test_summary_says_when_a_written_question_has_no_text(tmp_path):
@@ -90,7 +90,7 @@ def test_summary_of_a_missing_file(tmp_path):
 
 
 def test_assignment_is_a_no_op_while_grading(monkeypatch, tmp_path):
-    monkeypatch.setenv("MGS_GRADING", "1")
+    monkeypatch.setenv("MOGS_GRADING", "1")
 
     assert summary(FIXTURE) == ""
 
@@ -112,4 +112,4 @@ def test_summary_names_the_whole_folder_to_build(tmp_path):
     notebook = folder / "hw.py"
     notebook.write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
 
-    assert f"marimogs build '{folder}'" in words(summary(notebook))
+    assert f"mogs build '{folder}'" in words(summary(notebook))

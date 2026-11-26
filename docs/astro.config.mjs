@@ -3,16 +3,17 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-	site: 'https://marimo-gradescope.kristia.de',
+	site: 'https://mogs.kristia.de',
 	integrations: [
 		starlight({
-			title: 'marimo-gradescope',
+			title: 'mogs',
 			logo: {
 				light: './src/assets/logo-light.svg',
 				dark: './src/assets/logo-dark.svg',
+				replacesTitle: true,
 			},
 			social: [
-				{ icon: 'github', label: 'GitHub', href: 'https://github.com/wiseodd/marimo-gradescope' },
+				{ icon: 'github', label: 'GitHub', href: 'https://github.com/wiseodd/mogs' },
 			],
 			customCss: ['./src/styles/custom.css'],
 			components: {
