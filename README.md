@@ -24,13 +24,15 @@ Install [`uv`](https://docs.astral.sh/uv/#installation). Then:
 uv tool install marimo-gradescope
 ```
 
+The command is `marimogs`.
+
 ## Usage
 
 Start an assignment and write it in marimo's editor:
 
 ```bash
-marimo-gradescope init hw
-marimo edit --sandbox hw/hw.py
+marimogs init hw
+marimogs edit hw
 ```
 
 The new notebook has a short guide and two example questions (see docs; full example [here](https://github.com/wiseodd/marimo-gradescope/tree/main/examples/demo)).
@@ -38,7 +40,7 @@ Say, the assignment is in `examples/demo` directory (relative to the current wor
 Then:
 
 ```bash
-marimo-gradescope build examples/demo
+marimogs build examples/demo
 ```
 
 In `examples/demo/dist/student`, it will output `hw.zip`.

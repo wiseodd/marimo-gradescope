@@ -147,7 +147,7 @@ pre,
 	border-top: 0;
 }
 
-/* Keep short inline code like `marimo-gradescope build hw1/` on one line. */
+/* Keep short inline code like `marimogs build hw1/` on one line. */
 .sl-markdown-content :not(pre) > code {
 	white-space: nowrap;
 }

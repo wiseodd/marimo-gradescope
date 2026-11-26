@@ -12,20 +12,22 @@ hw1/
     └── scores.csv
 ```
 
-`marimo-gradescope build <directory name>` turns it into a student notebook and an autograder zip.
+`marimogs build <directory name>` turns it into a student notebook and an autograder zip.
 [`examples/demo`](https://github.com/wiseodd/marimo-gradescope/tree/main/examples/demo) is a complete example.
 See also [marimo's official tutorial](https://docs.marimo.io/getting_started/quickstart/).
 
 ## Start
 
 ```bash
-marimo-gradescope init hw1
-marimo edit --sandbox hw1/hw1.py
+marimogs init hw1
+marimogs edit hw1
 ```
 
 `init` creates `hw1/hw1.py` with the cells every assignment needs, a guide, and two example questions.
 It refuses a directory that already has files in it.
-The notebook builds as it is, so you can run `marimo-gradescope build hw1` before changing anything.
+The notebook builds as it is, so you can run `marimogs build hw1` before changing anything.
+`edit` runs `marimo edit --sandbox` on the notebook with the marimo installed alongside `marimo-gradescope`.
+You don't need to install marimo separately.
 
 Everything below can be written in marimo's editor.
 
@@ -233,7 +235,7 @@ It can't define names that other cells use, hold tests, or call `mogs.grade`.
 To build the assignment, run:
 
 ```bash
-marimo-gradescope build examples/demo
+marimogs build examples/demo
 ```
 
 It prints what to do with the result:
@@ -289,7 +291,7 @@ On Windows, use WSL.
 To grade one submission locally, run:
 
 ```bash
-marimo-gradescope grade examples/demo submission.py
+marimogs grade examples/demo submission.py
 ```
 
 This uses the same grader and the same requirements as Gradescope.

@@ -14,11 +14,13 @@ Install it as a `uv` tool:
 uv tool install marimo-gradescope
 ```
 
+The command is `marimogs`.
+
 ## Start an assignment
 
 ```bash
-marimo-gradescope init A1
-marimo edit --sandbox A1/A1.py
+marimogs init A1
+marimogs edit A1
 ```
 
 `init` creates `A1/A1.py`, a notebook with a short guide and two example questions.
@@ -77,7 +79,7 @@ Say the notebook is `examples/demo/hw.py`.
 Then:
 
 ```bash
-marimo-gradescope build examples/demo
+marimogs build examples/demo
 ```
 
 The command prints what to do with the result:
