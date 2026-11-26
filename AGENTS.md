@@ -44,7 +44,7 @@ file changes.
 
 ```bash
 make sync        # uv sync
-make check       # ruff check + format check, ty, pytest (the CI gate)
+make check       # ruff, cargo fmt + clippy, ty, cargo test, pytest (the CI gate)
 make docs        # build the docs site into docs/dist (needs Bun)
 make docs-serve  # live preview at localhost:4321
 make test TESTS=tests/test_config.py ARGS="-k header"
@@ -52,7 +52,7 @@ make test ARGS="-m slow"      # only the slow tests (marimo via `uv run --with`;
 make test ARGS="-m network"   # only the tests that resolve packages through uv (included by default)
 make test ARGS="-m 'not slow and not network'"   # offline
 make test ARGS="-m docker"    # only the Docker end-to-end tests: deselected unless `-m` names `docker`
-make fix         # ruff fixes, then format
+make fix         # ruff fixes, then ruff format and cargo fmt
 ```
 
 ## Rules

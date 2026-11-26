@@ -24,6 +24,22 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: echo "RUFF=$(uv export --only-group dev --no-hashes --frozen | grep '^ruff==')" >> "$GITHUB_ENV"
       - run: uvx --from "$RUFF" ruff format --check
+  # rustfmt, clippy and the Rust tests, also on Windows, where the binary waits for Python.
+  rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
   typecheck:
     runs-on: ubuntu-latest
     steps:
