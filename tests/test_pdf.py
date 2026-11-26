@@ -234,7 +234,11 @@ def test_prompt_heading_the_title_already_says_is_dropped(tmp_path, title, headi
 
 @pytest.mark.parametrize(
     ("title", "heading"),
-    [("Question 4", "Question 4: Derive the slope"), ("Question 10", "Question 1")],
+    [
+        ("Question 4", "Question 4: Derive the slope"),
+        ("Question 10", "Question 1"),
+        ("Question 4: x + y", "x - y"),
+    ],
 )
 def test_prompt_heading_with_more_than_the_title_stays(tmp_path, title, heading):
     reader = render(

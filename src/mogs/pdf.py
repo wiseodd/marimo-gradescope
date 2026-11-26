@@ -361,9 +361,13 @@ def without_title_heading(text: str, title: str) -> str:
 
 
 def _words(text: str) -> str:
-    """The words of `text` in lower case, each with a space on both sides: ` question 4 `."""
+    """The words and symbols of `text` in lower case, spaced: `x + y.` → ` x + y `.
 
-    return f" {' '.join(re.findall(r'\w+', text.casefold()))} "
+    Sentence punctuation is dropped, so `Question 4:` matches `Question 4`; other symbols, such
+    as `+` and `-` in math, are kept.
+    """
+
+    return f" {' '.join(re.findall(r'\w+|[^\w\s.,:;!?]', text.casefold()))} "
 
 
 def cell_markdown(nb: Notebook, cell: Cell) -> str:
