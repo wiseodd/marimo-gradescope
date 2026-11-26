@@ -99,7 +99,12 @@ def report(result: BuildResult) -> str:
 
     for score in result.scores:
         if score.solution is None or score.blank is None:
-            manual.append(f"{score.id} {score.title}: {score.points:g} pts, graded by hand")
+            how = (
+                f"{score.points:g} pts, graded by hand"
+                if score.points
+                else "collected in the PDF, not graded"
+            )
+            manual.append(f"{score.id} {score.title}: {how}")
             continue
 
         rows.append(
