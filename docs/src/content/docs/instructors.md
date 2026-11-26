@@ -92,6 +92,8 @@ The source notebook is a regular marimo notebook with a few conventions.
 
 Put all imports in the setup cell (`with app.setup:`).
 This includes `import mogs` and any library the tests need.
+Tests don't need `import pytest`.
+If the notebook imports it, e.g., for `pytest.raises`, list `pytest` in `dependencies`.
 
 ```python
 with app.setup:
@@ -209,8 +211,10 @@ Put the public tests of each question in their own cell, with nothing else in it
 A public test cell can't contain solution markers.
 Students get the public tests as written.
 The tests are plain `pytest` functions, and you can run them all with `pytest notebook.py`.
+Fixtures such as `capsys` don't work: the grader calls each test without arguments.
 
-Hidden tests go in a separate cell with a `# HIDDEN` line:
+Hidden tests go in a separate cell with a `# HIDDEN` line.
+The line hides the whole cell wherever it sits in it, as long as it is on a line of its own:
 
 ```python
 @app.cell
@@ -233,6 +237,9 @@ def _():
     mogs.grade("q1", points=25)
     return
 ```
+
+The points are split evenly across the question's public and hidden tests.
+Tests have no weights of their own, and a test that uses random numbers sets its own seed.
 
 In the student notebook, the grade cell shows the question's points and whether each public test passes.
 It updates whenever the student edits their code.
@@ -276,6 +283,8 @@ To check what each question's text is, read the output of `mogs build` or the `m
 Both list the first line of each text cell of a written question, or "no question text".
 
 When the student clicks the export button, the answers go into a PDF, each after its text, with the LaTeX math rendered.
+Each question starts on a new page under its title.
+The PDF doesn't carry the student's name.
 The PDF goes into the submission zip, together with the notebook.
 An answer the student left blank or unchanged shows as *No answer.* in the PDF, and the export warns about it.
 
@@ -283,10 +292,12 @@ A written question can be worth 0 points, e.g., `mogs.grade("q5", points=0)`.
 Its answer goes into the PDF, but it doesn't count toward the total.
 Use this for a written exercise that you want to read but not grade.
 
-The PDF renders inline math in `$...$` and display math in `$$...$$`, including environments such as `aligned`, `cases` and `pmatrix`.
+The PDF renders inline math in `$...$` or `\(...\)` and display math in `$$...$$` or `\[...\]`, as marimo does, including environments such as `aligned`, `cases` and `pmatrix`.
 A paragraph that is only an `align`, `equation` or `gather` environment (starred or not) is display math too, without the `$$`, as in marimo.
 The environment has to start the paragraph and end it, with no blank line inside.
 Other environments without `$$` show as source.
+A `$...$` formula on a line of its own is still inline math.
+[MiTeX](https://github.com/mitex-rs/mitex) converts the math to Typst.
 
 Some things can't be rendered.
 LaTeX that the PDF doesn't support (e.g., TikZ) shows as source, and so does question text that isn't plain `mo.md(...)`.
@@ -363,6 +374,7 @@ mogs grade examples/demo submission.py
 ```
 
 This uses the same grader and the same requirements as Gradescope.
+Use it to try the autograder on a submission before you upload the zip.
 The submission can be the zip a student exported, a directory with the notebook (e.g., an upload downloaded from Gradescope), or the notebook's `.py` file.
 A zip is unpacked into a temporary directory and searched the same way Gradescope searches an upload.
 Any other file is refused.
@@ -406,6 +418,7 @@ To set up the assignment on Gradescope:
 2. Pick an Ubuntu 22.04 base image and upload the autograder zip.
 3. Pick a container with more memory than `memory`, and a timeout longer than `budget`.
 4. If the assignment has written answers, add manually graded questions to the same assignment.
+   Graders read the answers in the PDF, which is one of the submission's files.
 
 Then, upload `dist/autograder/hw.py` as a test submission to check the autograder.
 It should get full marks.

@@ -59,19 +59,25 @@ def test_init_notebook_names_only_the_guide(tmp_path):
     cells = read_assignment(tmp_path / "A12").nb.cells
     named = [cell.name for cell in cells if cell.name not in ("_", "setup")]
 
-    assert named == ["instructor_guide", "mean", "test_q1_basic", "test_q1_single"]
+    assert named == ["instructor_guide", "mean"]
 
 
-def test_init_notebook_tests_are_functions(tmp_path):
+def test_init_notebook_tests_are_cells_as_in_the_docs(tmp_path):
     init(tmp_path / "A12")
 
     cells = read_assignment(tmp_path / "A12").nb.cells
     tests = [(cell.kind, cell.tests, cell.hidden) for cell in cells if cell.tests]
 
     assert tests == [
-        (CellKind.FUNCTION, ("test_q1_basic",), False),
-        (CellKind.FUNCTION, ("test_q1_single",), True),
+        (CellKind.CELL, ("test_q1_basic",), False),
+        (CellKind.CELL, ("test_q1_single",), True),
     ]
+
+
+def test_init_notebook_hidden_marker_opens_its_cell(tmp_path):
+    text = init(tmp_path / "A12").read_text(encoding="utf-8")
+
+    assert "@app.cell\ndef _():\n    # HIDDEN\n    def test_q1_single():\n" in text
 
 
 def test_init_notebook_names_the_installed_marimo(tmp_path):
