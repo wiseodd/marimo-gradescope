@@ -22,7 +22,7 @@ from marimogs.environment import grading_python
 from marimogs.grader.bundle import GradingBundle, bundle_from_notebook
 from marimogs.grader.results import Results, build_results, find_submission
 from marimogs.requirements import gradescope_requirements
-from marimogs.runner import FailureReason, Outcome
+from marimogs.runner import Outcome
 
 MAX_ZIP_MEMBERS = 5_000
 MAX_ZIP_BYTES = 500 * 1024 * 1024
@@ -40,6 +40,8 @@ class GradeResult:
         outcomes: One outcome per test, public tests first.
         results: The rows Gradescope would show.
         score: Score and maximum over the tested questions.
+        load_error: Why the notebook did not load, if it did not. A hidden helper or test
+            cell that fails is a test failure and leaves this `None`.
     """
 
     submission: Path
@@ -47,14 +49,7 @@ class GradeResult:
     outcomes: dict[str, Outcome]
     results: Results
     score: tuple[float, float]
-
-    @property
-    def failed_to_load(self) -> bool:
-        """Whether every test failed because the notebook did not load."""
-
-        reasons = {outcome.reason for outcome in self.outcomes.values()}
-
-        return reasons == {FailureReason.LOAD_FAILED}
+    load_error: str | None
 
 
 def grade_submission(assignment_dir: Path, submission: Path) -> GradeResult:
@@ -92,11 +87,11 @@ def grade_submission(assignment_dir: Path, submission: Path) -> GradeResult:
         requirements, _ = gradescope_requirements(assignment.src, assignment.cfg, TOOL)
 
         python = str(grading_python(requirements, stage / "env", assignment.cfg.python))
-        outcomes = grade_locally(bundle, notebook, stage / "grade", assignment_dir, python)
+        graded = grade_locally(bundle, notebook, stage / "grade", assignment_dir, python)
 
-    results = build_results(bundle, outcomes, [])
+    results = build_results(bundle, graded.outcomes, [])
 
-    return GradeResult(shown, bundle, outcomes, results, total(results))
+    return GradeResult(shown, bundle, graded.outcomes, results, total(results), graded.load_error)
 
 
 def _find_notebook(submission: Path, name: str, upload: Path) -> tuple[Path, Path]:

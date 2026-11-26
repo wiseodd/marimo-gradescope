@@ -172,6 +172,84 @@ def test_notebook_that_fails_to_import_exits_nonzero(demo, tmp_path, capsys):
     assert "test_q1_whole_numbers" in captured.out
 
 
+HIDDEN_ONLY = """\
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "marimo",
+#     "marimo-gradescope",
+# ]
+# ///
+
+import marimo
+
+app = marimo.App()
+
+with app.setup:
+    import marimogs as mogs
+
+
+@app.cell
+def _():
+    mogs.assignment()
+    return
+
+
+@app.function
+def double(x):
+    # BEGIN SOLUTION
+    return 2 * x
+    # END SOLUTION
+
+
+@app.cell
+def _():
+    # HIDDEN
+    EXPECTED = double(2)
+    return (EXPECTED,)
+
+
+@app.cell
+def _(EXPECTED):
+    # HIDDEN
+    def test_q1_double():
+        assert EXPECTED == 4
+
+    return
+
+
+@app.cell
+def _():
+    mogs.grade("q1", points=1)
+    return
+
+
+if __name__ == "__main__":
+    app.run()
+"""
+
+
+@pytest.mark.network
+def test_failing_hidden_helper_is_a_normal_result(tmp_path, capsys):
+    folder = tmp_path / "hidden"
+    folder.mkdir()
+    (folder / "hw.py").write_text(HIDDEN_ONLY, encoding="utf-8")
+    build(folder)
+    submission = edited(
+        folder / "dist" / "autograder" / "hw.py",
+        tmp_path / "hw.py",
+        "def double(x):",
+        "def triple(x):",
+    )
+
+    code = main(["grade", str(folder), str(submission)])
+    captured = capsys.readouterr()
+
+    assert code == 0, captured.err
+    assert "failed to load" not in captured.err
+    assert "test_q1_double (hidden)" in captured.out
+
+
 def test_zip_with_path_outside_is_refused(tmp_path, capsys):
     folder = demo_copy(tmp_path / "demo")
     upload = tmp_path / "upload.zip"
