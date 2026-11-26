@@ -724,7 +724,10 @@ def _test_name_errors(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
     seen: set[str] = set()
 
     for cell in nb.cells:
-        if len({question_id(name) for name in cell.tests}) > 1:
+        # A test of an unknown question gets its own error below, usually a misnamed test.
+        known = {question_id(name) for name in cell.tests} & cfg.questions.keys()
+
+        if len(known) > 1:
             errors.append(
                 f"line {cell.start}: tests of different questions share a cell "
                 f"({', '.join(cell.tests)}). Put each question's tests in their own cell."
@@ -738,8 +741,9 @@ def _test_name_errors(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
             qid = question_id(name)
             if qid not in cfg.questions:
                 errors.append(
-                    f"`{name}` (line {cell.start}): no question `{qid}`. Declare it in a cell "
-                    f'with `mogs.grade("{qid}", points=...)`.'
+                    f"`{name}` (line {cell.start}): no question `{qid}`. Tests are named "
+                    f"`test_<qid>_<name>`, so rename it, or declare `{qid}` in a cell with "
+                    f'`mogs.grade("{qid}", points=...)`.'
                 )
 
         if cell.grade_qid is not None and cell.grade_qid not in cfg.questions:

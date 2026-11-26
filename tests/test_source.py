@@ -557,6 +557,17 @@ def test_validate_unknown_qid_in_test():
     assert "`q9`" in error
 
 
+def test_validate_misnamed_test_next_to_good_ones_reports_only_the_name():
+    misnamed = PUBLIC.replace(
+        "    return", "    def test_row_count():\n        assert True\n    return"
+    )
+    error = one_error(misnamed + CHECK)
+
+    assert "`test_row_count`" in error
+    assert "no question `row`" in error
+    assert "`test_<qid>_<name>`" in error
+
+
 def test_validate_unknown_qid_in_grade():
     error = one_error(PUBLIC + CHECK + CHECK.replace("q1", "q9"))
 
