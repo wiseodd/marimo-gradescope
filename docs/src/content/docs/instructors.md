@@ -295,8 +295,11 @@ marimogs grade examples/demo submission.py
 ```
 
 This uses the same grader and the same requirements as Gradescope.
-The submission can be a notebook file or a directory, e.g., an upload downloaded from Gradescope.
+The submission can be the zip a student exported, a directory with the notebook (e.g., an upload downloaded from Gradescope), or the notebook's `.py` file.
+A zip is unpacked into a temporary directory and searched the same way Gradescope searches an upload.
+Any other file is refused.
 The command prints the score of each question and every failing test with its message, including the hidden tests.
+If the notebook fails to import, the command still lists every test, then exits with status 1.
 This is useful for answering regrade requests.
 
 :::caution

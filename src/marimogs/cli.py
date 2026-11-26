@@ -260,7 +260,7 @@ def _parser() -> argparse.ArgumentParser:
         "submission",
         type=Path,
         metavar="SUBMISSION",
-        help="student notebook, or a folder with one (such as a downloaded upload)",
+        help="student notebook (.py), the zip a student exported, or a folder with one",
     )
 
     return parser
