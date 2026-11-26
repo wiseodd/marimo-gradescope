@@ -1495,3 +1495,22 @@ def test_hidden_after_code_warns_that_it_hides_the_whole_cell():
 )
 def test_hidden_on_the_first_line_does_not_warn(cell):
     assert source_warnings(parse_notebook(nb(cell))) == []
+
+
+@pytest.mark.parametrize(
+    "statement", ["import pytest", "import pytest as pt", "from pytest import approx"]
+)
+def test_validate_pytest_import_needs_the_dependency(statement):
+    cell = f"\n@app.cell\ndef _():\n    {statement}\n    return\n"
+
+    error = one_error(cell + PUBLIC + CHECK)
+
+    assert "`pytest`" in error
+    assert "`dependencies`" in error
+
+
+def test_validate_pytest_import_with_the_dependency_ok():
+    header = HEADER.replace('dependencies = ["marimo"]', 'dependencies = ["marimo", "pytest>=8"]')
+    cell = "\n@app.cell\ndef _():\n    import pytest\n    return\n"
+
+    assert errors(cell + PUBLIC + CHECK, header=header) == []

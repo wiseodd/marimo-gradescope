@@ -20,7 +20,9 @@ from mogs.config import (
     AssignmentConfig,
     api_calls,
     normalize_newlines,
+    normalized_name,
     question_id,
+    read_header,
     split_lines,
 )
 
@@ -710,7 +712,7 @@ def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
     errors = _near_marker_errors(nb) + _near_html_marker_errors(nb)
     errors += _test_name_errors(nb, cfg) + _question_errors(nb, cfg)
     errors += _hidden_grade_errors(nb) + _public_cell_errors(nb) + _marker_errors(nb)
-    errors += _assignment_errors(nb) + _instructor_errors(nb)
+    errors += _assignment_errors(nb) + _instructor_errors(nb) + _pytest_dependency_errors(nb)
     errors += _public_marker_errors(nb)
     errors += _hidden_name_errors(nb) + _cell_variable_errors(nb)
 
@@ -797,6 +799,32 @@ def _hidden_grade_errors(nb: Notebook) -> list[str]:
         f"copy would lose it. Move it to a cell without `{HIDDEN}`."
         for cell in nb.cells
         if cell.hidden and cell.grade_qid is not None
+    ]
+
+
+def _pytest_dependency_errors(nb: Notebook) -> list[str]:
+    """A notebook that imports `pytest` lists it in the header's `dependencies`.
+
+    The grader has pytest either way, but marimo adds a pinned `pytest` to the header of a
+    student notebook that imports it without one.
+    """
+
+    if any(normalized_name(dep) == "pytest" for dep in read_header(nb.src).get("dependencies", [])):
+        return []
+
+    lines = [
+        node.lineno
+        for node in ast.walk(ast.parse(nb.src))
+        if isinstance(node, ast.Import)
+        and any(alias.name.split(".")[0] == "pytest" for alias in node.names)
+        or isinstance(node, ast.ImportFrom)
+        and (node.module or "").split(".")[0] == "pytest"
+    ]
+
+    return [
+        f"line {line}: the notebook imports `pytest`, but the header's `dependencies` doesn't "
+        "list it. Add `pytest` there, or marimo adds a pinned one to each student's header."
+        for line in lines[:1]
     ]
 
 
