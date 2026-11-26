@@ -30,6 +30,10 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   manylinux_2_17 x86_64, so it builds on any host. Without a runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI)
   makes that a failure. The base image is amd64 only: on an arm64 host it runs
   under emulation, which is slow enough that grading timeouts may trip.
+- `.github/workflows/release.yml`: on a published GitHub release (tags like
+  `0.7`, no `v`), checks the tag against the `Cargo.toml` version, builds and
+  smoke-tests the wheels and the sdist, then publishes to PyPI through
+  trusted publishing.
 - `docs/`: the docs site (Astro Starlight, built with Bun), deployed to
   https://mogs.kristia.de by `.github/workflows/docs.yml`. Pages
   are `docs/src/content/docs/` (`index.md`, `instructors.md`,
