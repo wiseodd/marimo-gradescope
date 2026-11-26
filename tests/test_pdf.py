@@ -121,6 +121,23 @@ def test_find_formulas_ignores_an_unclosed_dollar():
     assert spans("Unbalanced: $\\frac{1}{2 end.\n\nNext paragraph $x$.") == ["$x$"]
 
 
+def test_find_formulas_backslash_brackets():
+    text = "a \\(x^2\\) b \\[\\int f\\] c\n\n\\[\ny\n\\]"
+
+    assert spans(text) == ["\\(x^2\\)", "\\[\\int f\\]", "\\[\ny\n\\]"]
+    assert [formula.display for formula in find_formulas(text)] == [False, True, True]
+    assert find_formulas("a \\(x^2\\)")[0] == Formula(
+        start=2, end=9, source="x^2", display=False, bracket=True
+    )
+
+
+@pytest.mark.parametrize(
+    "text", ["`\\(x\\)` in code", "\\(x unclosed", "\\(x\n\ny\\)", "```\n\\[x\\]\n```"]
+)
+def test_find_formulas_skips_backslash_brackets_that_are_not_math(text):
+    assert spans(text) == []
+
+
 ALIGN = "\\begin{align}\na &= b \\\\\nc &= d\n\\end{align}"
 
 
@@ -283,6 +300,26 @@ def test_display_environments_render(tmp_path, env, dollars):
 
     assert "Before. 𝑎 = 𝑏 𝑐 = 𝑑 After." in text, text
     assert "could not be rendered" not in text
+
+
+def test_backslash_bracket_math_renders(tmp_path):
+    answer = "Inline \\(a = b\\) here.\n\n\\[\nc = d\n\\]\n\nAfter."
+
+    text = text_of(render(tmp_path, {"q1": answer}))
+
+    assert "Inline 𝑎 = 𝑏 here." in text, text
+    assert "𝑐 = 𝑑" in text, text
+    assert "\\(" not in text and "\\[" not in text
+    assert "could not be rendered" not in text
+
+
+def test_failing_backslash_bracket_formula_is_shown_as_its_source(tmp_path):
+    formula = "\\iftypst \\begin{gather*} a \\end{gather*}"
+
+    text = text_of(render(tmp_path, {"q1": f"Code: \\({formula}\\) and \\(x = 1\\)."}))
+
+    assert formula in text, text
+    assert "𝑥 = 1" in text, text
 
 
 def test_gather_star_in_formula_text_keeps_its_star(tmp_path):

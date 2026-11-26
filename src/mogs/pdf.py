@@ -1,11 +1,12 @@
-"""PDF of the written answers, for questions graded by hand.
+r"""PDF of the written answers, for questions graded by hand.
 
 Typst renders the PDF in-process, from the `typst` package of the `pdf` extra. Per question
 the PDF has a heading, then the `prompt_<qid>` and `answer_<qid>` cells in notebook order, so
 each answer follows its own prompt. A page break separates questions. A cell that is just
 `mo.md("...")` shows as Markdown with LaTeX math (through the vendored Typst packages cmarker
-and mitex); any other cell shows its source. As in marimo, a paragraph that is just an `align`,
-`equation` or `gather` environment, starred or not, is display math too.
+and mitex); any other cell shows its source. As in marimo, `\(...\)` and `\[...\]` are math,
+and a paragraph that is just an `align`, `equation` or `gather` environment, starred or not, is
+display math too.
 
 The cell text reaches Typst as data in `sys.inputs`, never as Typst source. Typst cannot
 recover from an error inside a document, so a cell that breaks the document is rendered again
@@ -208,14 +209,16 @@ class Question:
 
 @dataclass(frozen=True, slots=True)
 class Formula:
-    r"""A `$...$` or `$$...$$` formula in Markdown, or a bare display environment.
+    r"""A `$...$`, `$$...$$`, `\(...\)` or `\[...\]` formula in Markdown, or a bare environment.
 
     Attributes:
-        start: Offset of the opening dollar sign or `\begin`.
-        end: Offset just past the closing dollar sign or `\end{...}`.
-        source: The LaTeX between the dollar signs, or the whole environment.
+        start: Offset of the opening delimiter or `\begin`.
+        end: Offset just past the closing delimiter or `\end{...}`.
+        source: The LaTeX between the delimiters, or the whole environment.
         display: Whether it is display math.
         environment: Whether it is a bare environment, which Typst gets inside `$$`.
+        bracket: Whether it is written `\(...\)` or `\[...\]`, which Typst gets inside `$` or
+            `$$` instead.
     """
 
     start: int
@@ -223,6 +226,7 @@ class Formula:
     source: str
     display: bool
     environment: bool = False
+    bracket: bool = False
 
 
 def render_manual_pdf(
@@ -352,10 +356,10 @@ def cell_markdown(nb: Notebook, cell: Cell) -> str:
 
 
 def find_formulas(text: str) -> list[Formula]:
-    r"""The `$...$` and `$$...$$` formulas in Markdown, in order.
+    r"""The `$...$`, `$$...$$`, `\(...\)` and `\[...\]` formulas in Markdown, in order.
 
     Code spans, fenced code blocks and `\$` are skipped. A formula does not span a blank
-    line; a dollar sign without a partner is text. A paragraph that is just an `align`,
+    line; a delimiter without a partner is text. A paragraph that is just an `align`,
     `equation` or `gather` environment, starred or not, is a display formula, as in marimo.
     """
 
@@ -369,6 +373,18 @@ def find_formulas(text: str) -> list[Formula]:
                 case "\\" if environment := _environment(text, start, end, index):
                     formulas.append(environment)
                     index = environment.end
+                case "\\" if text.startswith(("\\(", "\\["), index):
+                    closing = "\\)" if text[index + 1] == "(" else "\\]"
+                    close = _closing(text, index + 2, end, closing)
+
+                    if close is None:
+                        index += 2
+                        continue
+
+                    source = text[index + 2 : close]
+                    display = closing == "\\]"
+                    formulas.append(Formula(index, close + 2, source, display, bracket=True))
+                    index = close + 2
                 case "\\":
                     index += 2
                 case "`":
@@ -429,11 +445,19 @@ def _paragraph_starts(text: str, start: int, index: int) -> bool:
 
 
 def _delimited(text: str) -> str:
-    """`text` with each bare environment put inside `$$`, so cmarker hands it to mitex."""
+    r"""`text` with its formulas in dollar signs, so cmarker hands them to mitex.
+
+    A bare environment goes inside `$$`; `\(...\)` and `\[...\]` become `$...$` and `$$...$$`.
+    """
 
     for formula in reversed(find_formulas(text)):
+        before, after = text[: formula.start], text[formula.end :]
+
         if formula.environment:
-            text = f"{text[: formula.start]}$$\n{formula.source}\n$$\n{text[formula.end :]}"
+            text = f"{before}$$\n{formula.source}\n$$\n{after}"
+        elif formula.bracket:
+            dollars = "$$" if formula.display else "$"
+            text = f"{before}{dollars}{formula.source}{dollars}{after}"
 
     return text
 
@@ -471,10 +495,11 @@ def _closing(text: str, start: int, end: int, delimiter: str) -> int | None:
     index = start
 
     while index < end:
-        if text[index] == "\\":
-            index += 2
-        elif text.startswith(delimiter, index):
+        # The delimiter first: `\)` and `\]` start with the escape character.
+        if text.startswith(delimiter, index):
             return index
+        elif text[index] == "\\":
+            index += 2
         elif BLANK_LINE.match(text, index):
             return None
         else:

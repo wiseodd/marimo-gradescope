@@ -292,11 +292,11 @@ A written question can be worth 0 points, e.g., `mogs.grade("q5", points=0)`.
 Its answer goes into the PDF, but it doesn't count toward the total.
 Use this for a written exercise that you want to read but not grade.
 
-The PDF renders inline math in `$...$` and display math in `$$...$$`, including environments such as `aligned`, `cases` and `pmatrix`.
+The PDF renders inline math in `$...$` or `\(...\)` and display math in `$$...$$` or `\[...\]`, as marimo does, including environments such as `aligned`, `cases` and `pmatrix`.
 A paragraph that is only an `align`, `equation` or `gather` environment (starred or not) is display math too, without the `$$`, as in marimo.
 The environment has to start the paragraph and end it, with no blank line inside.
 Other environments without `$$` show as source.
-A `$...$` formula on a line of its own is still inline math, and `\[...\]` and `\(...\)` aren't math in the PDF.
+A `$...$` formula on a line of its own is still inline math.
 [MiTeX](https://github.com/mitex-rs/mitex) converts the math to Typst.
 
 Some things can't be rendered.
