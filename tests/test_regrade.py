@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from marimogs import regrade
 from marimogs.build import BuildError, build
 from marimogs.cli import main
 from marimogs.regrade import GradeResult, grade_submission
@@ -218,3 +219,60 @@ def test_other_file_type_is_refused(tmp_path, capsys):
     assert code == 1
     assert "hw.txt" in err
     assert ".zip" in err
+
+
+def test_zip_with_too_many_members_is_refused(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(regrade, "MAX_ZIP_MEMBERS", 3)
+    folder = demo_copy(tmp_path / "demo")
+    upload = tmp_path / "upload.zip"
+    with zipfile.ZipFile(upload, "w") as archive:
+        for index in range(4):
+            archive.writestr(f"file{index}.txt", "x")
+
+    code = main(["grade", str(folder), str(upload)])
+    err = capsys.readouterr().err
+
+    assert code == 1
+    assert "upload.zip" in err
+    assert "4 files" in err
+
+
+def test_zip_that_unpacks_too_large_is_refused(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(regrade, "MAX_ZIP_BYTES", 1000)
+    folder = demo_copy(tmp_path / "demo")
+    upload = tmp_path / "upload.zip"
+    with zipfile.ZipFile(upload, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("hw.py", "x = 1\n")
+        archive.writestr("big.txt", "0" * 2000)
+
+    code = main(["grade", str(folder), str(upload)])
+    err = capsys.readouterr().err
+
+    assert code == 1
+    assert "upload.zip" in err
+    assert "1000 bytes" in err
+
+
+def test_zip_with_lying_sizes_stops_at_the_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(regrade, "MAX_ZIP_BYTES", 1000)
+    monkeypatch.setattr(regrade, "_CHUNK", 100)
+    upload = tmp_path / "upload.zip"
+    with zipfile.ZipFile(upload, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("big.txt", "0" * 5000)
+    upload.write_bytes(patched(upload.read_bytes(), local=22, central=24, value=10, size=4))
+
+    target = tmp_path / "upload"
+    with pytest.raises(BuildError, match="upload.zip"):
+        regrade._unpack(upload, target)
+
+    assert sum(path.stat().st_size for path in target.rglob("*") if path.is_file()) <= 1000
+
+
+def patched(data: bytes, *, local: int, central: int, value: int, size: int = 2) -> bytes:
+    """`data`, a zip of one member, with a field of its local and central headers set."""
+
+    field = value.to_bytes(size, "little")
+    start = data.index(b"PK\x01\x02")
+    data = data[:local] + field + data[local + size :]
+
+    return data[: start + central] + field + data[start + central + size :]

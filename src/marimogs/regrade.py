@@ -24,6 +24,10 @@ from marimogs.grader.results import Results, build_results, find_submission
 from marimogs.requirements import gradescope_requirements
 from marimogs.runner import FailureReason, Outcome
 
+MAX_ZIP_MEMBERS = 5_000
+MAX_ZIP_BYTES = 500 * 1024 * 1024
+_CHUNK = 1024 * 1024
+
 
 @dataclass(frozen=True, slots=True)
 class GradeResult:
@@ -148,9 +152,13 @@ def _search(folder: Path, submission: Path, name: str) -> Path:
 def _unpack(archive: Path, target: Path) -> None:
     """Unpack the zip `archive` into the new folder `target`.
 
+    The zip may hold at most `MAX_ZIP_MEMBERS` members and unpack to at most `MAX_ZIP_BYTES`
+    bytes. The sizes in the zip's headers are checked first, and the bytes are counted again
+    while unpacking, since the headers can lie.
+
     Raises:
-        BuildError: If `archive` is not a readable zip, or a member's path is absolute or
-            leads outside `target`.
+        BuildError: If `archive` is not a readable zip, holds too many members, unpacks to
+            too many bytes, or a member's path is absolute or leads outside `target`.
     """
 
     target.mkdir()
@@ -158,12 +166,60 @@ def _unpack(archive: Path, target: Path) -> None:
 
     try:
         with zipfile.ZipFile(archive) as zipped:
-            for member in zipped.namelist():
-                path = (root / member).resolve()
+            members = zipped.infolist()
 
-                if Path(member).is_absolute() or not path.is_relative_to(root):
-                    raise BuildError(f"{archive}: {member} would unpack outside the folder.")
+            if len(members) > MAX_ZIP_MEMBERS:
+                raise BuildError(
+                    f"{archive} holds {len(members)} files; the limit is {MAX_ZIP_MEMBERS}."
+                )
 
-            zipped.extractall(root)
+            if sum(member.file_size for member in members) > MAX_ZIP_BYTES:
+                raise _too_large(archive)
+
+            for member in members:
+                path = (root / member.filename).resolve()
+
+                if Path(member.filename).is_absolute() or not path.is_relative_to(root):
+                    raise BuildError(
+                        f"{archive}: {member.filename} would unpack outside the folder."
+                    )
+
+            written = 0
+
+            for member in members:
+                written = _extract(zipped, member, root, archive, written)
     except (zipfile.BadZipFile, zipfile.LargeZipFile) as error:
         raise BuildError(f"{archive} is not a readable zip ({error}).") from error
+
+
+def _extract(
+    zipped: zipfile.ZipFile, member: zipfile.ZipInfo, root: Path, archive: Path, written: int
+) -> int:
+    """Unpack `member` under `root`, given `written` bytes so far; returns the new total.
+
+    Raises:
+        BuildError: If the total passes `MAX_ZIP_BYTES`.
+    """
+
+    path = root / member.filename
+
+    if member.is_dir():
+        path.mkdir(parents=True, exist_ok=True)
+        return written
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    with zipped.open(member) as source, path.open("wb") as sink:
+        while chunk := source.read(_CHUNK):
+            written += len(chunk)
+
+            if written > MAX_ZIP_BYTES:
+                raise _too_large(archive)
+
+            sink.write(chunk)
+
+    return written
+
+
+def _too_large(archive: Path) -> BuildError:
+    return BuildError(f"{archive} unpacks to more than {MAX_ZIP_BYTES} bytes.")
