@@ -229,6 +229,11 @@ A written question can be worth 0 points, e.g., `mogs.grade("q5", points=0)`.
 Its answer goes into the PDF, but it doesn't count toward the total.
 Use this for a written exercise that you want to read but not grade.
 
+The PDF renders inline math in `$...$` and display math in `$$...$$`, including environments such as `aligned`, `cases` and `pmatrix`.
+A paragraph that is only an `align`, `equation` or `gather` environment (starred or not) is display math too, without the `$$`, as in marimo.
+The environment has to start the paragraph and end it, with no blank line inside.
+Other environments without `$$` show as source.
+
 Some things can't be rendered.
 LaTeX that the PDF doesn't support (e.g., TikZ) shows as source, and so does question text that isn't plain `mo.md(...)`.
 Images show as their alt text.
