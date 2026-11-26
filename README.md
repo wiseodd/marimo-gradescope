@@ -1,6 +1,13 @@
 # Gradescope-Compatible Marimo Autograder
 
 <p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://marimo-gradescope.kristia.de/mogs-dark.svg">
+    <img alt="mogs" src="https://marimo-gradescope.kristia.de/mogs-light.svg" height="64">
+  </picture>
+</p>
+
+<p align="center">
   <a href="https://marimo-gradescope.kristia.de"><img alt="Docs: Quickstart" src="https://img.shields.io/badge/docs-quickstart-8f55e0?style=for-the-badge"></a>
   <a href="https://marimo-gradescope.kristia.de/instructors/"><img alt="Instructors" src="https://img.shields.io/badge/instructors-8f55e0?style=for-the-badge"></a>
   <a href="https://marimo-gradescope.kristia.de/students/"><img alt="Students" src="https://img.shields.io/badge/students-8f55e0?style=for-the-badge"></a>
