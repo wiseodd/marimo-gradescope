@@ -266,6 +266,20 @@ def test_display_environments_render(tmp_path, env, dollars):
     assert "could not be rendered" not in text
 
 
+def test_gather_star_in_formula_text_keeps_its_star(tmp_path):
+    text = text_of(render(tmp_path, {"q1": "Name: $\\text{gather*}$."}))
+
+    assert "gather*" in text, text
+
+
+def test_formula_shown_as_source_keeps_gather_star(tmp_path):
+    formula = "\\iftypst \\begin{gather*} a \\end{gather*}"
+
+    text = text_of(render(tmp_path, {"q1": f"Code: ${formula}$."}))
+
+    assert formula in text, text
+
+
 def test_failing_environment_is_shown_as_its_source(tmp_path):
     bad = "\\begin{align}\n\\foobar{a} &= b \\\\\nc &= d\n\\end{align}"
 

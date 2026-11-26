@@ -73,9 +73,10 @@ PREAMBLE = r"""
 }
 
 #let safe-math(src, block: false) = {
-  // mitex lacks `gather*`; its `gather` is unnumbered anyway.
-  let src = src.replace("{gather*}", "{gather}")
-  if runs-code(src) { raw(src, block: block) } else { mitex(src, block: block) }
+  // mitex lacks `gather*`; its `gather` is unnumbered anyway. `raw` shows the original.
+  let math = src
+    .replace(regex("\\\\(begin|end)\\{gather\\*\\}"), m => "\\" + m.captures.at(0) + "{gather}")
+  if runs-code(math) { raw(src, block: block) } else { mitex(math, block: block) }
 }
 """.replace("ALIASES", ALIASES)
 
