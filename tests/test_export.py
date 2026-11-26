@@ -190,12 +190,19 @@ def test_package_reports_disk_file_tests_and_download(tmp_path, no_pdf):
     assert result.note == f"Exported hw.py as saved at {saved}."
 
 
+# The student moves `three` into a plain cell, so the grader has to run the whole notebook.
+PLAIN_CELL_EDIT = (
+    "@app.function\ndef three():\n    n = ...\n    return n\n",
+    "@app.cell\ndef _():\n    def three():\n        return 3\n\n    return (three,)\n",
+)
+
+
 def test_package_says_why_a_notebook_run_failed(tmp_path, no_pdf):
-    # Issue #26: `n` is right, but an ungraded cell calling the blank `double` raises.
-    source = FIXTURES / "variable_question.py"
+    # Issue #26: `three` is right, but an ungraded cell calling the blank `double` raises.
+    source = FIXTURES / "plain_cell_answer.py"
     src = source.read_text(encoding="utf-8")
     notebook = tmp_path / "hw.py"
-    notebook.write_text(student_copy(source).replace("n = ...", "n = 3"), encoding="utf-8")
+    notebook.write_text(student_copy(source).replace(*PLAIN_CELL_EDIT), encoding="utf-8")
     line = notebook.read_text(encoding="utf-8").splitlines().index("    demo = double(4) + 1") + 1
 
     for rel, text in public_test_files(parse_notebook(src)).items():
@@ -206,7 +213,7 @@ def test_package_says_why_a_notebook_run_failed(tmp_path, no_pdf):
 
     assert texts(result.lines) == [
         "⚠ Public tests: 0/2 passed",
-        f"⚠ `n` is unavailable: running your notebook failed: line {line} raised TypeError: "
+        f"⚠ `three` is unavailable: running your notebook failed: line {line} raised TypeError: "
         "unsupported operand type(s) for +: 'ellipsis' and 'int'. Tests that use it fail, "
         "on Gradescope too.",
     ]

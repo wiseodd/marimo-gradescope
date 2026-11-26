@@ -559,26 +559,33 @@ def test_unavailable_gives_the_reason_of_a_missing_only():
     assert unavailable(3) is None
 
 
-# The notebook of issue #26: q1 answered, `double` left blank, an ungraded cell calling it.
+# The notebook of issue #26: q1 answered in a plain cell, `double` left blank, an ungraded
+# cell calling it.
+
+# The student moves `three` into a plain cell, so the grader has to run the whole notebook.
+PLAIN_CELL_EDIT = (
+    "@app.function\ndef three():\n    n = ...\n    return n\n",
+    "@app.cell\ndef _():\n    def three():\n        return 3\n\n    return (three,)\n",
+)
 
 
-def student_with_variable(tmp_path: Path) -> Path:
-    path = FIXTURES / "variable_question.py"
+def student_with_plain_cell(tmp_path: Path) -> Path:
+    path = FIXTURES / "plain_cell_answer.py"
     src = path.read_text(encoding="utf-8")
     text = student_notebook(src, parse_notebook(src), read_config(src, path), "marimo-gradescope")
     notebook = tmp_path / "hw.py"
-    notebook.write_text(text.replace("n = ...", "n = 3"), encoding="utf-8")
+    notebook.write_text(text.replace(*PLAIN_CELL_EDIT), encoding="utf-8")
     return notebook
 
 
 def test_failing_unrelated_cell_names_its_line_and_error(tmp_path):
-    notebook = student_with_variable(tmp_path)
+    notebook = student_with_plain_cell(tmp_path)
     line = notebook.read_text(encoding="utf-8").splitlines().index("    demo = double(4) + 1") + 1
 
-    found = bind(notebook, ["n", "double"])
+    found = bind(notebook, ["three", "double"])
 
-    assert message(found["n"]) == (
-        f"`n` is unavailable: running your notebook failed: line {line} raised TypeError: "
+    assert message(found["three"]) == (
+        f"`three` is unavailable: running your notebook failed: line {line} raised TypeError: "
         "unsupported operand type(s) for +: 'ellipsis' and 'int'"
     )
 

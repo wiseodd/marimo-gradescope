@@ -17,20 +17,20 @@ with app.setup:
 
 @app.cell
 def _():
-    mogs.assignment(name="Variables")
+    mogs.assignment(name="Plain cell")
     return
+
+
+@app.function
+def three():
+    n = 3  # SOLUTION
+    return n
 
 
 @app.cell
 def _():
-    n = 3  # SOLUTION
-    return (n,)
-
-
-@app.cell
-def _(n):
-    def test_q1_n():
-        assert n == 3
+    def test_q1_three():
+        assert three() == 3
 
     return
 

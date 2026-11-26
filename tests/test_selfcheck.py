@@ -191,16 +191,24 @@ def test_test_file_with_a_scope_error_fails_only_its_question(tmp_path):
     assert results["questions"]["q2"] == {"passed": 0, "total": 1, "failed": ["tests/q2.py"]}
 
 
+# The student moves `three` into a plain cell, so the grader has to run the whole notebook.
+PLAIN_CELL_EDIT = (
+    "@app.function\ndef three():\n    n = ...\n    return n\n",
+    "@app.cell\ndef _():\n    def three():\n        return 3\n\n    return (three,)\n",
+)
+
+
 def test_names_a_failed_notebook_run_with_the_names_it_cost(tmp_path):
-    # Issue #26: `n` is right, but an ungraded cell calling the blank `double` raises.
-    source = FIXTURES / "variable_question.py"
-    notebook = write_student(tmp_path, source, student_copy(source).replace("n = ...", "n = 3"))
+    # Issue #26: `three` is right, but an ungraded cell calling the blank `double` raises.
+    source = FIXTURES / "plain_cell_answer.py"
+    edited = student_copy(source).replace(*PLAIN_CELL_EDIT)
+    notebook = write_student(tmp_path, source, edited)
     line = notebook.read_text(encoding="utf-8").splitlines().index("    demo = double(4) + 1") + 1
 
     results = selfcheck.public_results(notebook)
 
-    assert results["questions"]["q1"] == {"passed": 0, "total": 1, "failed": ["test_q1_n"]}
+    assert results["questions"]["q1"] == {"passed": 0, "total": 1, "failed": ["test_q1_three"]}
     assert results["unavailable"] == {
-        "n": f"running your notebook failed: line {line} raised TypeError: "
+        "three": f"running your notebook failed: line {line} raised TypeError: "
         "unsupported operand type(s) for +: 'ellipsis' and 'int'"
     }
