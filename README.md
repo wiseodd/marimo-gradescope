@@ -5,6 +5,8 @@
   </picture>
 </p>
 
+<p align="center"><strong>Marimo-Gradescope</strong></p>
+
 <p align="center">Gradescope-compatible Marimo autograder. Alternative to Otter-Grader</p>
 
 <p align="center">
