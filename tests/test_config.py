@@ -197,6 +197,29 @@ def test_name_unfit_for_a_file_name(name: str):
         read_config(src, NB)
 
 
+@pytest.mark.parametrize("name", ["CON", "aux", "com1", "Nul.tar", "a:b", "why?", "dot.", "space "])
+def test_name_must_work_on_windows(name: str):
+    # The student zip and the folder in it are named after `name`.
+    src = notebook(f'[tool.marimo-gradescope]\nname = "{name}"\nquestions = {{ q1 = 1 }}')
+
+    with pytest.raises(ConfigError, match="`name`.*Windows"):
+        read_config(src, NB)
+
+
+def test_default_name_from_the_notebook_must_work_on_windows():
+    src = notebook("[tool.marimo-gradescope]\nquestions = { q1 = 1 }")
+
+    with pytest.raises(ConfigError, match="`name`.*Windows"):
+        read_config(src, Path("con.py"))
+
+
+@pytest.mark.parametrize("name", ["HW1", "hw 1", "CS9840B_A01", "console", "con-1"])
+def test_name_fit_for_windows(name: str):
+    src = notebook(f'[tool.marimo-gradescope]\nname = "{name}"\nquestions = {{ q1 = 1 }}')
+
+    assert read_config(src, NB).name == name
+
+
 def test_missing_questions():
     src = notebook("[tool.marimo-gradescope]\nname = 'x'")
 

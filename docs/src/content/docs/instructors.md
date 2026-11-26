@@ -39,16 +39,16 @@ The `marimo-gradescope` config must be put in the notebook's header:
 
 Available options are:
 
-| Key            | Default   | Example                                            | Description                                                                                        |
-| -------------- | --------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `questions`    | required  | `q2 = { points = 25, title = "Gradient descent" }` | Points per question, or a dict with `points`, `title` and `manual`.                                |
-| `name`         | file name | `name = "HW1"`                                     | The zip is named `<name>-autograder-<timestamp>.zip`.                                              |
-| `files`        | `[]`      | `files = ["data/"]`                                | Data files and directories, relative to the notebook. `tests` is reserved for the public tests.    |
-| `timeout`      | `60`      | `timeout = 120`                                    | Seconds per test.                                                                                  |
-| `budget`       | `540`     | `budget = 900`                                     | Seconds for the whole grading run.                                                                 |
-| `memory`       | `4096`    | `memory = 8192`                                    | MB per grading process, at least 2048. Linux only.                                                 |
-| `python`       | `"3.13"`  | `python = "3.14"`                                  | Python version on Gradescope.                                                                      |
-| `requirements` | none      | `requirements = "requirements.txt"`                | A requirements file for Gradescope, relative to the notebook. It's used instead of `dependencies`. |
+| Key            | Default   | Example                                            | Description                                                                                                                          |
+| -------------- | --------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `questions`    | required  | `q2 = { points = 25, title = "Gradient descent" }` | Points per question, or a dict with `points`, `title` and `manual`.                                                                  |
+| `name`         | file name | `name = "HW1"`                                     | Names the student zip `<name>.zip` and the autograder zip `<name>-autograder-<timestamp>.zip`. Must be a valid file name on Windows. |
+| `files`        | `[]`      | `files = ["data/"]`                                | Data files and directories, relative to the notebook. `tests` is reserved for the public tests.                                      |
+| `timeout`      | `60`      | `timeout = 120`                                    | Seconds per test.                                                                                                                    |
+| `budget`       | `540`     | `budget = 900`                                     | Seconds for the whole grading run.                                                                                                   |
+| `memory`       | `4096`    | `memory = 8192`                                    | MB per grading process, at least 2048. Linux only.                                                                                   |
+| `python`       | `"3.13"`  | `python = "3.14"`                                  | Python version on Gradescope.                                                                                                        |
+| `requirements` | none      | `requirements = "requirements.txt"`                | A requirements file for Gradescope, relative to the notebook. It's used instead of `dependencies`.                                   |
 
 Question ids are letters and digits, and start with a letter, e.g., `q1` or `bonus`.
 They can't contain `_`: test names use `_` to separate the id from the rest of the name.
