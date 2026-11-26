@@ -78,3 +78,36 @@ def test_edit_without_a_notebook_fails(tmp_path, monkeypatch, capsys):
     assert code == 1
     assert marimo.commands == []
     assert "No notebook in hw" in capsys.readouterr().err
+
+
+def test_edit_takes_the_notebook_itself(assignment, monkeypatch):
+    marimo = FakeMarimo(0)
+    monkeypatch.setattr(subprocess, "Popen", marimo)
+
+    code = cli.main(["edit", str(assignment / "hw.py")])
+
+    assert code == 0
+    assert marimo.commands[0][-1] == str(assignment / "hw.py")
+
+
+def test_edit_refuses_a_file_that_is_not_a_source_notebook(assignment, monkeypatch, capsys):
+    (assignment / "helper.py").write_text("print('hi')\n", encoding="utf-8")
+    marimo = FakeMarimo()
+    monkeypatch.setattr(subprocess, "Popen", marimo)
+
+    code = cli.main(["edit", str(assignment / "helper.py")])
+
+    assert code == 1
+    assert marimo.commands == []
+    assert "helper.py does not call `mogs.assignment(...)`" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("missing", ["nope", "nope.py"])
+def test_edit_names_a_missing_path(missing, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(subprocess, "Popen", FakeMarimo())
+
+    code = cli.main(["edit", missing])
+
+    assert code == 1
+    assert f"{missing} does not exist" in capsys.readouterr().err

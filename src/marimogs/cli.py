@@ -8,7 +8,7 @@ from copy import replace
 from pathlib import Path
 
 from marimogs import __version__
-from marimogs.build import BuildError, BuildResult, build, failure_report, find_notebook
+from marimogs.build import BuildError, BuildResult, build, failure_report, source_notebook
 from marimogs.config import ConfigError
 from marimogs.regrade import GradeResult, grade_submission
 from marimogs.requirements import RequirementsError
@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
         case "init":
             return _init(args.dir)
         case "edit":
-            return _edit(args.dir)
+            return _edit(args.path)
         case "build":
             return _build(args.dir)
         case "grade":
@@ -54,15 +54,15 @@ def _init(folder: Path) -> int:
     return 0
 
 
-def _edit(folder: Path) -> int:
-    """Open the notebook in `folder` with `marimo edit --sandbox`.
+def _edit(path: Path) -> int:
+    """Open the source notebook at `path`, a file or its folder, with `marimo edit --sandbox`.
 
     marimo runs on this package's Python, which has pytest. The editor server compiles the
     test cells there, and without pytest it logs a warning for each of them.
     """
 
     try:
-        notebook = find_notebook(folder)
+        notebook = source_notebook(path)
     except (BuildError, OSError) as error:
         print(f"Edit failed.\n{error}", file=sys.stderr)
         return 1
@@ -212,12 +212,15 @@ def _parser() -> argparse.ArgumentParser:
         "edit",
         help="open the source notebook in marimo's editor",
         description=(
-            "Run `marimo edit --sandbox` on the source notebook in DIR, with the marimo "
-            "installed next to marimo-gradescope."
+            "Run `marimo edit --sandbox` on the source notebook PATH, or the one in the "
+            "assignment folder PATH, with the marimo installed next to marimo-gradescope."
         ),
     )
     edit_parser.add_argument(
-        "dir", type=Path, metavar="DIR", help="assignment folder with the source notebook"
+        "path",
+        type=Path,
+        metavar="PATH",
+        help="source notebook, or the assignment folder with it",
     )
 
     build_parser = commands.add_parser(

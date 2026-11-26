@@ -345,8 +345,15 @@ def test_find_notebook_keeps_a_notebook_with_a_syntax_error(tmp_path):
 
 
 def test_missing_dir_is_an_error(tmp_path):
-    with pytest.raises(BuildError, match="not a folder"):
+    with pytest.raises(BuildError, match="does not exist"):
         find_notebook(tmp_path / "nope")
+
+
+def test_file_instead_of_dir_is_an_error(tmp_path):
+    (tmp_path / "hw.py").write_text("", encoding="utf-8")
+
+    with pytest.raises(BuildError, match="not a folder"):
+        find_notebook(tmp_path / "hw.py")
 
 
 @pytest.mark.parametrize(
