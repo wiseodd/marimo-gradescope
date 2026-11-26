@@ -16,7 +16,6 @@ def test_binary_version_matches_package():
     result = run(["--version"])
 
     assert result.returncode == 0
-    assert result.stdout == "mogs 0.7.0\n"
     assert result.stdout == f"mogs {version('mogs')}\n"
 
 

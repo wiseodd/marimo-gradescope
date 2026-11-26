@@ -47,7 +47,10 @@ fn run(mut command: Command) -> std::io::Error {
     }
 
     // SAFETY: `ignore` is a valid handler for the life of the process.
-    unsafe { SetConsoleCtrlHandler(Some(ignore), TRUE) };
+    if unsafe { SetConsoleCtrlHandler(Some(ignore), TRUE) } == 0 {
+        let error = std::io::Error::last_os_error();
+        return std::io::Error::new(error.kind(), format!("cannot ignore Ctrl+C: {error}"));
+    }
 
     match command.status() {
         Ok(status) => std::process::exit(status.code().unwrap_or(1)),

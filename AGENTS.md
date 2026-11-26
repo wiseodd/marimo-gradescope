@@ -32,8 +32,9 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   makes that a failure. The base image is amd64 only: on an arm64 host it runs
   under emulation, which is slow enough that grading timeouts may trip.
 - `.github/workflows/release.yml`: on a published GitHub release (tags like
-  `0.7`, no `v`), checks the tag against the `Cargo.toml` version, builds and
-  smoke-tests the wheels and the sdist, then publishes to PyPI through
+  `0.7`, no `v`), checks the tag against the `Cargo.toml` version, builds the
+  wheels and the sdist, smoke-tests each wheel on a runner that can run it,
+  then publishes them all to PyPI through
   trusted publishing.
 - `docs/`: the docs site (Astro Starlight, built with Bun), deployed to
   https://mogs.kristia.de by `.github/workflows/docs.yml`. Pages

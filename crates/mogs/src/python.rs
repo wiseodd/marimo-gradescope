@@ -64,16 +64,25 @@ impl fmt::Display for PythonNotFound {
 /// environment, or of a uv tool environment on Unix. Then looks in the scripts folder of the
 /// `mogs` environment under `uv tool dir`, since uv copies tool executables on Windows.
 pub fn interpreter() -> Result<PathBuf, PythonNotFound> {
+    interpreter_from(&executable_folder()?, uv_tool_dir)
+}
+
+/// The folder of the running executable, symlinks resolved.
+///
+/// A plain path: on Windows, `dunce` drops the `\\?\` prefix of `canonicalize`, since the
+/// interpreter path becomes `sys.executable` for Python and its children.
+fn executable_folder() -> Result<PathBuf, PythonNotFound> {
     let executable = std::env::current_exe()
-        .and_then(|path| path.canonicalize())
+        .and_then(dunce::canonicalize)
         .map_err(PythonNotFound::Executable)?;
 
-    let Some(folder) = executable.parent() else {
-        let error = io::Error::other(format!("{} has no parent folder", executable.display()));
-        return Err(PythonNotFound::Executable(error));
-    };
-
-    interpreter_from(folder, uv_tool_dir)
+    match executable.parent() {
+        Some(folder) => Ok(folder.to_path_buf()),
+        None => {
+            let error = io::Error::other(format!("{} has no parent folder", executable.display()));
+            Err(PythonNotFound::Executable(error))
+        }
+    }
 }
 
 /// The interpreter in `beside`, else in the `mogs` tool environment under `uv_tool_dir()`.
@@ -85,6 +94,8 @@ fn interpreter_from(
         return Ok(python);
     }
 
+    // On Windows `uv tool install` copies the executable out of its environment. The tool
+    // environment found here may hold a different mogs version than this executable.
     let tool = uv_tool_dir().map(|dir| dir.join("mogs").join(TOOL_BIN));
 
     if let Ok(folder) = &tool
@@ -134,70 +145,80 @@ fn uv_tool_dir() -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::{TempDir, tempdir};
 
-    /// A new empty folder for one test.
-    fn empty_folder(name: &str) -> PathBuf {
-        let folder = std::env::temp_dir().join(format!("mogs-{name}-{}", std::process::id()));
-
-        let _ = std::fs::remove_dir_all(&folder);
-        std::fs::create_dir_all(&folder).unwrap();
-
-        folder
-    }
-
-    /// A folder with an empty file standing in for an interpreter.
-    fn folder_with_python(name: &str) -> (PathBuf, PathBuf) {
-        let folder = empty_folder(name);
+    /// A file standing in for an interpreter in `folder`.
+    fn fake_python(folder: &Path) -> PathBuf {
         let python = folder.join(NAMES[0]);
+        std::fs::create_dir_all(folder).unwrap();
         std::fs::write(&python, "").unwrap();
 
-        (folder, python)
+        python
+    }
+
+    /// Two empty folders: the executable's and uv's tool folder.
+    fn folders() -> (TempDir, TempDir) {
+        (tempdir().unwrap(), tempdir().unwrap())
+    }
+
+    #[test]
+    fn executable_folder_is_a_plain_path() {
+        let folder = executable_folder().unwrap();
+
+        assert!(folder.is_absolute());
+        assert!(
+            !folder.to_string_lossy().starts_with(r"\\?\"),
+            "{}",
+            folder.display()
+        );
     }
 
     #[test]
     fn finds_sibling_interpreter() {
-        let (folder, python) = folder_with_python("finds-sibling-interpreter");
+        let beside = tempdir().unwrap();
+        let python = fake_python(beside.path());
 
-        let found = interpreter_from(&folder, || panic!("uv must not be asked"));
+        let found = interpreter_from(beside.path(), || panic!("uv must not be asked"));
 
         assert_eq!(found.unwrap(), python);
     }
 
     #[test]
     fn falls_back_to_uv_tool_environment() {
-        let beside = empty_folder("falls-back-beside");
-        let tools = empty_folder("falls-back-tools");
-        let bin = tools.join("mogs").join(TOOL_BIN);
-        std::fs::create_dir_all(&bin).unwrap();
-        let python = bin.join(NAMES[0]);
-        std::fs::write(&python, "").unwrap();
+        let (beside, tools) = folders();
+        let python = fake_python(&tools.path().join("mogs").join(TOOL_BIN));
 
-        let found = interpreter_from(&beside, || Ok(tools.clone()));
+        let found = interpreter_from(beside.path(), || Ok(tools.path().to_path_buf()));
 
         assert_eq!(found.unwrap(), python);
     }
 
     #[test]
     fn errors_without_one() {
-        let beside = empty_folder("errors-without-one-beside");
-        let tools = empty_folder("errors-without-one-tools");
-        let bin = tools.join("mogs").join(TOOL_BIN);
+        let (beside, tools) = folders();
+        let bin = tools.path().join("mogs").join(TOOL_BIN);
 
-        let error = interpreter_from(&beside, || Ok(tools.clone())).unwrap_err();
-        let message = error.to_string();
+        let error = interpreter_from(beside.path(), || Ok(tools.path().to_path_buf()));
+        let message = error.unwrap_err().to_string();
 
-        assert!(message.contains(&beside.display().to_string()), "{message}");
+        assert!(
+            message.contains(&beside.path().display().to_string()),
+            "{message}"
+        );
         assert!(message.contains(&bin.display().to_string()), "{message}");
     }
 
     #[test]
     fn errors_when_uv_is_unavailable() {
-        let beside = empty_folder("errors-when-uv-is-unavailable");
+        let beside = tempdir().unwrap();
 
-        let error = interpreter_from(&beside, || Err("`uv` is not on PATH".to_string()));
+        let error = interpreter_from(beside.path(), || Err("`uv` is not on PATH".to_string()));
         let message = error.unwrap_err().to_string();
 
-        assert!(message.contains(&beside.display().to_string()), "{message}");
+        assert!(
+            message.contains(&beside.path().display().to_string()),
+            "{message}"
+        );
         assert!(message.contains("`uv` is not on PATH"), "{message}");
     }
 }
