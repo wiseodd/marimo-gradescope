@@ -441,6 +441,57 @@ def _():
     assert "`@app.cell`" in message
 
 
+def test_invalid_output_after_a_multiline_edit_names_the_source_line():
+    # The annotation keeps its three lines in the copy.
+    cells = """
+@app.cell
+def _():
+    x: dict[
+        str, int
+    ] = {}  # SOLUTION
+    return
+
+
+@app.function
+def f(x):
+    print(x)  # SOLUTION
+
+
+@app.cell
+def _():
+    y = 2
+    return
+"""
+    with pytest.raises(SourceError) as info:
+        student_of(cells)
+
+    lines = (HEADER + cells).split("\n")
+    after = lines.index("def f(x):") + 5
+    assert lines[after - 1] == "@app.cell"
+    message = str(info.value)
+    assert f"source line {after} (`@app.cell`)" in message
+    assert f"after function definition on line {after - 4}" in message
+
+
+def test_invalid_prompt_names_its_own_line():
+    cells = """
+@app.cell
+def _():
+    # BEGIN SOLUTION
+    # PROMPT: y = 1
+    # PROMPT: x = (
+    x = 2
+    # END SOLUTION
+    return
+"""
+    with pytest.raises(SourceError) as info:
+        student_of(cells)
+
+    lines = (HEADER + cells).split("\n")
+    broken = lines.index("    # PROMPT: x = (") + 1
+    assert f"source line {broken} (`# PROMPT: x = (`)" in str(info.value)
+
+
 # Hidden cells
 
 

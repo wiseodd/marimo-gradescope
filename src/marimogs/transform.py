@@ -54,8 +54,9 @@ class MarimoImport(StrEnum):
     MISSING = "missing"
 
 
-# Replacement lines by 1-based line number. A line not in the map is kept as it is.
-type Edits = dict[int, list[str]]
+# Replacement lines by 1-based source line number, each with the source line it comes from.
+# A line not in the map is kept as it is.
+type Edits = dict[int, list[tuple[int, str]]]
 
 
 def pinned_requirement(cfg: AssignmentConfig) -> str:
@@ -436,9 +437,9 @@ def _edited(
             _name_written_cells(edits, lines, nb, question.id)
 
     copied = [
-        (number, new)
+        pair
         for number, line in enumerate(lines, start=1)
-        for new in edits.get(number, [line])
+        for pair in edits.get(number, [(number, line)])
     ]
     text = "\n".join(new for _, new in copied)
     # Parsed before the header edit, which can change the line count. The header is
@@ -546,7 +547,7 @@ def _solution_regions(
                 if start not in edits:
                     default = MARKDOWN_PLACEHOLDER if start in markdown else "..."
                     stub = [indent + code if code else "" for code in prompt or [default]]
-                    _replace(edits, start, number, stub)
+                    _replace(edits, start, number, stub, prompts or None)
                 start = None
             case Marker.BEGIN | Marker.END, _:
                 raise SourceError(f"line {number}: `{line.strip()}` does not pair up.")
@@ -721,14 +722,25 @@ def _segment(src: str, node: ast.expr) -> str:
             raise SourceError(f"line {node.lineno}: no source for expression.")
 
 
-def _replace(edits: Edits, first: int, last: int, new: list[str]) -> None:
-    """Replace lines `first` to `last` (inclusive) with `new`."""
+def _replace(
+    edits: Edits, first: int, last: int, new: list[str], origins: list[int] | None = None
+) -> None:
+    """Replace lines `first` to `last` (inclusive) with `new`.
+
+    `origins` gives the source line of each string in `new`. Without it, each line of `new`
+    (a string can hold several) maps to the next source line from `first`, stopping at `last`.
+    """
 
     taken = [number for number in range(first, last + 1) if number in edits]
     if taken:
         raise SourceError(f"line {taken[0]}: two student-copy edits touch this line.")
 
-    edits[first] = new
+    if origins is None:
+        parts = "\n".join(new).split("\n") if new else []
+        edits[first] = [(min(first + index, last), part) for index, part in enumerate(parts)]
+    else:
+        edits[first] = list(zip(origins, new, strict=True))
+
     for number in range(first + 1, last + 1):
         edits[number] = []
 
