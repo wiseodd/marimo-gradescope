@@ -1,11 +1,11 @@
-# Gradescope-Compatible Marimo Autograder
-
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://marimo-gradescope.kristia.de/mogs-dark.svg">
     <img alt="mogs" src="https://marimo-gradescope.kristia.de/mogs-light.svg" height="64">
   </picture>
 </p>
+
+<p align="center">Gradescope-compatible Marimo autograder. Alternative to Otter-Grader</p>
 
 <p align="center">
   <a href="https://marimo-gradescope.kristia.de"><img alt="Docs: Quickstart" src="https://img.shields.io/badge/docs-quickstart-8f55e0?style=for-the-badge"></a>
@@ -15,9 +15,6 @@
   <img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13%2B-3776ab?style=for-the-badge&logo=python&logoColor=white">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-555555?style=for-the-badge"></a>
 </p>
-
-Like [`Otter-Grader`](https://otter-grader.readthedocs.io/en/latest/) but for [marimo](https://marimo.io/).
-Compatible with Gradescope.
 
 ## Installation
 
