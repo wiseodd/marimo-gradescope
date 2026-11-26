@@ -1,9 +1,10 @@
 """PDF of the written answers, for questions graded by hand.
 
 Typst renders the PDF in-process, from the `typst` package of the `pdf` extra. Per question
-the PDF has a heading, the `prompt_<qid>` cells and the `answer_<qid>` cells, with a page
-break between questions. A cell that is just `mo.md("...")` shows as Markdown with LaTeX math
-(through the vendored Typst packages cmarker and mitex); any other cell shows its source.
+the PDF has a heading, then the `prompt_<qid>` and `answer_<qid>` cells in notebook order, so
+each answer follows its own prompt. A page break separates questions. A cell that is just
+`mo.md("...")` shows as Markdown with LaTeX math (through the vendored Typst packages cmarker
+and mitex); any other cell shows its source.
 
 The cell text reaches Typst as data in `sys.inputs`, never as Typst source. Typst cannot
 recover from an error inside a document, so a cell that breaks the document is rendered again
@@ -75,8 +76,8 @@ PREAMBLE = r"""
 }
 """.replace("ALIASES", ALIASES)
 
-# The document. `sys.inputs.doc` is JSON: a list of questions, each `{title, prompts, answers}`,
-# where a prompt or answer is `{text, style, note}`. Images are not loaded: they show as their
+# The document. `sys.inputs.doc` is JSON: a list of questions, each `{title, parts}`, where a
+# part is `{text, role, style, note}`. Images are not loaded: they show as their
 # alt text.
 TEMPLATE = (
     PREAMBLE
@@ -114,9 +115,16 @@ TEMPLATE = (
   if index > 0 { pagebreak() }
   heading(level: 1, question.title)
 
-  for part in question.prompts { show-part(part) }
-  if question.prompts.len() > 0 { line(length: 100%, stroke: 0.5pt + gray) }
-  for part in question.answers { show-part(part) }
+  let parts = question.parts
+  for (at, part) in parts.enumerate() {
+    show-part(part)
+
+    // A rule between a prompt and the answer after it.
+    let next = parts.at(at + 1, default: none)
+    if part.role == "prompt" and next != none and next.role == "answer" {
+      line(length: 100%, stroke: 0.5pt + gray)
+    }
+  }
 }
 """
 )
@@ -137,6 +145,13 @@ class PdfUnavailable(Exception):
     """No PDF could be made. The message says why and what to try."""
 
 
+class Role(StrEnum):
+    """What a part of the PDF is."""
+
+    PROMPT = "prompt"
+    ANSWER = "answer"
+
+
 class Style(StrEnum):
     """How a part of the PDF is rendered."""
 
@@ -150,11 +165,13 @@ class Part:
 
     Attributes:
         text: Markdown, or plain text for `Style.PLAIN`.
+        role: Whether it is a prompt or an answer.
         style: How `text` is rendered.
         note: A small note under the part, or `None`.
     """
 
     text: str
+    role: Role
     style: Style = Style.MARKDOWN
     note: str | None = None
 
@@ -165,13 +182,12 @@ class Question:
 
     Attributes:
         title: The heading.
-        prompts: The prompt cells.
-        answers: The answer cells, or a note that there is none.
+        parts: The prompt and answer cells in notebook order, or a note that there is no
+            answer cell.
     """
 
     title: str
-    prompts: tuple[Part, ...]
-    answers: tuple[Part, ...]
+    parts: tuple[Part, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,20 +286,27 @@ def _render(questions: list[Question]) -> bytes:
 
 
 def _each_part(question: Question, change: Callable[[Part], Part]) -> Question:
-    return replace(
-        question,
-        prompts=tuple(change(part) for part in question.prompts),
-        answers=tuple(change(part) for part in question.answers),
-    )
+    return replace(question, parts=tuple(change(part) for part in question.parts))
 
 
 def manual_question(nb: Notebook, qid: str, title: str) -> Question:
-    """A question's prompt and answer cells; a note when it has no answer cell."""
+    """A question's prompt and answer cells in notebook order; a note when it has no answer.
 
-    prompts = tuple(Part(cell_markdown(nb, cell)) for cell in _plain(nb.prompt_cells(qid)))
-    answers = tuple(Part(cell_markdown(nb, cell)) for cell in _plain(nb.answer_cells(qid)))
+    Each answer follows the prompts just before it in the notebook. A notebook built by an
+    older release names all prompts before the first answer, and shows them the same way.
+    """
 
-    return Question(title, prompts, answers or (Part(f"*No answer cell `answer_{qid}` found.*"),))
+    prompts = [(cell, Role.PROMPT) for cell in _plain(nb.prompt_cells(qid))]
+    answers = [(cell, Role.ANSWER) for cell in _plain(nb.answer_cells(qid))]
+    parts = tuple(
+        Part(cell_markdown(nb, cell), role)
+        for cell, role in sorted(prompts + answers, key=lambda pair: pair[0].start)
+    )
+
+    if not answers:
+        parts += (Part(f"*No answer cell `answer_{qid}` found.*", Role.ANSWER),)
+
+    return Question(title, parts)
 
 
 def cell_markdown(nb: Notebook, cell: Cell) -> str:
@@ -383,7 +406,7 @@ def _closing(text: str, start: int, end: int, delimiter: str) -> int | None:
 def _rescue(part: Part) -> Part:
     """`part`, or a version of it that Typst can render, with a note when it changed."""
 
-    if _renders(Question("", (), (part,))):
+    if _renders(Question("", (part,))):
         return part
 
     text = part.text
@@ -391,15 +414,15 @@ def _rescue(part: Part) -> Part:
         if not _formula_renders(formula):
             text = text[: formula.start] + _as_code(text, formula) + text[formula.end :]
 
-    shown = Part(text, Style.MARKDOWN, SOURCE_NOTE)
-    if text != part.text and _renders(Question("", (), (shown,))):
+    shown = replace(part, text=text, style=Style.MARKDOWN, note=SOURCE_NOTE)
+    if text != part.text and _renders(Question("", (shown,))):
         return shown
 
     return _as_plain(part)
 
 
 def _as_plain(part: Part) -> Part:
-    return Part(part.text, Style.PLAIN, PLAIN_NOTE)
+    return replace(part, style=Style.PLAIN, note=PLAIN_NOTE)
 
 
 def _as_code(text: str, formula: Formula) -> str:
@@ -444,12 +467,12 @@ def _document(questions: list[Question]) -> bytes:
     """The PDF of `questions`."""
 
     def parts(parts: tuple[Part, ...]) -> list[dict[str, str | None]]:
-        return [{"text": _valid(p.text), "style": p.style, "note": p.note} for p in parts]
+        return [
+            {"text": _valid(p.text), "role": p.role, "style": p.style, "note": p.note}
+            for p in parts
+        ]
 
-    doc = [
-        {"title": _valid(q.title), "prompts": parts(q.prompts), "answers": parts(q.answers)}
-        for q in questions
-    ]
+    doc = [{"title": _valid(q.title), "parts": parts(q.parts)} for q in questions]
 
     return _compile(TEMPLATE, {"doc": json.dumps(doc, ensure_ascii=False)})
 
