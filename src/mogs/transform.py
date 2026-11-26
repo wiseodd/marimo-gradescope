@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from mogs import __version__
 from mogs.config import (
     PACKAGE,
+    TESTS_FOLDER,
     AssignmentConfig,
     normalize_newlines,
     set_dependency,
@@ -41,7 +42,6 @@ EXPORT_BUTTON = "export_button"
 MARKDOWN_PLACEHOLDER = "*Write your answer here.*"
 DEFAULT_ALIAS = "mogs"
 MARIMO_ALIAS = "mo"
-TESTS_FOLDER = "tests"
 # Solution lines that may appear in the student copy by chance: no letters, or a bare keyword.
 TRIVIAL_LINE_RE = re.compile(r"[^A-Za-z]*|(?:pass|return|break|continue|else|try|finally):?")
 

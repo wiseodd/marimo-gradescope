@@ -20,6 +20,8 @@ from pathlib import Path
 TOOL = "mogs"
 PACKAGE = "mogs"
 ASSIGNMENT = "mogs.assignment()"
+# Folder next to the student notebook with its public tests, `tests/<qid>.py`.
+TESTS_FOLDER = "tests"
 MIN_MEMORY_MB = 2048
 
 # The reference regex from PEP 723, for the `script` block.

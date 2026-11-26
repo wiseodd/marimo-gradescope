@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
+from mogs.config import TESTS_FOLDER
 from mogs.grader.bundle import GradingBundle
 from mogs.runner import Outcome, cap
 
@@ -80,24 +81,36 @@ def find_submission(sub_dir: Path, notebook: str) -> Submission:
     files = sorted(_regular_files(sub_dir))
     scripts = [path for path in files if path.suffix == ".py"]
     exact = [path for path in scripts if path.name == notebook]
+    # The public tests the student copy ships in `tests/`.
+    others = [path for path in scripts if path.parent.name != TESTS_FOLDER]
     pdfs = [path for path in files if path.suffix.lower() == ".pdf"]
     fallback = f"{Path(notebook).stem}_answers.md".casefold()
     markdown = [path for path in files if path.name.casefold() == fallback]
     answers = next(iter(pdfs or markdown), None)
+    wanted = inline_code(notebook)
 
-    match exact or scripts:
-        case [py]:
+    match exact, others:
+        case [py], _:
             return Submission(py, answers, None)
-        case []:
-            error = f"No `.py` file found in your upload. Upload {inline_code(notebook)}."
-        case several:
-            names = ", ".join(inline_code(str(path.relative_to(sub_dir))) for path in several)
-            error = (
-                f"Found several notebooks: {names}. Upload only {inline_code(notebook)}, "
-                "or a single `.py` file."
+        case [], [py]:
+            return Submission(py, answers, None)
+        case [], []:
+            error = f"No `.py` file found in your upload. Upload {wanted}."
+        case [], several:
+            names = _names(several, sub_dir)
+            error = f"No {wanted} in your upload, and several other `.py` files: {names}. " + (
+                f"Upload {wanted}, or a single `.py` file."
             )
+        case several, _:
+            error = f"Found {wanted} more than once: {_names(several, sub_dir)}. Upload one."
 
     return Submission(None, answers, error)
+
+
+def _names(paths: Sequence[Path], root: Path) -> str:
+    """The paths relative to `root`, as inline code, comma separated."""
+
+    return ", ".join(inline_code(str(path.relative_to(root))) for path in paths)
 
 
 def _regular_files(root: Path) -> list[Path]:

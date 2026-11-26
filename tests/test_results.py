@@ -183,6 +183,23 @@ def test_two_py_files_are_both_named(tmp_path):
     assert "hw.py" in found.error
 
 
+def test_public_test_files_are_not_notebooks(tmp_path):
+    touch(tmp_path, "hw2/student_file.py", "hw2/tests/q1.py", "hw2/tests/q2.py")
+
+    found = find_submission(tmp_path, "hw.py")
+
+    assert found.py == tmp_path / "hw2" / "student_file.py"
+
+
+def test_two_py_files_are_not_called_notebooks(tmp_path):
+    touch(tmp_path, "one.py", "two.py")
+
+    error = find_submission(tmp_path, "hw.py").error or ""
+
+    assert "notebooks" not in error
+    assert "No `hw.py`" in error
+
+
 def test_no_py_file(tmp_path):
     touch(tmp_path, "notes.txt")
 
