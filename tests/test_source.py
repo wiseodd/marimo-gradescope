@@ -1524,6 +1524,21 @@ def test_validate_pytest_import_needs_the_dependency(statement):
     assert "`dependencies`" in error
 
 
+BAD_HEADER = HEADER.replace('dependencies = ["marimo"]', "dependencies = [")
+
+
+def test_validate_does_not_read_a_broken_header_without_pytest_imports():
+    assert errors(PUBLIC + CHECK, header=BAD_HEADER) == []
+
+
+def test_validate_reports_a_broken_header_when_pytest_is_imported():
+    cell = "\n@app.cell\ndef _():\n    import pytest\n    return\n"
+
+    error = one_error(cell + PUBLIC + CHECK, header=BAD_HEADER)
+
+    assert "header" in error
+
+
 def test_validate_pytest_import_with_the_dependency_ok():
     header = HEADER.replace('dependencies = ["marimo"]', 'dependencies = ["marimo", "pytest>=8"]')
     cell = "\n@app.cell\ndef _():\n    import pytest\n    return\n"

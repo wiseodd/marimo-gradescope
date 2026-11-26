@@ -18,6 +18,7 @@ from mogs.config import (
     ASSIGNMENT,
     Api,
     AssignmentConfig,
+    ConfigError,
     api_calls,
     normalize_newlines,
     normalized_name,
@@ -837,9 +838,6 @@ def _pytest_dependency_errors(nb: Notebook) -> list[str]:
     student notebook that imports it without one.
     """
 
-    if any(normalized_name(dep) == "pytest" for dep in read_header(nb.src).get("dependencies", [])):
-        return []
-
     lines = [
         node.lineno
         for node in ast.walk(ast.parse(nb.src))
@@ -849,10 +847,23 @@ def _pytest_dependency_errors(nb: Notebook) -> list[str]:
         and (node.module or "").split(".")[0] == "pytest"
     ]
 
+    if not lines:
+        return []
+
+    try:
+        dependencies = read_header(nb.src).get("dependencies", [])
+    except ConfigError as error:
+        return [
+            f"line {lines[0]}: the notebook imports `pytest`, but its header is unreadable: {error}"
+        ]
+
+    if any(normalized_name(dep) == "pytest" for dep in dependencies):
+        return []
+
     return [
-        f"line {line}: the notebook imports `pytest`, but the header's `dependencies` doesn't "
-        "list it. Add `pytest` there, or marimo adds a pinned one to each student's header."
-        for line in lines[:1]
+        f"line {lines[0]}: the notebook imports `pytest`, but the header's `dependencies` "
+        "doesn't list it. Add `pytest` there, or marimo adds a pinned one to each student's "
+        "header."
     ]
 
 
