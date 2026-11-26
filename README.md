@@ -30,7 +30,7 @@ The command is `mogs`.
 
 ## Usage
 
-Create an assignment (replace `<name`> with your assignment name) and edit it in marimo's editor:
+Create an assignment (replace `<name>` with your assignment name) and edit it in marimo's editor:
 
 ```bash
 mogs init <name>
@@ -41,7 +41,7 @@ This will create a directory called `<name>` with `<name>.py` inside.
 You can change `<name>.py` if you want.
 This Python file is a marimo notebook and it has a short guide and two example questions (see docs; full example [here](https://github.com/wiseodd/mogs/tree/main/examples/demo)).
 
-Say, the assignment name is `demo` directory (relative to the current working directory) and named `hw.py`.
+Say the assignment is in the directory `demo`, with the notebook `demo/hw.py`.
 Then:
 
 ```bash
