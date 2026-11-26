@@ -141,7 +141,7 @@ PLAIN_NOTE = "This cell could not be rendered and is shown as plain text."
 
 # A paragraph that marimo shows as display math without dollar signs.
 ENVIRONMENT = re.compile(r"\\begin\{((?:align|equation|gather)\*?)\}.*\\end\{\1\}", re.DOTALL)
-PARAGRAPH_START = re.compile(r"(?:.*\n)?[ \t]*\n", re.DOTALL)
+SPACES = re.compile(r"[ \t]*")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
 BLANK_LINE = re.compile(r"\n[ \t]*\n")
 
@@ -377,8 +377,7 @@ def _environment(text: str, start: int, end: int, index: int) -> Formula | None:
     `start` and `end` bound the run of prose that holds `index`.
     """
 
-    before = text[start:index]
-    if before and not PARAGRAPH_START.fullmatch(before):
+    if not text.startswith("\\begin{", index) or not _paragraph_starts(text, start, index):
         return None
 
     blank = BLANK_LINE.search(text, index, end)
@@ -387,6 +386,23 @@ def _environment(text: str, start: int, end: int, index: int) -> Formula | None:
         return None
 
     return Formula(index, index + len(paragraph), paragraph, display=True, environment=True)
+
+
+def _paragraph_starts(text: str, start: int, index: int) -> bool:
+    """Whether a paragraph starts at `index`: the prose start, or after a blank line.
+
+    Only the line before `index` is read.
+    """
+
+    if index == start:
+        return True
+
+    if text[index - 1] != "\n":
+        return False
+
+    line_start = max(text.rfind("\n", start, index - 1) + 1, start)
+
+    return SPACES.fullmatch(text, line_start, index - 1) is not None
 
 
 def _delimited(text: str) -> str:

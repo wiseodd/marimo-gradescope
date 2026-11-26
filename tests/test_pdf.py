@@ -151,6 +151,25 @@ def test_find_formulas_skips_environments_marimo_shows_as_text(text):
     assert not any(formula.environment for formula in find_formulas(text))
 
 
+class CountingStr(str):
+    """A `str` that counts the characters its slices copy."""
+
+    copied = 0
+
+    def __getitem__(self, key):
+        item = super().__getitem__(key)
+        CountingStr.copied += len(item)
+        return item
+
+
+def test_find_formulas_work_is_linear_in_backslashes(monkeypatch):
+    text = CountingStr("Some \\alpha and " * 2000 + "\n\n" + ALIGN)
+    monkeypatch.setattr(CountingStr, "copied", 0)
+
+    assert spans(text)[-1] == ALIGN
+    assert CountingStr.copied < 10 * len(text)
+
+
 # Markdown of a cell
 
 
