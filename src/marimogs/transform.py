@@ -435,18 +435,16 @@ def _edited(
         if question.manual:
             _name_written_cells(edits, lines, nb, question.id)
 
-    text = "\n".join(
-        new for number, line in enumerate(lines, start=1) for new in edits.get(number, [line])
-    )
+    copied = [
+        (number, new)
+        for number, line in enumerate(lines, start=1)
+        for new in edits.get(number, [line])
+    ]
+    text = "\n".join(new for _, new in copied)
+    # Parsed before the header edit, which can change the line count. The header is
+    # comments only, so it does not change whether the code parses.
+    _check_python(text, [number for number, _ in copied], lines)
     text = set_dependency(text, tool_requirement)
-
-    try:
-        ast.parse(text)
-    except SyntaxError as e:
-        raise SourceError(
-            f"The student notebook is not valid Python (line {e.lineno}): {e.msg}. Check the "
-            f"`{SOLUTION}` and `{BEGIN}` edits around that line."
-        ) from e
 
     if not solutions and (leaks := solution_leaks(nb, text)):
         raise SourceError(
@@ -467,6 +465,37 @@ def _append_cells(text: str, cells: str) -> str:
     tail = "\n".join(lines[end:]).lstrip("\n")
 
     return f"{head}\n\n\n{cells}" + (f"\n\n{tail}" if tail else "")
+
+
+def _check_python(text: str, origin: list[int], lines: list[str]) -> None:
+    """Raise if the student copy `text` does not parse, naming the source line.
+
+    Args:
+        text: The student copy.
+        origin: For each line of `text`, the number of the source line it came from.
+        lines: The source lines.
+
+    Raises:
+        SourceError: If `text` is not valid Python.
+    """
+
+    def source(copy_line: int) -> int:
+        return origin[min(max(copy_line, 1), len(origin)) - 1]
+
+    try:
+        ast.parse(text)
+    except SyntaxError as e:
+        # Text that fails to parse has at least one line, so `origin` is not empty.
+        number = source(e.lineno or len(origin))
+        # The message can name other lines of the copy, as in "after function
+        # definition on line 20".
+        msg = re.sub(r"\bline (\d+)", lambda m: f"line {source(int(m[1]))}", e.msg)
+        code = lines[number - 1].strip()
+
+        raise SourceError(
+            f"The student notebook is not valid Python at source line {number} (`{code}`): "
+            f"{msg}. Check the `{SOLUTION}` and `{BEGIN}` edits around that line."
+        ) from e
 
 
 def _drop_cell(edits: Edits, lines: list[str], cell: Cell) -> None:

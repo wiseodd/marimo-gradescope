@@ -413,6 +413,34 @@ def _():
 """)
 
 
+def test_invalid_output_names_the_source_line():
+    # The dropped cell above the function shifts the copy's line numbers.
+    with pytest.raises(SourceError) as info:
+        student_of("""
+@app.cell
+def _():
+    # HIDDEN
+    x = 1
+    return
+
+
+@app.function
+def f(x):
+    print(x)  # SOLUTION
+
+
+@app.cell
+def _():
+    y = 2
+    return
+""")
+
+    message = str(info.value)
+    assert "source line 31" in message
+    assert "after function definition on line 27" in message
+    assert "`@app.cell`" in message
+
+
 # Hidden cells
 
 
