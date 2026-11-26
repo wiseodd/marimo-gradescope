@@ -161,6 +161,51 @@ def test_pdf_has_title_prompt_and_answer(tmp_path):
     assert sorted(path.name for path in tmp_path.iterdir()) == ["answers.pdf", "hw.py"]
 
 
+PART_B = """
+@app.cell
+def _():
+    mo.md(r\"\"\"
+    (b) Is subtraction commutative?
+    \"\"\")
+    return
+
+
+@app.cell
+def _():
+    mo.md(r\"\"\"
+    <!-- BEGIN SOLUTION -->
+    <!-- PROMPT: No, since 2 - 1 differs from 1 - 2. -->
+    No.
+    <!-- END SOLUTION -->
+    \"\"\")
+    return
+
+"""
+
+
+def test_pdf_puts_each_part_s_text_before_its_answer(tmp_path):
+    source = tmp_path / "src.py"
+    grade = '\n@app.cell\ndef _():\n    mogs.grade("q3", points=5)'
+    source.write_text(
+        SOLUTION.read_text(encoding="utf-8").replace(grade, "\n" + PART_B + grade),
+        encoding="utf-8",
+    )
+    notebook = tmp_path / "hw.py"
+    notebook.write_text(student_copy(source), encoding="utf-8")
+    out = tmp_path / "answers.pdf"
+
+    render_manual_pdf(notebook, ["q3"], {"q3": "Commutativity"}, out)
+    text = text_of(PdfReader(out))
+
+    order = [
+        "Why is addition commutative?",
+        ANSWER,
+        "(b) Is subtraction commutative?",
+        "No, since 2 - 1 differs from 1 - 2.",
+    ]
+    assert [text.index(part) for part in order] == sorted(text.index(part) for part in order)
+
+
 def test_math_answers_render_one_page_per_question(tmp_path):
     reader = render(
         tmp_path,

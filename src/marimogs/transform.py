@@ -90,7 +90,9 @@ def student_notebook(
       For a written question it becomes `grade("q2", points=<p>, title=<title>,
       manual=True)`. The points and title come from `cfg`.
     - A written question's Markdown cells are named for the export: its answers
-      `answer_<qid>`, `answer_<qid>_2`, ..., and the prompts before them `prompt_<qid>`, ...
+      `answer_<qid>`, `answer_<qid>_2`, ..., and its prompts `prompt_<qid>`, `prompt_<qid>_2`,
+      ... (`Notebook.written_cells`). The cells keep their order, so the PDF pairs each
+      answer with the prompts just before it.
     - Export cells go after the last cell: a "Submit" note, the export button and the export
       panel (`export_cells`).
     - The header depends on `tool_requirement`.

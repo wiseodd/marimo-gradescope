@@ -13,7 +13,7 @@ from marimogs.config import ConfigError
 from marimogs.regrade import GradeResult, grade_submission
 from marimogs.requirements import RequirementsError
 from marimogs.scaffold import InitError, init
-from marimogs.source import SourceError
+from marimogs.source import NO_TEXT, SourceError
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -137,7 +137,11 @@ def grade_report(result: GradeResult) -> str:
 
 
 def report(result: BuildResult) -> str:
-    """The files to upload and distribute, then the self-check scores and the warnings."""
+    """The files to upload and distribute, then the self-check scores and the warnings.
+
+    Each written question is listed with the first line of each of its prompt cells, so the
+    instructor can check which text goes into the PDF.
+    """
 
     lines = [
         "All done!",
@@ -156,7 +160,8 @@ def report(result: BuildResult) -> str:
                 if score.points
                 else "collected in the PDF, not graded"
             )
-            manual.append(f"{score.id} {score.title}: {how}")
+            manual.append(f"- {score.id} {score.title}: {how}")
+            manual += [f"    {line}" for line in score.prompts or (NO_TEXT,)]
             continue
 
         rows.append(
@@ -178,7 +183,7 @@ def report(result: BuildResult) -> str:
 
     if manual:
         lines += ["", "Not in the autograder total:"]
-        lines += [f"- {line}" for line in manual]
+        lines += manual
 
     if result.warnings:
         lines += ["", "Warnings:"]

@@ -64,6 +64,10 @@ SOLUTION_WORD = "solution"
 REGION_WORDS = ("begin", "end")
 
 
+# What the build report and the assignment summary show for a written question without prompts.
+NO_TEXT = "no question text"
+
+
 class SourceError(Exception):
     """The notebook source cannot be parsed into cells."""
 
@@ -193,37 +197,38 @@ class Notebook:
         return self.cells[start:end]
 
     def written_cells(self, qid: str) -> tuple[tuple[Cell, ...], tuple[Cell, ...]]:
-        """Prompt and answer cells of a written question in the source, found by position.
+        """Prompt and answer cells of a written question in the source, in file order.
 
-        Among the question's `mo.md(...)` cells (`question_cells`), the answers are plain
-        Markdown cells holding a `<!-- BEGIN SOLUTION -->` line, and the prompts are those
-        before the first answer. A prompt need not be a plain string; the PDF shows such a
-        cell as source.
+        The answers are the plain Markdown cells of the question (`question_cells`) that hold
+        a `<!-- BEGIN SOLUTION -->` line. Each answer's prompt is the run of `mo.md(...)` cells
+        just before it. Cells students don't see (hidden, instructor, test and assignment
+        cells) are skipped; any other cell, an answer included, ends the run. So text between
+        two answers belongs to the second. A prompt need not be a plain string; the PDF shows
+        such a cell as source.
         """
 
         lines = split_lines(self.src)
-        markdown = [
-            cell
-            for cell in self.question_cells(qid)
-            if not (cell.hidden or cell.tests or cell.assignment or cell.instructor)
-            and is_md_call(self, cell)
-        ]
-        answers = tuple(
-            cell
-            for cell in markdown
-            if is_markdown(self, cell)
-            and any(
+        prompts: list[Cell] = []
+        answers: list[Cell] = []
+        run: list[Cell] = []
+
+        for cell in self.question_cells(qid):
+            if cell.hidden or cell.tests or cell.assignment or cell.instructor:
+                continue
+
+            if is_markdown(self, cell) and any(
                 line_marker(line, True)[0] is Marker.BEGIN
                 for line in lines[cell.start - 1 : cell.end]
-            )
-        )
+            ):
+                prompts += run
+                answers.append(cell)
+                run = []
+            elif is_md_call(self, cell):
+                run.append(cell)
+            else:
+                run = []
 
-        if not answers:
-            return (), ()
-
-        prompts = tuple(cell for cell in markdown if cell.start < answers[0].start)
-
-        return prompts, answers
+        return tuple(prompts), tuple(answers)
 
     def setup_source(self) -> str:
         """Dedented body of the setup cell, or `""` when the notebook has none."""
@@ -355,6 +360,27 @@ def module_tests(source: str) -> tuple[str, ...]:
         for node in ast.parse(source).body
         if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
     )
+
+
+def prompt_previews(nb: Notebook, qid: str, width: int = 60) -> tuple[str, ...]:
+    """The first non-blank line of each prompt cell of a written question in the source.
+
+    A line longer than `width` is cut and ends in `…`. For a prompt that is not a plain
+    string, the line comes from its source. A blank prompt has no line, so a question with
+    only blank prompts gets `()`.
+    """
+
+    previews = []
+
+    for cell in nb.written_cells(qid)[0]:
+        text = answer_text(nb, cell)
+        source = nb.cell_body_source(cell) if text is None else text
+        line = next((line.strip() for line in source.splitlines() if line.strip()), "")
+
+        if line:
+            previews.append(line if len(line) <= width else line[: width - 1] + "…")
+
+    return tuple(previews)
 
 
 def answer_text(nb: Notebook, cell: Cell) -> str | None:

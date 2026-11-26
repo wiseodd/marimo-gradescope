@@ -190,6 +190,11 @@ def test_solution_full_marks_and_blank_zero(demo):
         ("Reading scores", 6, 0, 2, 2),
         ("Empty lists", None, None, 0, 0),
     ]
+    assert [score.prompts for score in result.scores] == [
+        (),
+        (),
+        ("## Question 3: Empty lists",),
+    ]
     assert not any("blank" in warning for warning in result.warnings)
 
 
@@ -502,6 +507,23 @@ def test_report_shows_manual_questions(tmp_path):
     assert "graded by hand" in text
     assert "5 pts" in text
     assert "- careful" in text
+
+
+def test_report_previews_the_text_of_written_questions(tmp_path):
+    result = fake_result(
+        tmp_path / "dist",
+        scores=(
+            QuestionScore("q3", "Proof", 5, None, None, prompts=("## Question 3", "(b) Then")),
+            QuestionScore("q4", "Essay", 2, None, None),
+        ),
+    )
+
+    text = report(result)
+
+    assert (
+        "- q3 Proof: 5 pts, graded by hand\n    ## Question 3\n    (b) Then\n"
+        "- q4 Essay: 2 pts, graded by hand\n    no question text"
+    ) in text
 
 
 def test_report_says_a_zero_point_manual_question_is_not_graded(tmp_path):

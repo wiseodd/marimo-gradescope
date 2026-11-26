@@ -35,8 +35,19 @@ def test_summary_lists_the_questions_and_the_total(tmp_path):
     assert "Fixture · 3 questions · 15 pts" in text
     assert "q1 Question 1 4 pts auto-graded: 2 public, 1 hidden" in text
     assert "q2 Vowels 6 pts auto-graded: 1 public, 2 hidden" in text
-    assert "q3 Question 3 5 pts written" in text
+    assert "q3 Question 3 5 pts written ## Question 3" in text
     assert "marimogs build" in text
+
+
+def test_summary_says_when_a_written_question_has_no_text(tmp_path):
+    notebook = tmp_path / "hw.py"
+    src = FIXTURE.read_text(encoding="utf-8").replace("## Question 3", "x = 1  # not text", 1)
+    src = src.replace('mo.md(r"""\n    x = 1', 'x = 1\n    mo.md(r"""\n    x = 1', 1)
+    notebook.write_text(src, encoding="utf-8")
+
+    text = words(summary(notebook))
+
+    assert "q3 Question 3 5 pts written no question text" in text
 
 
 def test_summary_lists_the_problems(tmp_path):

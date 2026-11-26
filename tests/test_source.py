@@ -11,6 +11,7 @@ from marimogs.source import (
     SourceError,
     module_tests,
     parse_notebook,
+    prompt_previews,
     validate,
 )
 
@@ -295,7 +296,11 @@ def grade_cell(qid: str) -> str:
     return f'\n@app.cell\ndef _():\n    mogs.grade("{qid}", points=1)\n    return\n'
 
 
-def test_written_cells_are_found_by_position():
+def bodies(notebook, cells) -> list[str]:
+    return [notebook.cell_body_source(cell) for cell in cells]
+
+
+def test_written_prompts_are_the_markdown_just_before_each_answer():
     notebook = parse_notebook(
         nb(
             md("Intro")
@@ -304,21 +309,88 @@ def test_written_cells_are_found_by_position():
             + md("Question 2")
             + md("More text")
             + ANSWER_MD
-            + md("A note")
+            + md("(b) A second part")
             + ANSWER_MD
             + grade_cell("q2")
         )
     )
-    text = [notebook.cell_body_source(cell) for cell in notebook.cells]
 
     prompts, answers = notebook.written_cells("q2")
 
-    assert [text[notebook.cells.index(cell)] for cell in prompts] == [
+    assert bodies(notebook, prompts) == [
         'mo.md(r"""\nQuestion 2\n""")\n',
         'mo.md(r"""\nMore text\n""")\n',
+        'mo.md(r"""\n(b) A second part\n""")\n',
     ]
     assert len(answers) == 2
     assert notebook.question_cells("q9") == ()
+
+
+DEMO_CODE = "\n@app.cell\ndef _():\n    plot = [1, 2, 3]\n    return (plot,)\n"
+
+
+def test_a_code_cell_ends_the_written_prompt():
+    notebook = parse_notebook(
+        nb(
+            PUBLIC
+            + grade_cell("q1")
+            + md("A short demo")
+            + DEMO_CODE
+            + md("Question 2")
+            + ANSWER_MD
+            + grade_cell("q2")
+        )
+    )
+
+    prompts, _ = notebook.written_cells("q2")
+
+    assert bodies(notebook, prompts) == ['mo.md(r"""\nQuestion 2\n""")\n']
+
+
+def test_cells_students_do_not_see_keep_the_written_prompt():
+    hidden = "\n@app.cell\ndef _():\n    # HIDDEN\n    secret = 1\n    return (secret,)\n"
+    instructor = "\n@app.cell\ndef instructor():\n    note = 2\n    return (note,)\n"
+    tests = "\n@app.cell\ndef _():\n    def test_q2_x():\n        assert True\n    return\n"
+    notebook = parse_notebook(
+        nb(md("Question 2") + hidden + instructor + tests + ANSWER_MD + grade_cell("q2"))
+    )
+
+    prompts, answers = notebook.written_cells("q2")
+
+    assert bodies(notebook, prompts) == ['mo.md(r"""\nQuestion 2\n""")\n']
+    assert len(answers) == 1
+
+
+def test_prompt_previews_are_the_first_line_of_each_prompt():
+    long = "x" * 80
+    dynamic = '\n@app.cell\ndef _():\n    mo.md(f"Question {n}")\n    return\n'
+    notebook = parse_notebook(
+        nb(
+            md("\n    ## Question 2\n\n    Explain.")
+            + ANSWER_MD
+            + md(long)
+            + ANSWER_MD
+            + dynamic
+            + ANSWER_MD
+            + grade_cell("q2")
+            + ANSWER_MD
+            + grade_cell("q3")
+        )
+    )
+
+    assert prompt_previews(notebook, "q2") == (
+        "## Question 2",
+        "x" * 59 + "…",
+        'mo.md(f"Question {n}")',
+    )
+    assert prompt_previews(notebook, "q3") == ()
+
+
+def test_prompt_previews_skip_empty_prompts():
+    notebook = parse_notebook(nb(md("   ") + ANSWER_MD + grade_cell("q2")))
+
+    assert notebook.written_cells("q2")[0]
+    assert prompt_previews(notebook, "q2") == ()
 
 
 def test_answer_cells_with_suffix():

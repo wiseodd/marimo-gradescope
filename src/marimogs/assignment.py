@@ -20,7 +20,14 @@ from marimogs.check import (
     locate,
 )
 from marimogs.config import AssignmentConfig, ConfigError, read_config
-from marimogs.source import Notebook, SourceError, parse_notebook, validate
+from marimogs.source import (
+    NO_TEXT,
+    Notebook,
+    SourceError,
+    parse_notebook,
+    prompt_previews,
+    validate,
+)
 
 if TYPE_CHECKING:
     import marimo as mo
@@ -92,7 +99,10 @@ def assignment(
 
 
 def summary(cfg: AssignmentConfig, nb: Notebook, path: Path) -> str:
-    """HTML for a valid assignment: one row per question, then how to build it."""
+    """HTML for a valid assignment: one row per question, then how to build it.
+
+    A written question's row also has the first line of each of its prompt cells.
+    """
 
     total = sum(question.points for question in cfg.questions.values())
     count = len(cfg.questions)
@@ -102,16 +112,20 @@ def summary(cfg: AssignmentConfig, nb: Notebook, path: Path) -> str:
 
     for qid, question in cfg.questions.items():
         public, hidden = tests.get(qid, ([], []))
-        kind = (
-            "written"
-            if question.manual
-            else f"auto-graded: {len(public)} public, {len(hidden)} hidden"
-        )
-        cells = (qid, question.title, format_points(question.points), kind)
+
+        # The kind cell is HTML; a written question lists its prompts under it.
+        if question.manual:
+            kind = "written" + "".join(
+                f'<div style="{NOTE_STYLE}">{html.escape(line)}</div>'
+                for line in prompt_previews(nb, qid) or (NO_TEXT,)
+            )
+        else:
+            kind = html.escape(f"auto-graded: {len(public)} public, {len(hidden)} hidden")
+
+        texts = (qid, question.title, format_points(question.points))
+        cells = [*(html.escape(text) for text in texts), kind]
         rows.append(
-            "<tr>"
-            + "".join(f'<td style="{CELL_STYLE}">{html.escape(c)}</td>' for c in cells)
-            + "</tr>"
+            "<tr>" + "".join(f'<td style="{CELL_STYLE}">{cell}</td>' for cell in cells) + "</tr>"
         )
 
     body = f'<table style="border-collapse: collapse;">{"".join(rows)}</table>'

@@ -48,7 +48,7 @@ from marimogs.grader.results import Results, build_results
 from marimogs.grader.templates import run_autograder_script, setup_script
 from marimogs.requirements import gradescope_requirements
 from marimogs.runner import FailureReason, Outcome
-from marimogs.source import Notebook, parse_notebook, question_id, validate
+from marimogs.source import Notebook, parse_notebook, prompt_previews, question_id, validate
 from marimogs.transform import (
     TESTS_FOLDER,
     pinned_requirement,
@@ -87,6 +87,8 @@ class QuestionScore:
         blank: Score of the student copy; `None` for a question graded by hand.
         public: Number of public tests.
         hidden: Number of hidden tests.
+        prompts: First line of each prompt cell of a written question, as
+            `prompt_previews` gives it.
     """
 
     id: str
@@ -96,6 +98,7 @@ class QuestionScore:
     blank: float | None
     public: int = 0
     hidden: int = 0
+    prompts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -533,7 +536,14 @@ def _scores(
         public, hidden = tests.get(q.id, ([], []))
         scores.append(
             QuestionScore(
-                q.id, q.title, q.points, ours.get(q.id), theirs.get(q.id), len(public), len(hidden)
+                q.id,
+                q.title,
+                q.points,
+                ours.get(q.id),
+                theirs.get(q.id),
+                len(public),
+                len(hidden),
+                prompt_previews(nb, q.id) if q.manual else (),
             )
         )
 
