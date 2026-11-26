@@ -17,6 +17,7 @@ import marimo_gradescope
 from marimo_gradescope._run import run_capped
 from marimo_gradescope.config import read_config
 from marimo_gradescope.export import (
+    Download,
     Line,
     Mark,
     export,
@@ -33,7 +34,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 SOLUTION = FIXTURES / "solution.py"
 # The package's `export` attribute is the function, so take the module from `sys.modules`.
 export_module = importlib.import_module("marimo_gradescope.export")
-TITLES = {"q3": "Question 3"}
+TITLES = {"q1": "Question 1", "q2": "Vowels", "q3": "Question 3"}
 ANSWER = "Because the order of the terms does not change the sum."
 # The student copy's answer cell is the source's, unchanged: its text is the placeholder.
 PLACEHOLDERS = {"q3": ANSWER}
@@ -67,6 +68,10 @@ def solved_copy() -> str:
 
 def texts(lines: tuple[Line, ...]) -> list[str]:
     return [f"{line.mark} {line.text}" for line in lines]
+
+
+def item_texts(line: Line) -> list[str]:
+    return texts(line.items)
 
 
 def zip_names(data: bytes) -> list[str]:
@@ -147,14 +152,12 @@ def test_package_reports_disk_file_tests_and_download(tmp_path, no_pdf):
     result = package(notebook, name="hw", manual=["q3"], titles=TITLES)
     lines = texts(result.lines)
 
-    assert lines[0] == f"✓ Using {notebook} (saved {saved})"
-    assert lines[1] == (
-        "✓ Public tests: 0/3 passed (q1: test_q1_add, test_q1_add_negative failed; "
-        "q2: test_q2_count failed)"
-    )
-    assert lines[2] == "⚠ PDF not created: typst is not installed; answers included as Markdown"
-    assert lines[-1] == "⬇ hw_submission.zip — upload this to Gradescope"
+    assert lines[0] == "⚠ Public tests: 0/3 passed"
+    assert item_texts(result.lines[0]) == ["✗ Question 1: 0/2 passed", "✗ Vowels: 0/1 passed"]
+    assert lines[1] == "⚠ PDF not created: typst is not installed; answers included as Markdown"
+    assert not any("Using" in line or "⬇" in line for line in lines)
     assert result.filename == "hw_submission.zip"
+    assert result.note == f"Exported hw.py as saved at {saved}."
 
 
 def test_package_uses_the_disk_file_not_the_kernel(tmp_path, no_pdf):
@@ -162,13 +165,14 @@ def test_package_uses_the_disk_file_not_the_kernel(tmp_path, no_pdf):
     notebook = tmp_path / "hw.py"
     notebook.write_text(student_copy(), encoding="utf-8")
     assert (
-        "0/3 passed" in texts(package(notebook, name="hw", manual=["q3"], titles=TITLES).lines)[1]
+        "0/3 passed" in texts(package(notebook, name="hw", manual=["q3"], titles=TITLES).lines)[0]
     )
 
     notebook.write_text(solved_copy(), encoding="utf-8")
     result = package(notebook, name="hw", manual=["q3"], titles=TITLES)
 
-    assert texts(result.lines)[1] == "✓ Public tests: 3/3 passed"
+    assert texts(result.lines)[0] == "✓ Public tests: 3/3 passed"
+    assert item_texts(result.lines[0]) == ["✓ Question 1: 2/2 passed", "✓ Vowels: 1/1 passed"]
     # Bytes: on Windows `write_text` writes CRLF, and the zip holds the file as saved.
     assert zip_bytes(result.data, "hw.py") == notebook.read_bytes()
 
@@ -210,7 +214,7 @@ def test_no_manual_questions_zip_has_only_the_notebook(tmp_path, monkeypatch):
     result = package(notebook, name="hw", manual=[], titles={})
 
     assert zip_names(result.data) == ["hw.py"]
-    assert len(result.lines) == 3
+    assert [line.text.split(":")[0] for line in result.lines] == ["Public tests"]
 
 
 @pytest.mark.parametrize(
@@ -305,7 +309,6 @@ def test_change_during_export_is_warned_and_snapshot_zipped(tmp_path, monkeypatc
     assert Path(command[3]) == notebook
     assert cwd == tmp_path
     assert "⚠ The notebook changed during the export; export again." in lines
-    assert lines[-1].startswith("⬇ hw_submission.zip")
     assert zip_bytes(result.data, "hw.py") == original
     assert sorted(path.name for path in tmp_path.iterdir()) == ["hw.py"]
 
@@ -337,7 +340,7 @@ def test_tests_reading_data_next_to_dunder_file_pass(tmp_path, no_pdf):
 
     result = package(notebook, name="hw", manual=[], titles={})
 
-    assert texts(result.lines)[1] == "✓ Public tests: 4/4 passed"
+    assert texts(result.lines)[0] == "✓ Public tests: 4/4 passed"
 
 
 def test_snapshot_tests_read_data_next_to_the_notebook(tmp_path, no_pdf):
@@ -354,7 +357,7 @@ def test_snapshot_tests_read_data_next_to_the_notebook(tmp_path, no_pdf):
 
     result = package(notebook, name="hw", manual=[], titles={})
 
-    assert texts(result.lines)[1] == "✓ Public tests: 4/4 passed"
+    assert texts(result.lines)[0] == "✓ Public tests: 4/4 passed"
 
 
 def test_selfcheck_timeout_is_reported(tmp_path, monkeypatch, no_pdf):
@@ -373,7 +376,7 @@ def test_selfcheck_timeout_is_reported(tmp_path, monkeypatch, no_pdf):
     lines = texts(package(notebook, name="hw", manual=["q3"], titles=TITLES).lines)
 
     assert time.monotonic() - start < 30
-    assert lines[1] == "⚠ Public tests: the check timed out after 2 s"
+    assert lines[0] == "⚠ Public tests: the check timed out after 2 s"
 
 
 def test_unparsable_notebook_still_packaged(tmp_path, no_pdf):
@@ -383,8 +386,8 @@ def test_unparsable_notebook_still_packaged(tmp_path, no_pdf):
     result = package(notebook, name="hw", manual=["q3"], titles=TITLES)
     lines = texts(result.lines)
 
-    assert lines[1].startswith("⚠ Public tests could not run: ")
-    assert "not valid Python" in lines[1]
+    assert lines[0].startswith("⚠ Public tests could not run: ")
+    assert "not valid Python" in lines[0]
     assert "⚠ answer_q3 is missing or empty" in lines
     assert "hw.py" in zip_names(result.data)
 
@@ -505,13 +508,28 @@ def test_real_pdf_in_zip(tmp_path):
 # Panel
 
 
+def test_panel_sets_the_download_apart_below_the_checks():
+    html = panel(
+        (Line(Mark.OK, "Public tests: 1/1 passed", (Line(Mark.OK, "Question 1: 1/1 passed"),)),),
+        Download("<a>dl</a>", "hw_submission.zip", "Exported hw.py."),
+    )
+
+    checks, download = html.split("hw_submission.zip", 1)
+    assert "Question 1: 1/1 passed" in checks
+    assert "<a>dl</a>" in download
+    assert "border-top" in checks[checks.rindex("<div") :]
+
+
 def test_panel_escapes_text_and_has_no_hard_colors():
-    html = panel((Line(Mark.OK, "<b>x</b> & y"), Line(Mark.WARN, "z")), download="<a>dl</a>")
+    lines = (Line(Mark.OK, "<b>x</b> & y", (Line(Mark.FAIL, "<i>q1</i>"),)), Line(Mark.WARN, "z"))
+    html = panel(lines, Download("<a>dl</a>", "hw_<1>.zip", "Exported <hw>.py."))
 
     assert "&lt;b&gt;x&lt;/b&gt; &amp; y" in html
-    assert "<b>x</b>" not in html
+    assert "&lt;i&gt;q1&lt;/i&gt;" in html
+    assert "<b>x</b>" not in html and "<i>q1</i>" not in html
     assert "<a>dl</a>" in html
-    assert "Export again after further changes." in html
+    assert "hw_&lt;1&gt;.zip — upload this to Gradescope" in html
+    assert "Exported &lt;hw&gt;.py. Export again after further changes." in html
     assert "Export again" not in panel((Line(Mark.OK, "x"),))
     assert "color: #" not in html
     assert "color: black" not in html and "color: white" not in html

@@ -572,7 +572,8 @@ def test_export_cells_appended_before_main_guard():
     assert "import marimo_gradescope" not in tail
     assert "    export_button\n" in tail
     assert (
-        'mgs.export(export_button, name="solution", manual=["q3"], titles={"q3": "Question 3"}, '
+        'mgs.export(export_button, name="solution", manual=["q3"], titles={"q1": "Question 1", '
+        '"q2": "Vowels", "q3": "Question 3"}, '
         'placeholders={"q3": "Because the order of the terms does not change the sum."})' in tail
     )
 
@@ -594,7 +595,10 @@ def _():
     return
 """)
 
-    assert 'mgs.export(export_button, name="nb", manual=[], titles={}, placeholders={})' in out
+    assert (
+        'mgs.export(export_button, name="nb", manual=[], titles={"q1": "Q1"}, placeholders={})'
+        in out
+    )
 
 
 def test_export_cells_use_the_setup_alias():
@@ -621,6 +625,110 @@ def test_export_cells_refuse_a_taken_mgs_name():
 
     with pytest.raises(SourceError, match="marimo_gradescope"):
         student_notebook(src, parse_notebook(src), read_config(src, PURE), REQUIREMENT)
+
+
+def submit_cell(out: str) -> str:
+    """Body of the student copy's Submit cell."""
+
+    nb = parse_notebook(out)
+    [cell] = [cell for cell in nb.cells if "## Submit" in nb.cell_body_source(cell)]
+
+    return nb.cell_body_source(cell)
+
+
+def test_submit_note_mentions_written_answers_only_with_manual_questions():
+    with_manual = submit_cell(student(SOLUTION))
+    without = submit_cell(student_of("\n@app.cell\ndef _():\n    x = 1\n    return\n"))
+
+    assert "written answers" in with_manual
+    assert "written answers" not in without
+    assert "zip of your notebook." in " ".join(without.split())
+
+
+def test_submit_note_says_how_to_show_the_button():
+    note = " ".join(submit_cell(student(SOLUTION)).split())
+
+    assert "Run all stale cells" in note
+    assert "Ctrl+Shift+R" in note
+
+
+@pytest.mark.parametrize("imports_mo", [True, False])
+def test_submit_note_renders_before_any_cell_runs(imports_mo):
+    # With marimo's default `auto_instantiate = false`, nothing runs on open. marimo still
+    # renders a cell that is just `mo.md(...)`, as long as some cell defines `mo`.
+    from marimo._ast.compiler import compile_cell
+    from marimo._types.ids import CellId_t
+
+    out = student(PURE) if imports_mo else student_of("\n@app.cell\ndef _():\n    x = 1\n")
+    nb = parse_notebook(out)
+    defines_mo = [
+        cell
+        for cell in nb.cells
+        if "mo" in compile_cell(nb.cell_body_source(cell), cell_id=CellId_t("c")).defs
+    ]
+
+    assert compile_cell(submit_cell(out), cell_id=CellId_t("submit")).markdown is not None
+    assert len(defines_mo) == 1
+
+
+MO_IN_A_CELL = "@app.cell\ndef _():\n    import marimo as mo\n\n    return (mo,)\n\n\n"
+
+
+@pytest.mark.parametrize(
+    ("cell", "importer"),
+    [("", "return (mo, mgs)"), (MO_IN_A_CELL, "return (mgs,)")],
+)
+def test_export_cells_take_names_from_other_cells_as_parameters(cell, importer, tmp_path):
+    pure = PURE.read_text(encoding="utf-8")
+    src = pure.replace("    import marimo as mo\n", "    import math\n").replace(
+        "@app.function\ndef add", cell + "@app.function\ndef add"
+    )
+    out = student_notebook(src, parse_notebook(src), read_config(src, PURE), REQUIREMENT)
+    notebook = tmp_path / "student.py"
+    notebook.write_text(out, encoding="utf-8")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "marimo", "check", str(notebook)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=outside_pytest(),
+    )
+
+    assert 'def _(mo):\n    mo.md(r"""\n    ## Submit' in out
+    assert "def _(mgs):\n    export_button = mgs.export_button()" in out
+    assert "def _(export_button, mgs):\n    mgs.export(" in out
+    assert importer in out
+    assert out.count("import marimo as mo") == 1
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (result.stdout + result.stderr).strip() == ""
+
+
+@pytest.mark.parametrize("solutions", [False, True])
+def test_export_cells_look_for_mo_in_the_copy_not_the_source(solutions):
+    # The student copy drops a solution region, imports in it included.
+    src = HEADER + (
+        "\n@app.cell\ndef _():\n    # BEGIN SOLUTION\n    import marimo as mo\n\n    mo = mo\n"
+        "    # END SOLUTION\n    return\n"
+    )
+
+    out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT, solutions=solutions)
+
+    assert out.count("import marimo as mo") == 1
+    assert ("    import marimo as mo\n\n    return (mo,)\n" in out) != solutions
+
+
+def test_export_cells_ignore_mo_bound_only_in_a_solution_region():
+    out = student_of(
+        "\n@app.cell\ndef _():\n    # BEGIN SOLUTION\n    mo = 1\n    # END SOLUTION\n    return\n"
+    )
+
+    assert out.count("import marimo as mo") == 1
+
+
+def test_export_cells_refuse_a_taken_mo_name():
+    with pytest.raises(SourceError, match="`mo`"):
+        student_of("\n@app.cell\ndef _():\n    mo = 1\n    return (mo,)\n")
 
 
 def test_export_cells_quote_titles_safely():
