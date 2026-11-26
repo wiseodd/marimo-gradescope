@@ -1,6 +1,6 @@
 [project]
 name = "marimo-gradescope"
-version = "0.5.1"
+version = "0.6.0"
 description = "Build Gradescope autograders from marimo notebooks."
 authors = [{ name = "Agustinus Kristiadi", email = "agustinus@kristia.de" }]
 license = "MIT"
