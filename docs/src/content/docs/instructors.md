@@ -211,9 +211,17 @@ def _():
 ```
 
 Students get `*Write your answer here.*` in place of your answer, or your `<!-- PROMPT: ... -->` text if you wrote some.
-The Markdown cells before the answer, back to the previous grade cell, are the question's text.
+The question's text is the run of Markdown cells just before the answer cell.
+A code cell ends that run, so the Markdown above a demo between two questions isn't part of the next question.
+Hidden, test and instructor cells don't end it, since students don't see them.
 
-When the student clicks the export button, the question's text and the answer go into a PDF, with the LaTeX math rendered.
+A question can have more than one answer cell, e.g., for parts (a) and (b).
+The Markdown between two answer cells is the text of the second one.
+
+To check what each question's text is, read the output of `marimogs build` or the `mogs.assignment(...)` summary.
+Both list the first line of each text cell of a written question, or "no question text".
+
+When the student clicks the export button, the answers go into a PDF, each after its text, with the LaTeX math rendered.
 The PDF goes into the submission zip, together with the notebook.
 
 A written question can be worth 0 points, e.g., `mogs.grade("q5", points=0)`.
