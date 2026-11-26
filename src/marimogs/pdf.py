@@ -554,7 +554,7 @@ def _document(questions: list[Question]) -> bytes:
         match part.style:
             case Style.MARKDOWN:
                 return _valid(_delimited(part.text))
-            case Style.PLAIN:
+            case Style.PLAIN | Style.NOTE:
                 return _valid(part.text)
 
     def parts(parts: tuple[Part, ...]) -> list[dict[str, str | None]]:
