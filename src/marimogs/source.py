@@ -61,6 +61,10 @@ NEAR_PROMPT_RE = re.compile(r"#\s*prompt\b", re.IGNORECASE)
 NEAR_HIDDEN_RE = re.compile(r"#\s*hidden\b", re.IGNORECASE)
 
 
+# What the build report and the assignment summary show for a written question without prompts.
+NO_TEXT = "no question text"
+
+
 class SourceError(Exception):
     """The notebook source cannot be parsed into cells."""
 
@@ -353,6 +357,24 @@ def module_tests(source: str) -> tuple[str, ...]:
         for node in ast.parse(source).body
         if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")
     )
+
+
+def prompt_previews(nb: Notebook, qid: str, width: int = 60) -> tuple[str, ...]:
+    """The first non-blank line of each prompt cell of a written question in the source.
+
+    A line longer than `width` is cut and ends in `…`. For a prompt that is not a plain
+    string, the line comes from its source.
+    """
+
+    previews = []
+
+    for cell in nb.written_cells(qid)[0]:
+        text = answer_text(nb, cell)
+        source = nb.cell_body_source(cell) if text is None else text
+        line = next((line.strip() for line in source.splitlines() if line.strip()), "")
+        previews.append(line if len(line) <= width else line[: width - 1] + "…")
+
+    return tuple(previews)
 
 
 def answer_text(nb: Notebook, cell: Cell) -> str | None:

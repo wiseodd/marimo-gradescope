@@ -11,6 +11,7 @@ from marimogs.source import (
     SourceError,
     module_tests,
     parse_notebook,
+    prompt_previews,
     validate,
 )
 
@@ -358,6 +359,31 @@ def test_cells_students_do_not_see_keep_the_written_prompt():
 
     assert bodies(notebook, prompts) == ['mo.md(r"""\nQuestion 2\n""")\n']
     assert len(answers) == 1
+
+
+def test_prompt_previews_are_the_first_line_of_each_prompt():
+    long = "x" * 80
+    dynamic = '\n@app.cell\ndef _():\n    mo.md(f"Question {n}")\n    return\n'
+    notebook = parse_notebook(
+        nb(
+            md("\n    ## Question 2\n\n    Explain.")
+            + ANSWER_MD
+            + md(long)
+            + ANSWER_MD
+            + dynamic
+            + ANSWER_MD
+            + grade_cell("q2")
+            + ANSWER_MD
+            + grade_cell("q3")
+        )
+    )
+
+    assert prompt_previews(notebook, "q2") == (
+        "## Question 2",
+        "x" * 59 + "…",
+        'mo.md(f"Question {n}")',
+    )
+    assert prompt_previews(notebook, "q3") == ()
 
 
 def test_answer_cells_with_suffix():
