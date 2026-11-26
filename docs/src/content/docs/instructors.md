@@ -12,21 +12,21 @@ hw1/
     └── scores.csv
 ```
 
-`marimogs build <directory name>` turns it into a student notebook and an autograder zip.
-[`examples/demo`](https://github.com/wiseodd/marimo-gradescope/tree/main/examples/demo) is a complete example.
+`mogs build <directory name>` turns it into a student notebook and an autograder zip.
+[`examples/demo`](https://github.com/wiseodd/mogs/tree/main/examples/demo) is a complete example.
 See also [marimo's official tutorial](https://docs.marimo.io/getting_started/quickstart/).
 
 ## Start
 
 ```bash
-marimogs init hw1
-marimogs edit hw1
+mogs init hw1
+mogs edit hw1
 ```
 
 `init` creates `hw1/hw1.py` with the cells every assignment needs, a guide, and two example questions.
 It refuses a directory that already has files in it.
-The notebook builds as it is, so you can run `marimogs build hw1` before changing anything.
-`edit` runs `marimo edit --sandbox` on the notebook with the marimo installed alongside `marimo-gradescope`.
+The notebook builds as it is, so you can run `mogs build hw1` before changing anything.
+`edit` runs `marimo edit --sandbox` on the notebook with the marimo installed alongside `mogs`.
 You don't need to install marimo separately.
 
 Everything below can be written in marimo's editor.
@@ -82,7 +82,7 @@ The notebook's header lists the packages it needs:
 ```python
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["marimo", "marimo-gradescope", "numpy"]
+# dependencies = ["marimo", "mogs", "numpy"]
 # ///
 ```
 
@@ -91,7 +91,7 @@ The notebook's header lists the packages it needs:
 The source notebook is a regular marimo notebook with a few conventions.
 
 Put all imports in the setup cell (`with app.setup:`).
-This includes `import marimogs as mogs` and any library the tests need.
+This includes `import mogs` and any library the tests need.
 
 ```python
 with app.setup:
@@ -100,7 +100,7 @@ with app.setup:
     import marimo as mo
     import numpy as np
 
-    import marimogs as mogs
+    import mogs
 ```
 
 Graded answers are functions.
@@ -140,7 +140,7 @@ Write the answer as a function instead, and load the data in the setup cell:
 
 ```python
 with app.setup:
-    import marimogs as mogs
+    import mogs
     import pandas as pd
 
     df = pd.read_csv("prices.csv")
@@ -272,7 +272,7 @@ Hidden, test and instructor cells don't end it, since students don't see them.
 A question can have more than one answer cell, e.g., for parts (a) and (b).
 The Markdown between two answer cells is the text of the second one.
 
-To check what each question's text is, read the output of `marimogs build` or the `mogs.assignment(...)` summary.
+To check what each question's text is, read the output of `mogs build` or the `mogs.assignment(...)` summary.
 Both list the first line of each text cell of a written question, or "no question text".
 
 When the student clicks the export button, the answers go into a PDF, each after its text, with the LaTeX math rendered.
@@ -303,7 +303,7 @@ It can't define names that other cells use, hold tests, or call `mogs.grade`.
 To build the assignment, run:
 
 ```bash
-marimogs build examples/demo
+mogs build examples/demo
 ```
 
 It prints what to do with the result:
@@ -359,7 +359,7 @@ On Windows, use WSL.
 To grade one submission locally, run:
 
 ```bash
-marimogs grade examples/demo submission.py
+mogs grade examples/demo submission.py
 ```
 
 This uses the same grader and the same requirements as Gradescope.
@@ -384,7 +384,7 @@ Custom package indexes in `[[tool.uv.index]]` carry over too.
 For example, this installs the CPU-only build of `torch`:
 
 ```python
-# dependencies = ["marimo", "marimo-gradescope", "torch"]
+# dependencies = ["marimo", "mogs", "torch"]
 #
 # [tool.uv.sources]
 # torch = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
