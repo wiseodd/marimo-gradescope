@@ -173,6 +173,53 @@ def _():
     )
 
 
+def test_inline_solution_return_and_yield_keep_the_keyword():
+    out = student_of("""
+@app.function
+def area(r):
+    return 3.14 * r * r  # SOLUTION
+
+
+@app.function
+def squares(n):
+    yield from range(n)  # SOLUTION
+
+
+@app.function
+def evens(n):
+    yield 2 * n  # SOLUTION
+""")
+
+    assert "def area(r):\n    return ...\n" in out
+    assert "def squares(n):\n    yield from ...\n" in out
+    assert "def evens(n):\n    yield ...\n" in out
+    ast.parse(out)
+
+
+def test_inline_solution_bare_return_and_yield_are_dropped():
+    out = student_of("""
+@app.function
+def f(n):
+    print(n)
+    yield  # SOLUTION
+    return  # SOLUTION
+""")
+
+    assert "def f(n):\n    print(n)\n\n" in out
+
+
+def test_inline_solution_augmented_assignment_is_dropped():
+    out = student_of("""
+@app.cell
+def _():
+    x = 1
+    x += 2  # SOLUTION
+    return
+""")
+
+    assert "    x = 1\n    return\n" in out
+
+
 def test_inline_solution_chained_and_tuple_targets():
     out = student_of("""
 @app.cell
@@ -364,6 +411,85 @@ def _():
         print(1)  # SOLUTION
     return
 """)
+
+
+def test_invalid_output_names_the_source_line():
+    # The dropped cell above the function shifts the copy's line numbers.
+    with pytest.raises(SourceError) as info:
+        student_of("""
+@app.cell
+def _():
+    # HIDDEN
+    x = 1
+    return
+
+
+@app.function
+def f(x):
+    print(x)  # SOLUTION
+
+
+@app.cell
+def _():
+    y = 2
+    return
+""")
+
+    message = str(info.value)
+    assert "source line 31" in message
+    assert "after function definition on line 27" in message
+    assert "`@app.cell`" in message
+
+
+def test_invalid_output_after_a_multiline_edit_names_the_source_line():
+    # The annotation keeps its three lines in the copy.
+    cells = """
+@app.cell
+def _():
+    x: dict[
+        str, int
+    ] = {}  # SOLUTION
+    return
+
+
+@app.function
+def f(x):
+    print(x)  # SOLUTION
+
+
+@app.cell
+def _():
+    y = 2
+    return
+"""
+    with pytest.raises(SourceError) as info:
+        student_of(cells)
+
+    lines = (HEADER + cells).split("\n")
+    after = lines.index("def f(x):") + 5
+    assert lines[after - 1] == "@app.cell"
+    message = str(info.value)
+    assert f"source line {after} (`@app.cell`)" in message
+    assert f"after function definition on line {after - 4}" in message
+
+
+def test_invalid_prompt_names_its_own_line():
+    cells = """
+@app.cell
+def _():
+    # BEGIN SOLUTION
+    # PROMPT: y = 1
+    # PROMPT: x = (
+    x = 2
+    # END SOLUTION
+    return
+"""
+    with pytest.raises(SourceError) as info:
+        student_of(cells)
+
+    lines = (HEADER + cells).split("\n")
+    broken = lines.index("    # PROMPT: x = (") + 1
+    assert f"source line {broken} (`# PROMPT: x = (`)" in str(info.value)
 
 
 # Hidden cells

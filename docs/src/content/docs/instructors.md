@@ -137,6 +137,9 @@ If there are no `# PROMPT:` lines, the student gets `...` instead.
 
 For a single line, put `# SOLUTION` at the end of it.
 For example, `lr = 0.1  # SOLUTION` becomes `lr = ...` in the student notebook.
+The same works for `lr: float = 0.1`, `return 2 * x`, `yield x` and `yield from xs`, which become `lr: float = ...`, `return ...`, `yield ...` and `yield from ...`.
+Any other line marked `# SOLUTION`, such as `print(x)` or `total += x`, is removed.
+If that leaves a block empty, the build fails and names the line; use `# BEGIN SOLUTION` with a `# PROMPT:` line there instead.
 A misspelled marker (e.g., `# SOULTION`) will fail the build.
 
 The markers work in any cell.

@@ -54,8 +54,9 @@ class MarimoImport(StrEnum):
     MISSING = "missing"
 
 
-# Replacement lines by 1-based line number. A line not in the map is kept as it is.
-type Edits = dict[int, list[str]]
+# Replacement lines by 1-based source line number, each with the source line it comes from.
+# A line not in the map is kept as it is.
+type Edits = dict[int, list[tuple[int, str]]]
 
 
 def pinned_requirement(cfg: AssignmentConfig) -> str:
@@ -79,8 +80,9 @@ def student_notebook(
       at the indent of `# BEGIN SOLUTION`, or `...` without them. In a Markdown cell the
       markers are `<!-- BEGIN SOLUTION -->`, `<!-- END SOLUTION -->` and
       `<!-- PROMPT: <text> -->`, and the placeholder is `*Write your answer here.*`.
-    - `x = rhs  # SOLUTION` becomes `x = ...`; another statement ending in `# SOLUTION` is
-      dropped.
+    - `x = rhs  # SOLUTION` becomes `x = ...`, and the same goes for `x: T = rhs`,
+      `return rhs`, `yield rhs` and `yield from rhs`. Another statement ending in
+      `# SOLUTION` is dropped.
     - `# HIDDEN` cells, public test cells, the `assignment(...)` cell and instructor cells
       are dropped with the blank lines after them. The public tests go to their own files
       instead (`public_test_files`).
@@ -434,18 +436,16 @@ def _edited(
         if question.manual:
             _name_written_cells(edits, lines, nb, question.id)
 
-    text = "\n".join(
-        new for number, line in enumerate(lines, start=1) for new in edits.get(number, [line])
-    )
+    copied = [
+        pair
+        for number, line in enumerate(lines, start=1)
+        for pair in edits.get(number, [(number, line)])
+    ]
+    text = "\n".join(new for _, new in copied)
+    # Parsed before the header edit, which can change the line count. The header is
+    # comments only, so it does not change whether the code parses.
+    _check_python(text, [number for number, _ in copied], lines)
     text = set_dependency(text, tool_requirement)
-
-    try:
-        ast.parse(text)
-    except SyntaxError as e:
-        raise SourceError(
-            f"The student notebook is not valid Python (line {e.lineno}): {e.msg}. Check the "
-            f"`{SOLUTION}` and `{BEGIN}` edits around that line."
-        ) from e
 
     if not solutions and (leaks := solution_leaks(nb, text)):
         raise SourceError(
@@ -466,6 +466,37 @@ def _append_cells(text: str, cells: str) -> str:
     tail = "\n".join(lines[end:]).lstrip("\n")
 
     return f"{head}\n\n\n{cells}" + (f"\n\n{tail}" if tail else "")
+
+
+def _check_python(text: str, origin: list[int], lines: list[str]) -> None:
+    """Raise if the student copy `text` does not parse, naming the source line.
+
+    Args:
+        text: The student copy.
+        origin: For each line of `text`, the number of the source line it came from.
+        lines: The source lines.
+
+    Raises:
+        SourceError: If `text` is not valid Python.
+    """
+
+    def source(copy_line: int) -> int:
+        return origin[min(max(copy_line, 1), len(origin)) - 1]
+
+    try:
+        ast.parse(text)
+    except SyntaxError as e:
+        # Text that fails to parse has at least one line, so `origin` is not empty.
+        number = source(e.lineno or len(origin))
+        # The message can name other lines of the copy, as in "after function
+        # definition on line 20".
+        msg = re.sub(r"\bline (\d+)", lambda m: f"line {source(int(m[1]))}", e.msg)
+        code = lines[number - 1].strip()
+
+        raise SourceError(
+            f"The student notebook is not valid Python at source line {number} (`{code}`): "
+            f"{msg}. Check the `{SOLUTION}` and `{BEGIN}` edits around that line."
+        ) from e
 
 
 def _drop_cell(edits: Edits, lines: list[str], cell: Cell) -> None:
@@ -516,7 +547,7 @@ def _solution_regions(
                 if start not in edits:
                     default = MARKDOWN_PLACEHOLDER if start in markdown else "..."
                     stub = [indent + code if code else "" for code in prompt or [default]]
-                    _replace(edits, start, number, stub)
+                    _replace(edits, start, number, stub, prompts or None)
                 start = None
             case Marker.BEGIN | Marker.END, _:
                 raise SourceError(f"line {number}: `{line.strip()}` does not pair up.")
@@ -533,7 +564,10 @@ def _solution_regions(
 def _inline_solutions(
     edits: Edits, lines: list[str], src: str, keep: bool, regions: set[int]
 ) -> None:
-    """Blank out the value of `x = rhs  # SOLUTION`; drop other statements so marked.
+    """Blank out the value of a statement marked `# SOLUTION`, or drop the statement.
+
+    `x = rhs`, `x: T = rhs`, `return rhs`, `yield rhs` and `yield from rhs` keep everything
+    but the value, which becomes `...`. Any other simple statement is dropped.
 
     With `keep`, only the comments go. A comment inside a solution region (`regions`) is not
     checked, since the student copy drops the whole region; with `keep` it is removed, and so
@@ -584,6 +618,17 @@ def _inline_solutions(
             case ast.AnnAssign(target=target, annotation=annotation, value=ast.expr()):
                 names = f"{_segment(src, target)}: {_segment(src, annotation)}"
                 _replace(edits, stmt.lineno, number, [f"{before}{names} = ..."])
+            case (
+                ast.Return(value=ast.expr())
+                | ast.Expr(value=ast.Yield(value=ast.expr()) | ast.YieldFrom())
+            ) if keep:
+                _replace(edits, number, number, uncommented)
+            case ast.Return(value=ast.expr()):
+                _replace(edits, stmt.lineno, number, [f"{before}return ..."])
+            case ast.Expr(value=ast.Yield(value=ast.expr())):
+                _replace(edits, stmt.lineno, number, [f"{before}yield ..."])
+            case ast.Expr(value=ast.YieldFrom()):
+                _replace(edits, stmt.lineno, number, [f"{before}yield from ..."])
             case (
                 ast.FunctionDef()
                 | ast.AsyncFunctionDef()
@@ -677,14 +722,25 @@ def _segment(src: str, node: ast.expr) -> str:
             raise SourceError(f"line {node.lineno}: no source for expression.")
 
 
-def _replace(edits: Edits, first: int, last: int, new: list[str]) -> None:
-    """Replace lines `first` to `last` (inclusive) with `new`."""
+def _replace(
+    edits: Edits, first: int, last: int, new: list[str], origins: list[int] | None = None
+) -> None:
+    """Replace lines `first` to `last` (inclusive) with `new`.
+
+    `origins` gives the source line of each string in `new`. Without it, each line of `new`
+    (a string can hold several) maps to the next source line from `first`, stopping at `last`.
+    """
 
     taken = [number for number in range(first, last + 1) if number in edits]
     if taken:
         raise SourceError(f"line {taken[0]}: two student-copy edits touch this line.")
 
-    edits[first] = new
+    if origins is None:
+        parts = "\n".join(new).split("\n") if new else []
+        edits[first] = [(min(first + index, last), part) for index, part in enumerate(parts)]
+    else:
+        edits[first] = list(zip(origins, new, strict=True))
+
     for number in range(first + 1, last + 1):
         edits[number] = []
 

@@ -220,6 +220,25 @@ def test_solved_copy_and_requirements_next_to_the_zip(demo):
     assert "mogs.assignment(" not in solved
 
 
+@pytest.mark.network
+def test_return_solution_line_grades_full_and_blank_zero(tmp_path):
+    folder = demo_copy(tmp_path / "demo")
+    edit(
+        folder / "hw.py",
+        '    """Average of the numbers in `xs`."""\n    # BEGIN SOLUTION\n'
+        "    return sum(xs) / len(xs)\n    # END SOLUTION\n",
+        "    return sum(xs) / len(xs)  # SOLUTION\n",
+    )
+
+    result = build(folder)
+    with zipfile.ZipFile(result.student) as archive:
+        student = archive.read("hw/hw.py").decode()
+
+    assert "def mean(xs):\n    return ...\n" in student
+    assert result.solution == (10.0, 10.0)
+    assert result.blank == (0.0, 10.0)
+
+
 # Failures through the CLI
 
 
