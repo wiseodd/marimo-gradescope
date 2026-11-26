@@ -268,6 +268,27 @@ def test_zip_with_lying_sizes_stops_at_the_limit(tmp_path, monkeypatch):
     assert sum(path.stat().st_size for path in target.rglob("*") if path.is_file()) <= 1000
 
 
+@pytest.mark.parametrize(
+    ("offsets", "value", "message"),
+    [((6, 8), 0x1, "encrypted"), ((8, 10), 99, "compression")],
+    ids=["password", "unsupported-compression"],
+)
+def test_unreadable_zip_member_is_an_error(tmp_path, capsys, offsets, value, message):
+    folder = demo_copy(tmp_path / "demo")
+    upload = tmp_path / "upload.zip"
+    with zipfile.ZipFile(upload, "w") as archive:
+        archive.writestr("hw.py", "x = 1\n")
+    local, central = offsets
+    upload.write_bytes(patched(upload.read_bytes(), local=local, central=central, value=value))
+
+    code = main(["grade", str(folder), str(upload)])
+    err = capsys.readouterr().err
+
+    assert code == 1
+    assert "upload.zip" in err
+    assert message in err
+
+
 def patched(data: bytes, *, local: int, central: int, value: int, size: int = 2) -> bytes:
     """`data`, a zip of one member, with a field of its local and central headers set."""
 

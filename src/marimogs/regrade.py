@@ -157,8 +157,9 @@ def _unpack(archive: Path, target: Path) -> None:
     while unpacking, since the headers can lie.
 
     Raises:
-        BuildError: If `archive` is not a readable zip, holds too many members, unpacks to
-            too many bytes, or a member's path is absolute or leads outside `target`.
+        BuildError: If `archive` is not a readable zip (such as one with a password or an
+            unsupported compression method), holds too many members, unpacks to too many
+            bytes, or a member's path is absolute or leads outside `target`.
     """
 
     target.mkdir()
@@ -188,7 +189,9 @@ def _unpack(archive: Path, target: Path) -> None:
 
             for member in members:
                 written = _extract(zipped, member, root, archive, written)
-    except (zipfile.BadZipFile, zipfile.LargeZipFile) as error:
+    # `zipfile` raises `RuntimeError` for an encrypted member and `NotImplementedError` for an
+    # unsupported compression method.
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError, NotImplementedError) as error:
         raise BuildError(f"{archive} is not a readable zip ({error}).") from error
 
 
