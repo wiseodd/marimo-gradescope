@@ -18,7 +18,7 @@ from types import FrameType
 from marimogs._assertrewrite import compile_tests
 from marimogs.grader.bundle import HiddenHelper, TestCell
 from marimogs.grader.protocol import Event, Job, Loaded, Loading, Result, Start, encode
-from marimogs.loader import bind
+from marimogs.loader import bind, load
 from marimogs.runner import (
     FailureReason,
     Outcome,
@@ -89,7 +89,8 @@ def run(job: Job, emit: Emit) -> None:
     """Set up the namespace, then run every test not in `job.skip`, emitting events.
 
     The base namespace holds the setup code's names and the bound student names. Each test
-    cell runs in its own copy of it, plus the names of the hidden helpers it needs.
+    cell runs in its own copy of it, plus the names of the hidden helpers it needs. If the
+    setup code fails or the notebook does not import, every test fails with `LOAD_FAILED`.
     """
 
     bundle = job.bundle
@@ -104,6 +105,16 @@ def run(job: Job, emit: Emit) -> None:
 
         for cell in bundle.cells:
             _fail_cell(cell, job.skip, error, FailureReason.LOAD_FAILED, emit)
+
+        return
+
+    _, import_error = load(job.submission)
+
+    if import_error is not None:
+        emit(Loaded(import_error))
+
+        for cell in bundle.cells:
+            _fail_cell(cell, job.skip, import_error, FailureReason.LOAD_FAILED, emit)
 
         return
 

@@ -24,6 +24,7 @@ import stat
 import sys
 import time
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path, PurePosixPath
 
@@ -53,6 +54,20 @@ EXIT_GRACE = 2.0
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True)
+class Graded:
+    """What `grade` found.
+
+    Attributes:
+        outcomes: One outcome per test of the bundle: public tests first, then hidden ones.
+        load_error: Why the notebook, or the grader's setup code, did not load, if it did
+            not in some phase. A hidden helper or test cell that fails does not count.
+    """
+
+    outcomes: dict[str, Outcome]
+    load_error: str | None
+
+
 def grade(
     bundle: GradingBundle,
     submission: Path,
@@ -62,7 +77,7 @@ def grade(
     files_root: Path | None = None,
     files: Sequence[str] = (),
     python: str = sys.executable,
-) -> dict[str, Outcome]:
+) -> Graded:
     """Run the public phase, then the hidden phase, within one time budget.
 
     Each phase gets a fresh `root_workdir/<phase>/` with a copy of the submission (as
@@ -82,7 +97,7 @@ def grade(
             notebook's dependencies.
 
     Returns:
-        One outcome per test of the bundle: public tests first, then hidden ones.
+        The outcomes, and why the notebook did not load, if it did not.
 
     Raises:
         ValueError: If `user` is root or the user running the grader, `submission` is not a
@@ -99,18 +114,21 @@ def grade(
     deadline = time.monotonic() + bundle.config.budget
     results: dict[str, Outcome] = {}
     run_failed = None
+    load_error = None
 
     for phase in (Phase.PUBLIC, Phase.HIDDEN):
         workdir = _prepare(root_workdir / phase.value, submission, data, user)
-        outcomes, run_failed = _run_phase(
+        ran = _run_phase(
             bundle, phase, workdir / SUBMISSION, workdir, user, python, deadline, run_failed
         )
-        results |= outcomes
+        results |= ran.outcomes
+        run_failed = ran.run_failed
+        load_error = ran.load_error if load_error is None else load_error
 
         if user is not None:
             kill_user(user)
 
-    return results
+    return Graded(results, load_error)
 
 
 def run_phase(
@@ -138,8 +156,17 @@ def run_phase(
         One outcome per test of the phase, in bundle order.
     """
 
-    outcomes, _ = _run_phase(bundle, phase, submission, workdir, user, python, deadline, None)
-    return outcomes
+    ran = _run_phase(bundle, phase, submission, workdir, user, python, deadline, None)
+    return ran.outcomes
+
+
+@dataclass(frozen=True, slots=True)
+class _PhaseRun:
+    """One phase's outcomes, why the whole-notebook run failed, and why loading failed."""
+
+    outcomes: dict[str, Outcome]
+    run_failed: str | None
+    load_error: str | None
 
 
 def _run_phase(
@@ -151,13 +178,14 @@ def _run_phase(
     python: str,
     deadline: float,
     run_failed: str | None,
-) -> tuple[dict[str, Outcome], str | None]:
-    """`run_phase`, starting from and returning why the whole-notebook run failed, if it did."""
+) -> _PhaseRun:
+    """`run_phase`, starting from why the whole-notebook run failed, if it did."""
 
     bundle = bundle.for_phase(phase)
     tests = [name for cell in bundle.cells for name in cell.tests]
     done: dict[str, Outcome] = {}
     respawns = 0
+    load_error = None
 
     while pending := [name for name in tests if name not in done]:
         if respawns > MAX_RESPAWNS:
@@ -181,6 +209,8 @@ def _run_phase(
             if output:
                 logger.info("grading child output (%s phase, end):\n%s", phase, output)
 
+        load_error = watch.load_error if load_error is None else load_error
+
         match ending:
             case _Ending.STOP:
                 break
@@ -189,7 +219,7 @@ def _run_phase(
             case _Ending.RESPAWN:
                 respawns += 1
 
-    return {name: done[name] for name in tests}, run_failed
+    return _PhaseRun({name: done[name] for name in tests}, run_failed, load_error)
 
 
 class _Ending(Enum):
@@ -216,6 +246,8 @@ class _Watch:
     Every test it fails or finishes goes into `done`, which the caller shares across children.
     With `retry_load`, a child that dies or hangs before it has loaded the notebook fails no
     test: the watch keeps why in `load_failure` and asks for a retry without the notebook run.
+    Why the notebook failed to load for good, as the child reports it or as the watch sees it,
+    goes into `load_error`.
     """
 
     def __init__(
@@ -240,6 +272,7 @@ class _Watch:
         self._due = self._since + self._timeout + GRACE
         self._retry_load = retry_load
         self.load_failure: str | None = None
+        self.load_error: str | None = None
 
     def run(self, child: Child) -> _Ending:
         """Watch `child` until it exits or misses a deadline."""
@@ -272,8 +305,9 @@ class _Watch:
 
     def _handle(self, event: Event) -> None:
         match event:
-            case Loaded():
+            case Loaded(error):
                 if self._stage is _Stage.SETUP:
+                    self.load_error = error
                     self._enter(_Stage.IDLE, ())
             case Loading(tests):
                 self._enter(_Stage.LOADING, tuple(t for t in tests if self._open(t)))
@@ -314,6 +348,7 @@ class _Watch:
                 return _Ending.RETRY_WITHOUT_RUN
             case _Stage.SETUP:
                 message = f"the grader stopped while loading your notebook: {status}"
+                self.load_error = message
                 self._fail_rest(message, FailureReason.LOAD_FAILED)
                 return _Ending.STOP
             case _Stage.LOADING:
@@ -338,6 +373,7 @@ class _Watch:
                 return _Ending.RETRY_WITHOUT_RUN
             case _Stage.SETUP:
                 message = f"the grader stopped while loading your notebook: {took}"
+                self.load_error = message
                 self._fail_rest(message, FailureReason.TIMEOUT)
                 return _Ending.STOP
             case _Stage.LOADING:

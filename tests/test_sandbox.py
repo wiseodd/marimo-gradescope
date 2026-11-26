@@ -10,13 +10,14 @@ import subprocess
 import sys
 import textwrap
 import time
+from copy import replace
 from pathlib import Path
 
 import pytest
 
 from marimogs.config import AssignmentConfig, Question
 from marimogs.grader import _process, sandbox
-from marimogs.grader.bundle import GradingBundle, Phase, TestCell
+from marimogs.grader.bundle import GradingBundle, HiddenHelper, Phase, TestCell
 from marimogs.grader.sandbox import grade, run_phase
 from marimogs.runner import FailureReason, Outcome
 
@@ -357,7 +358,7 @@ def test_failed_notebook_run_is_not_retried_in_the_hidden_phase(tmp_path, monkey
     root = tmp_path / "root"
     root.mkdir()
 
-    results = grade(grading, path, root, user=None)
+    results = grade(grading, path, root, user=None).outcomes
 
     assert results["test_q1_before"].passed
     assert "exited with code 3" in results["test_q2_other"].message
@@ -405,12 +406,40 @@ def test_grade_runs_both_phases_in_fresh_workdirs(tmp_path):
 
     root = tmp_path / "root"
     root.mkdir()
-    results = grade(grading, path, root, user=None, files_root=source, files=["data/x.txt"])
+    results = grade(
+        grading, path, root, user=None, files_root=source, files=["data/x.txt"]
+    ).outcomes
 
     assert list(results) == ["test_q1_public", "test_q2_hidden"]
     assert all(outcome.passed for outcome in results.values()), results
     assert (root / "public" / "public_was_here").exists()
     assert not (root / "hidden" / "public_was_here").exists()
+
+
+def test_grade_reports_why_the_notebook_did_not_load(tmp_path):
+    path = tmp_path / "submission.py"
+    path.write_text("def broken(:\n", encoding="utf-8")
+    root = tmp_path / "root"
+    root.mkdir()
+
+    graded = grade(bundle(), path, root, user=None)
+
+    assert graded.load_error is not None
+    assert "failed to import" in graded.load_error
+    assert all(o.reason is FailureReason.LOAD_FAILED for o in graded.outcomes.values())
+
+
+def test_failing_hidden_helper_is_not_a_notebook_load_failure(tmp_path):
+    helper = HiddenHelper("EXPECTED = missing()\n", ("EXPECTED",), ("missing",), ())
+    hidden = cell("q1", "# HIDDEN\ndef test_q1_hidden():\n    assert EXPECTED\n", hidden=True)
+    grading = GradingBundle(config(), "", (replace(hidden, needs=("EXPECTED",)),), (helper,))
+    root = tmp_path / "root"
+    root.mkdir()
+
+    graded = grade(grading, notebook(tmp_path, ""), root, user=None)
+
+    assert graded.outcomes["test_q1_hidden"].reason is FailureReason.LOAD_FAILED
+    assert graded.load_error is None
 
 
 def test_grade_leaves_junk_out_of_data_folders(tmp_path):
@@ -432,7 +461,7 @@ def test_grade_leaves_junk_out_of_data_folders(tmp_path):
 
     results = grade(
         grading, notebook(tmp_path, ""), root, user=None, files_root=source, files=["data"]
-    )
+    ).outcomes
 
     assert results["test_q1_tree"].passed, results
 
@@ -484,7 +513,7 @@ def test_grade_shares_the_budget(tmp_path):
     root = tmp_path / "root"
     root.mkdir()
 
-    results = grade(grading, notebook(tmp_path, ""), root, user=None)
+    results = grade(grading, notebook(tmp_path, ""), root, user=None).outcomes
 
     assert results["test_q1_slow"].passed
     assert results["test_q2_slow"].reason is FailureReason.BUDGET

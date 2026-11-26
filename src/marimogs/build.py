@@ -28,6 +28,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 from marimogs import __version__
 from marimogs._env import clean_env
@@ -54,6 +55,9 @@ from marimogs.transform import (
     public_test_files,
     student_notebook,
 )
+
+if TYPE_CHECKING:
+    from marimogs.grader.sandbox import Graded
 
 DIST = "dist"
 # A header table is the old config, which `read_config` names in its error.
@@ -408,13 +412,13 @@ def _self_grade(
 ) -> _Graded:
     """Grade `notebook` on `python` the way Gradescope would, as the current user."""
 
-    outcomes = grade_locally(bundle, notebook, workdir, assignment_dir, python)
+    outcomes = grade_locally(bundle, notebook, workdir, assignment_dir, python).outcomes
     return _Graded(outcomes, build_results(bundle, outcomes, []))
 
 
 def grade_locally(
     bundle: GradingBundle, notebook: Path, workdir: Path, assignment_dir: Path, python: str
-) -> dict[str, Outcome]:
+) -> "Graded":
     """Grade `notebook` on `python` with the real grader, as the current user.
 
     Args:
@@ -425,7 +429,7 @@ def grade_locally(
         python: Interpreter with the grading requirements.
 
     Returns:
-        One outcome per test of the bundle.
+        One outcome per test of the bundle, and why the notebook did not load, if it did not.
     """
 
     # Imported here: the sandbox needs POSIX, and the CLI must start on any platform.

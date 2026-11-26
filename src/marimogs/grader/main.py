@@ -85,7 +85,7 @@ def run(bundle: GradingBundle, source: Path, submission: Path, workdir: Path) ->
         user = STUDENT_USER if os.geteuid() == 0 else None
         outcomes = grade(
             bundle, found.py, workdir, user=user, files_root=source, files=config.files
-        )
+        ).outcomes
 
     return build_results(bundle, outcomes, notices)
 

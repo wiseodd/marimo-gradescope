@@ -543,6 +543,25 @@ def test_setup_failure_fails_every_test(tmp_path):
     assert "no_such_module_mgs" in outcome.message
 
 
+def test_notebook_that_fails_to_import_fails_every_test(tmp_path):
+    bundle = GradingBundle(
+        config(),
+        "",
+        (cell("def test_q1_a():\n    pass\n", ("test_q1_a",)),),
+    )
+    events = run_child(tmp_path, Job(bundle, submission(tmp_path, "def broken(:\n")))
+
+    match events[0]:
+        case Loaded(error=str() as error):
+            assert "failed to import" in error
+        case other:
+            pytest.fail(f"expected a load error, got {other!r}")
+
+    [outcome] = outcomes(events)
+    assert outcome.reason is FailureReason.LOAD_FAILED
+    assert "SyntaxError" in outcome.message
+
+
 def test_timeout_fails_only_the_slow_test(tmp_path):
     bundle = GradingBundle(
         config(timeout=0.5),

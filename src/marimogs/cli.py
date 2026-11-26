@@ -97,6 +97,14 @@ def _grade(folder: Path, submission: Path) -> int:
         return 1
 
     print(grade_report(result))
+
+    if result.load_error is not None:
+        print(
+            f"Grading failed.\n{result.submission} failed to load: {result.load_error}",
+            file=sys.stderr,
+        )
+        return 1
+
     return 0
 
 
@@ -252,7 +260,7 @@ def _parser() -> argparse.ArgumentParser:
         "submission",
         type=Path,
         metavar="SUBMISSION",
-        help="student notebook, or a folder with one (such as a downloaded upload)",
+        help="student notebook (.py), the zip a student exported, or a folder with one",
     )
 
     return parser
