@@ -48,7 +48,14 @@ from mogs.grader.results import Results, build_results
 from mogs.grader.templates import run_autograder_script, setup_script
 from mogs.requirements import gradescope_requirements
 from mogs.runner import FailureReason, Outcome
-from mogs.source import Notebook, parse_notebook, prompt_previews, question_id, validate
+from mogs.source import (
+    Notebook,
+    parse_notebook,
+    prompt_previews,
+    question_id,
+    source_warnings,
+    validate,
+)
 from mogs.transform import (
     TESTS_FOLDER,
     pinned_requirement,
@@ -277,6 +284,7 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
     tests = public_test_files(nb)
     requirement = tool_requirement or f"{TOOL}=={__version__}"
     requirements, warnings = gradescope_requirements(src, cfg, requirement)
+    warnings = source_warnings(nb) + warnings
     entries = {
         "setup.sh": setup_script(cfg).encode(),
         "run_autograder": run_autograder_script().encode(),

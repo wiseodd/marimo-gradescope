@@ -12,6 +12,7 @@ from mogs.source import (
     module_tests,
     parse_notebook,
     prompt_previews,
+    source_warnings,
     validate,
 )
 
@@ -1446,3 +1447,40 @@ def test_validate_test_reading_its_own_cell_names_ok():
     hidden = hidden_cell("n_missing = 3\n\ndef test_q1_h():\n    assert n_missing == 3")
 
     assert errors(PUBLIC + CHECK + hidden) == []
+
+
+# Warnings
+
+
+LATE_HIDDEN = """
+@app.cell
+def _():
+    def test_q1_a():
+        assert True
+
+    # HIDDEN
+    def test_q1_b():
+        assert True
+
+    return
+"""
+
+
+def test_hidden_after_code_warns_that_it_hides_the_whole_cell():
+    [warning] = source_warnings(parse_notebook(nb(LATE_HIDDEN)))
+
+    line = nb(LATE_HIDDEN).splitlines().index("    # HIDDEN") + 1
+    assert f"line {line}" in warning
+    assert "whole cell" in warning
+
+
+@pytest.mark.parametrize(
+    "cell",
+    [
+        "\n@app.cell\ndef _():\n    # HIDDEN\n    def test_q1_a():\n        assert True\n",
+        "\n@app.function\n# HIDDEN\ndef test_q1_a():\n    assert True\n",
+        "\n@app.function\ndef test_q1_a():\n    # HIDDEN\n    assert True\n",
+    ],
+)
+def test_hidden_on_the_first_line_does_not_warn(cell):
+    assert source_warnings(parse_notebook(nb(cell))) == []

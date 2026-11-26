@@ -94,6 +94,7 @@ class Cell:
         hidden: The cell holds a `# HIDDEN` line.
         grade_qid: Question id of the cell's `grade(...)` call, if any.
         assignment: The cell holds an `assignment(...)` call.
+        late_hidden: Line of a `# HIDDEN` that comes after the cell's first statement, if any.
     """
 
     kind: CellKind
@@ -104,6 +105,7 @@ class Cell:
     hidden: bool
     grade_qid: str | None
     assignment: bool = False
+    late_hidden: int | None = None
 
     @property
     def instructor(self) -> bool:
@@ -520,12 +522,14 @@ def parse_notebook(src: str) -> Notebook:
         end = _trailing_comments_end(lines, _end(node))
         text = lines[start - 1 : end]
         tests = _tests(node, kind)
-        hidden = any(line.strip() == HIDDEN for line in text)
+        markers = [start + i for i, line in enumerate(text) if line.strip() == HIDDEN]
+        first_statement = node.body[0].lineno
+        late = next((line for line in markers if line > first_statement), None)
         plain = kind is CellKind.CELL
         grade = _call_qid(tree, node, Api.GRADE) if plain else None
         assignment = bool(api_calls(tree, node, Api.ASSIGNMENT))
 
-        cells.append(Cell(kind, name, start, end, tests, hidden, grade, assignment))
+        cells.append(Cell(kind, name, start, end, tests, bool(markers), grade, assignment, late))
 
     return Notebook(tuple(cells), src)
 
@@ -681,6 +685,18 @@ def _returned_names(node: ast.stmt) -> set[str]:
 
 
 # Validation
+
+
+def source_warnings(nb: Notebook) -> list[str]:
+    """Things in the notebook that build but may not do what the instructor meant."""
+
+    return [
+        f"line {cell.late_hidden}: `{HIDDEN}` hides the whole cell at line {cell.start}, not "
+        "only the code after it. Move it to the cell's first line, or move the hidden tests "
+        "to a cell of their own."
+        for cell in nb.cells
+        if cell.late_hidden is not None
+    ]
 
 
 def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
