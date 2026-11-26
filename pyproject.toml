@@ -1,6 +1,7 @@
 [project]
 name = "mogs"
-version = "0.7.0"
+# The version is `[workspace.package] version` in Cargo.toml.
+dynamic = ["version"]
 description = "Build Gradescope autograders from marimo notebooks."
 authors = [{ name = "Agustinus Kristiadi", email = "agustinus@kristia.de" }]
 license = "MIT"
@@ -17,20 +18,19 @@ dependencies = [
   "pytest",
 ]
 
-[project.scripts]
-mogs = "mogs.cli:main"
-
 [project.optional-dependencies]
 # The vendored Typst packages in `_typst` need Typst 0.15.
 pdf = ["typst>=0.15,<0.16"]
 
 [build-system]
-requires = ["uv_build>=0.13.0,<0.14"]
-build-backend = "uv_build"
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
 
-[tool.uv.build-backend]
-# The distribution is `mogs`; the import name is shorter.
-module-name = "mogs"
+# The wheel holds the Python package and the `mogs` executable built from crates/mogs.
+[tool.maturin]
+bindings = "bin"
+python-source = "src"
+manifest-path = "crates/mogs/Cargo.toml"
 
 [dependency-groups]
 dev = [
@@ -78,6 +78,14 @@ markers = [
 ]
 
 [tool.uv]
+# Rebuild the `mogs` executable when the Rust sources change.
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "Cargo.toml" },
+  { file = "Cargo.lock" },
+  { file = "crates/**/*.rs" },
+  { file = "crates/**/Cargo.toml" },
+]
 # The lockfile must install on every CI platform: Linux, macOS and Windows.
 required-environments = [
   "sys_platform == 'linux' and platform_machine == 'x86_64'",

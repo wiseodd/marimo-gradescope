@@ -8,7 +8,7 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - Design, plans and progress notes live outside this repo, in the author's
   private planning directory. Never put design notes, plans or local paths in
   the repo.
-- `src/mogs/`: the package, imported, published on PyPI and run as `mogs`.
+- `src/mogs/`: the Python package, imported and published on PyPI.
   `config.py` reads the config from the notebook's `mogs.assignment(...)` and
   `mogs.grade(...)` calls (statically, from the AST) and edits the PEP 723
   header as text. `scaffold.py` is `mogs init`.
@@ -16,12 +16,18 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   vendored for the PDF of written answers (`pdf.py`). They need the Typst
   version the `pdf` extra pins (`typst>=0.15,<0.16`): bump the pin and the
   vendored versions together.
-- `tests/`: pytest suite.
+- `crates/mogs/`: the `mogs` executable, in Rust. It runs
+  `python -P -m mogs.cli` with the interpreter in its own folder, found after
+  resolving symlinks. maturin builds it into platform wheels together with
+  `src/mogs/`. The version is `[workspace.package] version` in `Cargo.toml`.
+  `src/mogs/_binary.py` finds and runs the installed executable.
+- `tests/`: pytest suite. `cargo test` runs the Rust tests.
 - `tests/e2e/`: end-to-end tests. The `docker` ones build the demo autograder
   into Gradescope's base image (`tests/e2e/Dockerfile`) and grade submissions
   through the real `/autograder/run_autograder`. They need docker or podman
   (`MOGS_CONTAINER=docker|podman` picks one) and network, and take several
-  minutes. Without a runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI)
+  minutes. The wheel for the image comes from `maturin build --zig` for
+  manylinux_2_17 x86_64, so it builds on any host. Without a runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI)
   makes that a failure. The base image is amd64 only: on an arm64 host it runs
   under emulation, which is slow enough that grading timeouts may trip.
 - `docs/`: the docs site (Astro Starlight, built with Bun), deployed to
@@ -31,7 +37,10 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 
 ## Commands
 
-Always go through `uv` (never global Python).
+Always go through `uv` (never global Python). The Rust toolchain is
+`rust-toolchain.toml` (stable, with clippy and rustfmt). `uv sync` and
+`uv run` rebuild the executable when `Cargo.toml`, `Cargo.lock` or a `.rs`
+file changes.
 
 ```bash
 make sync        # uv sync

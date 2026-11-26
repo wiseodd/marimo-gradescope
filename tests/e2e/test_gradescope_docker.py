@@ -449,13 +449,33 @@ def build_context(context: Path, archive: Path) -> None:
 
 
 def build_wheel(out: Path) -> Path:
-    """Build a wheel of this checkout into `out`."""
+    """Build a wheel of this checkout into `out` for the base image's Ubuntu on x86_64.
+
+    maturin cross-compiles the `mogs` executable with zig, so this works from any host.
+    """
 
     uv = shutil.which("uv")
     if uv is None:
         raise CommandError("`uv` is not on PATH; it builds the wheel")
 
-    run([uv, "build", "--wheel", "--out-dir", str(out), str(REPO)], timeout=300)
+    command = [
+        uv,
+        "tool",
+        "run",
+        "--from",
+        "maturin[zig]",
+        "maturin",
+        "build",
+        "--release",
+        "--zig",
+        "--compatibility",
+        "manylinux_2_17",
+        "--target",
+        "x86_64-unknown-linux-gnu",
+        "--out",
+        str(out),
+    ]
+    run(command, timeout=600, cwd=REPO)
     [wheel] = out.glob("*.whl")
 
     return wheel
@@ -722,9 +742,10 @@ def test_submission_files(assignment, tmp_path, name):
 
 
 def test_wheel_requirement_names_the_tool():
-    requirement = wheel_requirement(Path("/x/mogs-0.1.0-py3-none-any.whl"))
+    wheel = "mogs-0.1.0-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
+    requirement = wheel_requirement(Path("/x") / wheel)
 
-    assert requirement == ("mogs @ file:///wheels/mogs-0.1.0-py3-none-any.whl")
+    assert requirement == f"mogs @ file:///wheels/{wheel}"
     assert normalized_name(requirement) == "mogs"
 
 

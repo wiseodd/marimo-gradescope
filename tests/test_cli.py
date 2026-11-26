@@ -1,18 +1,10 @@
-from importlib.metadata import entry_points
+import subprocess
+import sys
+from importlib.metadata import version
 
 import pytest
 
 from mogs.cli import main
-
-
-def test_the_command_is_mogs():
-    scripts = {
-        script.name: script.value
-        for script in entry_points(group="console_scripts")
-        if script.value.startswith("mogs.")
-    }
-
-    assert scripts == {"mogs": "mogs.cli:main"}
 
 
 def test_help_names_the_command(capsys):
@@ -20,3 +12,12 @@ def test_help_names_the_command(capsys):
         main(["--help"])
 
     assert capsys.readouterr().out.startswith("usage: mogs ")
+
+
+def test_module_runs_the_command():
+    result = subprocess.run(
+        [sys.executable, "-m", "mogs.cli", "--version"], capture_output=True, text=True
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == f"mogs {version('mogs')}\n"
