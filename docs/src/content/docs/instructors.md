@@ -103,13 +103,64 @@ with app.setup:
     import marimogs as mogs
 ```
 
+Graded answers are functions.
 Write each function that the students have to fill in as an `@app.function` cell.
-See below.
-The grader imports these functions directly, without running the rest of the notebook.
-A function that reads a variable defined in another cell can't be imported this way.
-The grader then has to run the whole notebook to get it.
-That's slower, and it fails if any cell in the notebook fails.
-So, avoid such functions.
+Tests can read these functions, names from the setup cell, and names from `# HIDDEN` cells.
+A test that reads a variable or function defined in a regular `@app.cell` fails the build.
+
+The grader imports functions without running the notebook.
+A cell variable only exists once the whole notebook has run, so one failing cell anywhere, even one the test doesn't need, would score that question zero.
+
+This is wrong:
+
+```python
+@app.cell
+def _():
+    n_missing = df["price"].isna().sum()  # SOLUTION
+    return (n_missing,)
+
+
+@app.cell
+def _(n_missing):
+    def test_q1_count():
+        assert n_missing == 3
+
+    return
+```
+
+The build stops with:
+
+```
+Build failed.
+hw/hw.py has 1 problem(s):
+- Question `q1`: `test_q1_count` (line 31) reads `n_missing`, which a plain `@app.cell` defines at line 25. The grader imports the functions the tests use without running the notebook, so it can't get that name. Write the answer as an `@app.function` that the test calls, and put data the tests need in the setup cell (`with app.setup:`) or load it in the test.
+```
+
+Write the answer as a function instead, and load the data in the setup cell:
+
+```python
+with app.setup:
+    import marimogs as mogs
+    import pandas as pd
+
+    df = pd.read_csv("prices.csv")
+
+
+@app.function
+def count_missing(df):
+    n = df["price"].isna().sum()  # SOLUTION
+    return n
+
+
+@app.cell
+def _():
+    def test_q1_count():
+        assert count_missing(df) == 3
+
+    return
+```
+
+A function cell that reads a variable from another cell can't be imported either, so pass data to it as arguments.
 
 ### Solutions
 

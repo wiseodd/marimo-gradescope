@@ -1,17 +1,17 @@
 """Load a student's marimo notebook and bind the names the tests use.
 
 Functions written with `@app.function` are plain module attributes, so importing the notebook
-runs only its setup cell and those definitions. A name that is not a module attribute, such as
-a function that depends on another cell, comes from a single `app.run()`, which executes the
-whole notebook. This fallback is designed behavior. It is all-or-nothing: if any cell raises,
-every name that needed the fallback becomes `Missing`, including names from healthy cells,
-such as a variable `n = 3` next to an unrelated cell that fails. The reason names the line
+runs only its setup cell and those definitions. The build makes sure every name the tests read
+is one of these (see `source.validate`). The only way a test then reads a name that is not a
+module attribute is a student edit, such as moving a function into a plain cell.
+
+Such a name comes from a single `app.run()`, which executes the whole notebook. This fallback
+is designed behavior. It is all-or-nothing: if any cell raises, every name that needed the
+fallback becomes `Missing`, including names from healthy cells. The reason names the line
 that raised and the exception. When the run killed or hung an earlier grading child, the
 grader binds again with the run turned off (`run_failed`), so names that need no run still
-work.
-
-marimo has no public API to run only the cells some names depend on, so the fallback runs
-them all.
+work. marimo has no public API to run only the cells some names depend on, so the fallback
+runs them all.
 
 Loading never raises. Names that cannot be bound come back as `Missing` placeholders. Using
 one in a test, by calling it, comparing it, reading an attribute and so on, raises a readable
