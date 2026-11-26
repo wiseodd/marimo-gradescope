@@ -22,10 +22,12 @@ const TOOL_BIN: &str = "bin";
 pub enum PythonNotFound {
     /// The path of the running executable could not be resolved.
     Executable(io::Error),
-    /// Neither the executable's folder nor the uv tool environment has an interpreter.
+    /// No folder searched has an interpreter.
     Missing {
         /// The folder of the executable.
         beside: PathBuf,
+        /// The folder above `beside`, when `beside` is a Windows `Scripts` folder.
+        above: Option<PathBuf>,
         /// The scripts folder of the `mogs` uv tool environment, or why it is unknown.
         tool: Result<PathBuf, String>,
     },
@@ -37,13 +39,21 @@ impl fmt::Display for PythonNotFound {
             Self::Executable(error) => {
                 write!(f, "Cannot find the path of the mogs executable: {error}")
             }
-            Self::Missing { beside, tool } => {
+            Self::Missing {
+                beside,
+                above,
+                tool,
+            } => {
                 write!(
                     f,
                     "No Python interpreter ({}) in {}, the folder of the mogs executable",
                     NAMES.join(", "),
                     beside.display()
                 )?;
+
+                if let Some(above) = above {
+                    write!(f, ", or in {}, the folder above it", above.display())?;
+                }
 
                 match tool {
                     Ok(folder) => write!(
@@ -61,10 +71,12 @@ impl fmt::Display for PythonNotFound {
 /// The interpreter of the environment the running executable is installed in.
 ///
 /// Looks in the executable's folder, symlinks resolved: the scripts folder of a virtual
-/// environment, or of a uv tool environment on Unix. Then looks in the scripts folder of the
-/// `mogs` environment under `uv tool dir`, since uv copies tool executables on Windows.
+/// environment, or of a uv tool environment on Unix. On Windows, when that folder is
+/// `Scripts`, then looks in the folder above it, where a global `pip install` puts
+/// `python.exe`. Last, looks in the scripts folder of the `mogs` environment under
+/// `uv tool dir`, since uv copies tool executables on Windows.
 pub fn interpreter() -> Result<PathBuf, PythonNotFound> {
-    interpreter_from(&executable_folder()?, uv_tool_dir)
+    interpreter_from(&executable_folder()?, cfg!(windows), uv_tool_dir)
 }
 
 /// The folder of the running executable, symlinks resolved.
@@ -85,12 +97,20 @@ fn executable_folder() -> Result<PathBuf, PythonNotFound> {
     }
 }
 
-/// The interpreter in `beside`, else in the `mogs` tool environment under `uv_tool_dir()`.
+/// The interpreter in `beside`, else above it (see `script_parent`), else in the `mogs` tool
+/// environment under `uv_tool_dir()`.
 fn interpreter_from(
     beside: &Path,
+    windows: bool,
     uv_tool_dir: impl FnOnce() -> Result<PathBuf, String>,
 ) -> Result<PathBuf, PythonNotFound> {
     if let Some(python) = interpreter_in(beside) {
+        return Ok(python);
+    }
+
+    let above = script_parent(beside, windows);
+
+    if let Some(python) = above.as_deref().and_then(interpreter_in) {
         return Ok(python);
     }
 
@@ -106,8 +126,20 @@ fn interpreter_from(
 
     Err(PythonNotFound::Missing {
         beside: beside.to_path_buf(),
+        above,
         tool,
     })
+}
+
+/// The folder above `folder`, on Windows when `folder` is named `Scripts` (any case).
+fn script_parent(folder: &Path, windows: bool) -> Option<PathBuf> {
+    let name = folder.file_name()?;
+
+    if windows && name.eq_ignore_ascii_case("Scripts") {
+        return folder.parent().map(Path::to_path_buf);
+    }
+
+    None
 }
 
 /// The first interpreter in `folder`.
@@ -178,7 +210,7 @@ mod tests {
         let beside = tempdir().unwrap();
         let python = fake_python(beside.path());
 
-        let found = interpreter_from(beside.path(), || panic!("uv must not be asked"));
+        let found = interpreter_from(beside.path(), false, || panic!("uv must not be asked"));
 
         assert_eq!(found.unwrap(), python);
     }
@@ -188,7 +220,7 @@ mod tests {
         let (beside, tools) = folders();
         let python = fake_python(&tools.path().join("mogs").join(TOOL_BIN));
 
-        let found = interpreter_from(beside.path(), || Ok(tools.path().to_path_buf()));
+        let found = interpreter_from(beside.path(), false, || Ok(tools.path().to_path_buf()));
 
         assert_eq!(found.unwrap(), python);
     }
@@ -198,7 +230,7 @@ mod tests {
         let (beside, tools) = folders();
         let bin = tools.path().join("mogs").join(TOOL_BIN);
 
-        let error = interpreter_from(beside.path(), || Ok(tools.path().to_path_buf()));
+        let error = interpreter_from(beside.path(), false, || Ok(tools.path().to_path_buf()));
         let message = error.unwrap_err().to_string();
 
         assert!(
@@ -212,7 +244,9 @@ mod tests {
     fn errors_when_uv_is_unavailable() {
         let beside = tempdir().unwrap();
 
-        let error = interpreter_from(beside.path(), || Err("`uv` is not on PATH".to_string()));
+        let error = interpreter_from(beside.path(), false, || {
+            Err("`uv` is not on PATH".to_string())
+        });
         let message = error.unwrap_err().to_string();
 
         assert!(
@@ -220,5 +254,55 @@ mod tests {
             "{message}"
         );
         assert!(message.contains("`uv` is not on PATH"), "{message}");
+        assert!(!message.contains("the folder above it"), "{message}");
+    }
+
+    #[test]
+    fn script_parent_only_for_scripts_on_windows() {
+        let root = Path::new("python313");
+
+        assert_eq!(
+            script_parent(&root.join("Scripts"), true),
+            Some(root.to_path_buf())
+        );
+        assert_eq!(
+            script_parent(&root.join("scripts"), true),
+            Some(root.to_path_buf())
+        );
+        assert_eq!(script_parent(&root.join("Scripts"), false), None);
+        assert_eq!(script_parent(&root.join("bin"), true), None);
+    }
+
+    #[test]
+    fn finds_interpreter_above_scripts() {
+        let root = tempdir().unwrap();
+        let scripts = root.path().join("Scripts");
+        std::fs::create_dir(&scripts).unwrap();
+        let python = fake_python(root.path());
+
+        let found = interpreter_from(&scripts, true, || panic!("uv must not be asked"));
+
+        assert_eq!(found.unwrap(), python);
+    }
+
+    #[test]
+    fn errors_name_every_folder_searched() {
+        let (root, tools) = folders();
+        let scripts = root.path().join("Scripts");
+        std::fs::create_dir(&scripts).unwrap();
+        let bin = tools.path().join("mogs").join(TOOL_BIN);
+
+        let error = interpreter_from(&scripts, true, || Ok(tools.path().to_path_buf()));
+        let message = error.unwrap_err().to_string();
+
+        assert!(
+            message.contains(&scripts.display().to_string()),
+            "{message}"
+        );
+        assert!(
+            message.contains(&format!("{}, the folder above it", root.path().display())),
+            "{message}"
+        );
+        assert!(message.contains(&bin.display().to_string()), "{message}");
     }
 }
