@@ -581,7 +581,7 @@ def grade_on_host(assignment: Assignment, root: Path, name: str) -> dict:
 
 
 def check_results(results: dict, expect: Expect, hidden: list[str]) -> None:
-    """Assert that `results` matches `expect` and shows nothing of the hidden tests."""
+    """Assert that `results` matches `expect` and shows students nothing of the hidden tests."""
 
     text = json.dumps(results)
     assert len(text) < MAX_RESULTS_BYTES, len(text)
@@ -600,11 +600,14 @@ def check_results(results: dict, expect: Expect, hidden: list[str]) -> None:
         assert notice is not None, text[-TAIL:]
         assert expect.notice in notice["output"]
 
-    shown = "\n".join(f"{row['name']}\n{row['output']}" for row in results["tests"])
+    visible = [row for row in results["tests"] if row["visibility"] != "hidden"]
+    assert all(row["visibility"] == "hidden" for row in (rows["q1"], rows["q2"]))
+
+    shown = "\n".join(f"{row['name']}\n{row['output']}" for row in visible)
     if expect.shown is not None:
         assert expect.shown in shown, shown[-TAIL:]
 
-    every = "\n".join(strings(results))
+    every = "\n".join(strings([results.get("output", ""), visible]))
     for secret in hidden:
         assert secret not in every, secret
 

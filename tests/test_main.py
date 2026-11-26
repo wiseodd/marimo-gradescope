@@ -75,7 +75,7 @@ def test_nested_upload_with_macosx_junk_gets_full_marks(paths):
     results = paths.run()
 
     by_number = rows(results)
-    assert list(by_number) == ["q1", "q2"]
+    assert list(by_number) == ["Public tests", "q1", "q2"]
     assert by_number["q1"]["score"] == 4
     assert by_number["q2"]["score"] == 6
     assert by_number["q2"]["name"] == "Vowels"
