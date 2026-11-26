@@ -135,7 +135,7 @@ def test_cli_init_says_what_to_do_next(tmp_path, monkeypatch, capsys):
     assert code == 0
     assert out.splitlines() == [
         "Created A12/A12.py",
-        "Edit it  : marimo edit --sandbox A12/A12.py",
+        "Edit it  : marimogs edit A12",
         "Build it : marimogs build A12",
     ]
 

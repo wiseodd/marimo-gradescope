@@ -2,12 +2,13 @@
 
 import argparse
 import shlex
+import subprocess
 import sys
 from copy import replace
 from pathlib import Path
 
 from marimogs import __version__
-from marimogs.build import BuildError, BuildResult, build, failure_report
+from marimogs.build import BuildError, BuildResult, build, failure_report, find_notebook
 from marimogs.config import ConfigError
 from marimogs.regrade import GradeResult, grade_submission
 from marimogs.requirements import RequirementsError
@@ -30,6 +31,8 @@ def main(argv: list[str] | None = None) -> int:
     match args.command:
         case "init":
             return _init(args.dir)
+        case "edit":
+            return _edit(args.dir)
         case "build":
             return _build(args.dir)
         case "grade":
@@ -46,9 +49,32 @@ def _init(folder: Path) -> int:
         return 1
 
     print(f"Created {path}")
-    print(f"Edit it  : marimo edit --sandbox {shlex.quote(str(path))}")
+    print(f"Edit it  : marimogs edit {shlex.quote(str(folder))}")
     print(f"Build it : marimogs build {shlex.quote(str(folder))}")
     return 0
+
+
+def _edit(folder: Path) -> int:
+    """Open the notebook in `folder` with `marimo edit --sandbox`.
+
+    marimo runs on this package's Python, which has pytest. The editor server compiles the
+    test cells there, and without pytest it logs a warning for each of them.
+    """
+
+    try:
+        notebook = find_notebook(folder)
+    except (BuildError, OSError) as error:
+        print(f"Edit failed.\n{error}", file=sys.stderr)
+        return 1
+
+    marimo = subprocess.Popen([sys.executable, "-m", "marimo", "edit", "--sandbox", str(notebook)])
+
+    # Ctrl+C reaches marimo too, and marimo asks whether to quit. Wait until it exits.
+    while True:
+        try:
+            return marimo.wait()
+        except KeyboardInterrupt:
+            continue
 
 
 def _build(folder: Path) -> int:
@@ -181,6 +207,18 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     init_parser.add_argument("dir", type=Path, metavar="DIR", help="new assignment folder")
+
+    edit_parser = commands.add_parser(
+        "edit",
+        help="open the source notebook in marimo's editor",
+        description=(
+            "Run `marimo edit --sandbox` on the source notebook in DIR, with the marimo "
+            "installed next to marimo-gradescope."
+        ),
+    )
+    edit_parser.add_argument(
+        "dir", type=Path, metavar="DIR", help="assignment folder with the source notebook"
+    )
 
     build_parser = commands.add_parser(
         "build",
