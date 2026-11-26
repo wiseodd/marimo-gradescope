@@ -363,7 +363,8 @@ def prompt_previews(nb: Notebook, qid: str, width: int = 60) -> tuple[str, ...]:
     """The first non-blank line of each prompt cell of a written question in the source.
 
     A line longer than `width` is cut and ends in `…`. For a prompt that is not a plain
-    string, the line comes from its source.
+    string, the line comes from its source. A blank prompt has no line, so a question with
+    only blank prompts gets `()`.
     """
 
     previews = []
@@ -372,7 +373,9 @@ def prompt_previews(nb: Notebook, qid: str, width: int = 60) -> tuple[str, ...]:
         text = answer_text(nb, cell)
         source = nb.cell_body_source(cell) if text is None else text
         line = next((line.strip() for line in source.splitlines() if line.strip()), "")
-        previews.append(line if len(line) <= width else line[: width - 1] + "…")
+
+        if line:
+            previews.append(line if len(line) <= width else line[: width - 1] + "…")
 
     return tuple(previews)
 

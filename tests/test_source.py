@@ -386,6 +386,13 @@ def test_prompt_previews_are_the_first_line_of_each_prompt():
     assert prompt_previews(notebook, "q3") == ()
 
 
+def test_prompt_previews_skip_empty_prompts():
+    notebook = parse_notebook(nb(md("   ") + ANSWER_MD + grade_cell("q2")))
+
+    assert notebook.written_cells("q2")[0]
+    assert prompt_previews(notebook, "q2") == ()
+
+
 def test_answer_cells_with_suffix():
     src = nb(
         """
