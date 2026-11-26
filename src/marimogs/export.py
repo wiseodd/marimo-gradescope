@@ -7,7 +7,7 @@ The build appends two cells to the student notebook:
 
     mogs.export(export_button, name="hw", manual=["q3"],
                titles={"q1": "Question 1", "q2": "Question 2", "q3": "Question 3"},
-               placeholders={"q3": "*Write your answer here.*"})
+               placeholders={"answer_q3": "*Write your answer here.*"})
 
 On a click, `export` works from the notebook file on disk, not the kernel's state. It reads
 the file once, runs the public tests on the file in a subprocess, makes a PDF of the written
@@ -47,7 +47,7 @@ from marimogs.check import (
 from marimogs.config import default_title
 from marimogs.pdf import PdfUnavailable, cell_markdown, quiet, render_manual_pdf
 from marimogs.runner import exception_summary, shorten
-from marimogs.source import Notebook, SourceError, answer_text, parse_notebook
+from marimogs.source import Notebook, SourceError, answer_text, parse_notebook, unanswered
 
 if TYPE_CHECKING:
     import marimo as mo
@@ -167,8 +167,9 @@ def export(
         name: Base name of the files in the zip, e.g. `hw` for `hw_submission.zip`.
         manual: Ids of the questions graded by hand.
         titles: Title per question: a heading in the PDF, a label in the test summary.
-        placeholders: The answer text each manual question starts with; an answer still
-            equal to it (ignoring whitespace) gets a warning.
+        placeholders: The text each answer cell starts with, by cell name, such as
+            `answer_q3` or `answer_q3_2`. An answer still equal to it (ignoring whitespace)
+            gets a warning. A key that is a question id stands for `answer_<qid>`.
 
     Returns:
         The export panel, with the download when the export ran.
@@ -251,7 +252,8 @@ def package(
         name: Base name of the files in the zip.
         manual: Ids of the questions graded by hand.
         titles: Title per question.
-        placeholders: The answer text each manual question starts with.
+        placeholders: The text each answer cell starts with, by cell name; a question id
+            stands for `answer_<qid>`.
         status: Called with a short message before slow steps.
 
     Returns:
@@ -262,6 +264,10 @@ def package(
     """
 
     report = status or quiet
+    starts = {
+        (f"answer_{key}" if key in manual else key): text
+        for key, text in (placeholders or {}).items()
+    }
 
     with notebook.open("rb") as file:
         modified = os.fstat(file.fileno()).st_mtime
@@ -293,11 +299,7 @@ def package(
                     Line(Mark.WARN, f"PDF not created: {exc}; answers included as Markdown")
                 )
 
-            lines += [
-                Line(Mark.WARN, f"answer_{qid} is missing or empty")
-                for qid in manual
-                if nb is None or not _answered(nb, qid, (placeholders or {}).get(qid))
-            ]
+            lines += unanswered_lines(nb, manual, titles, starts)
 
     if _digest_of(notebook) != hashlib.sha256(data).hexdigest():
         lines.append(Line(Mark.WARN, CHANGED))
@@ -351,8 +353,49 @@ def tests_line(notebook: Path, folder: Path, titles: Mapping[str, str] | None = 
     )
 
 
+def unanswered_lines(
+    nb: Notebook | None,
+    manual: Sequence[str],
+    titles: Mapping[str, str],
+    placeholders: Mapping[str, str],
+) -> list[Line]:
+    """A warning per written question, or part of one, that is blank or still its start text.
+
+    A question with all its parts unanswered gets one line; otherwise each part does. Parts
+    are numbered from 1 in file order.
+
+    Args:
+        nb: The notebook; `None` when it does not parse, which warns about every question.
+        manual: Ids of the questions graded by hand.
+        titles: Title per question; a question without one gets `default_title`.
+        placeholders: The text each answer cell starts with, by cell name.
+    """
+
+    lines = []
+
+    for qid in manual:
+        title = titles.get(qid) or default_title(qid)
+        cells = () if nb is None else nb.answer_cells(qid)
+        parts = [
+            index
+            for index, cell in enumerate(cells, start=1)
+            if nb is not None and unanswered(answer_text(nb, cell), placeholders.get(cell.name))
+        ]
+
+        if len(parts) == len(cells):
+            lines.append(Line(Mark.WARN, f"{title} has no answer yet"))
+            continue
+
+        lines += [Line(Mark.WARN, f"{title}, part {index} has no answer yet") for index in parts]
+
+    return lines
+
+
 def answers_markdown(
-    nb: Notebook | None, name: str, manual: Sequence[str], titles: Mapping[str, str]
+    nb: Notebook | None,
+    name: str,
+    manual: Sequence[str],
+    titles: Mapping[str, str],
 ) -> str:
     """The written answers as Markdown, for when the PDF cannot be made."""
 
@@ -458,15 +501,6 @@ def _parse(data: bytes) -> Notebook | None:
         return None
 
 
-def _answered(nb: Notebook, qid: str, placeholder: str | None) -> bool:
-    """Whether `qid` has an answer cell that is neither blank nor its starting text."""
-
-    start = None if placeholder is None else _words(placeholder)
-    texts = [answer_text(nb, cell) for cell in nb.answer_cells(qid)]
-
-    return any(text is None or (text.strip() and _words(text) != start) for text in texts)
-
-
 def _digest_of(path: Path) -> str | None:
     """SHA-256 of the file's bytes, or `None` when it cannot be read."""
 
@@ -474,9 +508,3 @@ def _digest_of(path: Path) -> str | None:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError:
         return None
-
-
-def _words(text: str) -> str:
-    """`text` with each run of whitespace made one space."""
-
-    return " ".join(text.split())

@@ -1,4 +1,5 @@
 import _thread
+import ast
 import importlib
 import io
 import json
@@ -37,7 +38,7 @@ export_module = importlib.import_module("marimogs.export")
 TITLES = {"q1": "Question 1", "q2": "Vowels", "q3": "Question 3"}
 ANSWER = "Because the order of the terms does not change the sum."
 # The student copy's answer cell is the source's, unchanged: its text is the placeholder.
-PLACEHOLDERS = {"q3": ANSWER}
+PLACEHOLDERS = {"answer_q3": ANSWER}
 ONE_LINER = '@app.cell\ndef answer_q3(): mo.md("Because."); return\n'
 ANSWER_CELL = (
     '@app.cell\ndef answer_q3():\n    mo.md(r"""\n    Because the order of the terms does not '
@@ -48,6 +49,20 @@ ANSWER_CELL = (
 def student_copy(path: Path = SOLUTION) -> str:
     src = path.read_text(encoding="utf-8")
     return student_notebook(src, parse_notebook(src), read_config(src, path), "marimo-gradescope")
+
+
+def export_placeholders(text: str) -> dict[str, str]:
+    """The `placeholders=` argument of the notebook's export call."""
+
+    [call] = [
+        node
+        for node in ast.walk(ast.parse(text))
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "export"
+    ]
+
+    return next(ast.literal_eval(k.value) for k in call.keywords if k.arg == "placeholders")
 
 
 def solved_copy() -> str:
@@ -250,7 +265,65 @@ def test_missing_empty_or_placeholder_answer_warning(tmp_path, no_pdf, edit, war
 
     result = package(notebook, name="hw", manual=["q3"], titles=TITLES, placeholders=PLACEHOLDERS)
 
-    assert ("⚠ answer_q3 is missing or empty" in texts(result.lines)) == warned
+    assert ("⚠ Question 3 has no answer yet" in texts(result.lines)) == warned
+
+
+def test_placeholders_keyed_by_question_still_work(tmp_path, no_pdf):
+    notebook = tmp_path / "hw.py"
+    notebook.write_text(student_copy(), encoding="utf-8")
+
+    result = package(notebook, name="hw", manual=["q3"], titles=TITLES, placeholders={"q3": ANSWER})
+
+    assert "⚠ Question 3 has no answer yet" in texts(result.lines)
+
+
+PART_B = '\n@app.cell\ndef answer_q3_2():\n    mo.md("*Write part (b) here.*")\n    return\n'
+
+
+@pytest.mark.parametrize(
+    ("edit", "warned"),
+    [
+        ((ANSWER, "Addition is commutative."), ["⚠ Question 3, part 2 has no answer yet"]),
+        (
+            ("*Write part (b) here.*", "Also for reals."),
+            ["⚠ Question 3, part 1 has no answer yet"],
+        ),
+        (
+            (ANSWER, "Addition is commutative.", "*Write part (b) here.*", "Also for reals."),
+            [],
+        ),
+    ],
+)
+def test_each_part_is_checked_against_its_own_placeholder(tmp_path, no_pdf, edit, warned):
+    notebook = tmp_path / "hw.py"
+    text = student_copy().replace(ANSWER_CELL, ANSWER_CELL + PART_B)
+
+    for old, new in zip(edit[::2], edit[1::2], strict=True):
+        text = text.replace(old, new)
+
+    notebook.write_text(text, encoding="utf-8")
+    placeholders = {**PLACEHOLDERS, "answer_q3_2": "*Write part (b) here.*"}
+
+    result = package(notebook, name="hw", manual=["q3"], titles=TITLES, placeholders=placeholders)
+
+    assert [line for line in texts(result.lines) if "no answer" in line] == warned
+
+
+def test_solved_copy_exports_without_a_warning(tmp_path, no_pdf):
+    src = SOLUTION.read_text(encoding="utf-8")
+    nb, cfg = parse_notebook(src), read_config(src, SOLUTION)
+    text = student_notebook(src, nb, cfg, "marimo-gradescope", solutions=True)
+    notebook = tmp_path / "hw.py"
+    notebook.write_text(text, encoding="utf-8")
+
+    result = package(
+        notebook, name="hw", manual=["q3"], titles=TITLES, placeholders=export_placeholders(text)
+    )
+    # The first line is the public tests; the PDF line says the Markdown fallback was used.
+    warnings = [line.text for line in result.lines[2:] if line.mark is Mark.WARN]
+
+    assert texts(result.lines)[1].startswith("⚠ PDF not created")
+    assert warnings == []
 
 
 def test_one_line_answer_cell_still_packaged(tmp_path, no_pdf):
@@ -389,7 +462,7 @@ def test_unparsable_notebook_still_packaged(tmp_path, no_pdf):
 
     assert lines[0].startswith("⚠ Public tests could not run: ")
     assert "not valid Python" in lines[0]
-    assert "⚠ answer_q3 is missing or empty" in lines
+    assert "⚠ Question 3 has no answer yet" in lines
     assert "hw.py" in zip_names(result.data)
 
 

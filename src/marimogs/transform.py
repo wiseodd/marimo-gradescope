@@ -129,47 +129,13 @@ def student_notebook(
             "itself; remove yours."
         )
 
-    lines = split_lines(nb.src)
-    edits: Edits = {}
-
-    for cell in nb.cells:
-        if cell.hidden or cell.tests or cell.assignment or cell.instructor:
-            _drop_cell(edits, lines, cell)
-
-    regions = _solution_regions(edits, lines, solutions, nb.markdown_lines())
-    _inline_solutions(edits, lines, nb.src, solutions, regions)
-
-    for cell in nb.cells:
-        if cell.grade_qid is not None and not cell.hidden and not cell.instructor:
-            _rewrite_grade(edits, lines, nb, cell, cfg)
-
-    for question in cfg.questions.values():
-        if question.manual:
-            _name_written_cells(edits, lines, nb, question.id)
-
-    text = "\n".join(
-        new for number, line in enumerate(lines, start=1) for new in edits.get(number, [line])
-    )
-    text = set_dependency(text, tool_requirement)
-
-    try:
-        ast.parse(text)
-    except SyntaxError as e:
-        raise SourceError(
-            f"The student notebook is not valid Python (line {e.lineno}): {e.msg}. Check the "
-            f"`{SOLUTION}` and `{BEGIN}` edits around that line."
-        ) from e
-
-    if not solutions and (leaks := solution_leaks(nb, text)):
-        raise SourceError(
-            "Solution code would reach the student notebook. Check the solution markers "
-            "around these lines:\n" + "\n".join(leaks)
-        )
-
+    text = _edited(nb, cfg, tool_requirement, solutions=solutions)
     manual = [question.id for question in cfg.questions.values() if question.manual]
-    # The copy, not the source: the edits above may have removed an import or a name.
+    # The copy, not the source: the edits may have removed an import or a name. Placeholders
+    # come from the student copy, so the solved copy's answers do not count as untouched.
     copy = parse_notebook(text)
-    placeholders = answer_placeholders(copy, manual)
+    student = parse_notebook(_edited(nb, cfg, tool_requirement)) if solutions else copy
+    placeholders = answer_placeholders(student, manual)
     cells = export_cells(cfg, package_alias(copy), placeholders, marimo=marimo_import(copy))
 
     return _append_cells(text, cells)
@@ -336,8 +302,8 @@ def export_cells(
         cfg: Assignment config.
         alias: The setup cell's name for this package; `None` adds a cell that imports it as
             `mogs`.
-        placeholders: The student copy's answer text per manual question, so the export
-            can warn about an answer left as it was.
+        placeholders: The student copy's text per answer cell name, so the export can warn
+            about an answer left as it was.
         marimo: Which cell has `import marimo as mo`; `MISSING` adds a cell that does.
     """
 
@@ -443,6 +409,51 @@ def _string_literal(text: str) -> str:
                 escaped.append(repr(char)[1:-1])
 
     return '"' + "".join(escaped) + '"'
+
+
+def _edited(
+    nb: Notebook, cfg: AssignmentConfig, tool_requirement: str, *, solutions: bool = False
+) -> str:
+    """`student_notebook` without the export cells."""
+
+    lines = split_lines(nb.src)
+    edits: Edits = {}
+
+    for cell in nb.cells:
+        if cell.hidden or cell.tests or cell.assignment or cell.instructor:
+            _drop_cell(edits, lines, cell)
+
+    regions = _solution_regions(edits, lines, solutions, nb.markdown_lines())
+    _inline_solutions(edits, lines, nb.src, solutions, regions)
+
+    for cell in nb.cells:
+        if cell.grade_qid is not None and not cell.hidden and not cell.instructor:
+            _rewrite_grade(edits, lines, nb, cell, cfg)
+
+    for question in cfg.questions.values():
+        if question.manual:
+            _name_written_cells(edits, lines, nb, question.id)
+
+    text = "\n".join(
+        new for number, line in enumerate(lines, start=1) for new in edits.get(number, [line])
+    )
+    text = set_dependency(text, tool_requirement)
+
+    try:
+        ast.parse(text)
+    except SyntaxError as e:
+        raise SourceError(
+            f"The student notebook is not valid Python (line {e.lineno}): {e.msg}. Check the "
+            f"`{SOLUTION}` and `{BEGIN}` edits around that line."
+        ) from e
+
+    if not solutions and (leaks := solution_leaks(nb, text)):
+        raise SourceError(
+            "Solution code would reach the student notebook. Check the solution markers "
+            "around these lines:\n" + "\n".join(leaks)
+        )
+
+    return text
 
 
 def _append_cells(text: str, cells: str) -> str:

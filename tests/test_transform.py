@@ -689,7 +689,8 @@ def test_export_cells_appended_before_main_guard():
     assert (
         'mogs.export(export_button, name="solution", manual=["q3"], titles={"q1": "Question 1", '
         '"q2": "Vowels", "q3": "Question 3"}, '
-        'placeholders={"q3": "Because the order of the terms does not change the sum."})' in tail
+        'placeholders={"answer_q3": "Because the order of the terms does not change the sum."})'
+        in tail
     )
 
 
@@ -894,11 +895,26 @@ def test_placeholders_come_from_the_student_copy():
     )
     out = student_of(
         '\n@app.cell\ndef answer_q1():\n    mo.md(r"""\n    *Write   here.*\n    """)\n    return\n'
-        "\n@app.cell\ndef answer_q2():\n    x = 1  # SOLUTION\n    return\n",
+        "\n@app.cell\ndef answer_q2():\n    x = 1  # SOLUTION\n    return\n"
+        '\n@app.cell\ndef answer_q3():\n    mo.md("(a)")\n    return\n'
+        '\n@app.cell\ndef answer_q3_2():\n    mo.md("(b)")\n    return\n',
         config,
     )
 
-    assert 'placeholders={"q1": "*Write   here.*"}' in out
+    assert (
+        'placeholders={"answer_q1": "*Write   here.*", "answer_q3": "(a)", "answer_q3_2": "(b)"}'
+        in out
+    )
+
+
+def test_solved_copy_placeholders_come_from_the_student_copy():
+    out = solved(SOLUTION)
+
+    assert "Addition of numbers is commutative" in out
+    assert (
+        'placeholders={"answer_q3": "Because the order of the terms does not change the sum."}'
+        in out
+    )
 
 
 def test_source_with_its_own_export_button_is_refused():

@@ -439,19 +439,40 @@ def is_markdown(nb: Notebook, cell: Cell) -> bool:
 
 
 def answer_placeholders(nb: Notebook, qids: Iterable[str]) -> dict[str, str]:
-    """The text of each question's answer cell, as `answer_text` gives it.
+    """The text of each answer cell of `qids`, as `answer_text` gives it, by cell name.
 
-    Only questions with exactly one answer cell, holding non-blank `mo.md("...")`, are included.
+    Only answer cells holding non-blank `mo.md("...")` are included.
     """
 
     placeholders = {}
 
     for qid in qids:
-        match [answer_text(nb, cell) for cell in nb.answer_cells(qid)]:
-            case [str() as text] if text.strip():
-                placeholders[qid] = text
+        for cell in nb.answer_cells(qid):
+            match answer_text(nb, cell):
+                case str() as text if text.strip():
+                    placeholders[cell.name] = text
 
     return placeholders
+
+
+def unanswered(text: str | None, placeholder: str | None) -> bool:
+    """Whether an answer is blank or still its starting text, ignoring whitespace.
+
+    Args:
+        text: The answer cell's text from `answer_text`; `None`, for code, counts as an answer.
+        placeholder: The text the answer cell starts with, if any.
+    """
+
+    if text is None:
+        return False
+
+    return not text.strip() or (placeholder is not None and _words(text) == _words(placeholder))
+
+
+def _words(text: str) -> str:
+    """`text` with each run of whitespace made one space."""
+
+    return " ".join(text.split())
 
 
 def cell_source(nb: Notebook, cell: Cell) -> str:
