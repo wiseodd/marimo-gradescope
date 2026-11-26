@@ -6,6 +6,7 @@ its exact layout and comments.
 
 import ast
 import io
+import re
 import tokenize
 from collections.abc import Mapping, Sequence
 from collections.abc import Set as AbstractSet
@@ -41,6 +42,8 @@ MARKDOWN_PLACEHOLDER = "*Write your answer here.*"
 DEFAULT_ALIAS = "mogs"
 MARIMO_ALIAS = "mo"
 TESTS_FOLDER = "tests"
+# Solution lines that may appear in the student copy by chance: no letters, or a bare keyword.
+TRIVIAL_LINE_RE = re.compile(r"[^A-Za-z]*|(?:pass|return|break|continue|else|try|finally):?")
 
 
 class MarimoImport(StrEnum):
@@ -155,6 +158,12 @@ def student_notebook(
             f"`{SOLUTION}` and `{BEGIN}` edits around that line."
         ) from e
 
+    if not solutions and (leaks := solution_leaks(nb, text)):
+        raise SourceError(
+            "Solution code would reach the student notebook. Check the solution markers "
+            "around these lines:\n" + "\n".join(leaks)
+        )
+
     manual = [question.id for question in cfg.questions.values() if question.manual]
     # The copy, not the source: the edits above may have removed an import or a name.
     copy = parse_notebook(text)
@@ -162,6 +171,53 @@ def student_notebook(
     cells = export_cells(cfg, package_alias(copy), placeholders, marimo=marimo_import(copy))
 
     return _append_cells(text, cells)
+
+
+def solution_leaks(nb: Notebook, student: str) -> list[str]:
+    """Solution lines of `nb` that the student copy `student` still has.
+
+    A check after the transform, in case it misses a solution. The solution lines are those
+    inside solution regions, other than the markers and prompt lines, and the code before a
+    `# SOLUTION` comment. A line counts as leaked when `student` has it, after stripping
+    indents, and no line outside the solutions has the same text. Lines without letters and
+    bare keywords such as `pass` are skipped.
+
+    Returns:
+        One message per leaked line, naming its line in the source.
+    """
+
+    lines = split_lines(nb.src)
+    markdown = nb.markdown_lines()
+    solution: dict[int, str] = {}
+    prompts: set[str] = set()
+    start: int | None = None
+
+    for number, line in enumerate(lines, start=1):
+        marker, text = line_marker(line, number in markdown)
+
+        match marker, start:
+            case Marker.BEGIN, None:
+                start = number
+            case Marker.END, int():
+                start = None
+            case Marker.PROMPT, _:
+                prompts.add(text.strip())
+            case None, int():
+                solution[number] = line.strip()
+
+    for token in tokenize.generate_tokens(io.StringIO(nb.src).readline):
+        if token.type == tokenize.COMMENT and token.string.strip() == SOLUTION:
+            number = token.start[0]
+            solution[number] = lines[number - 1][: token.start[1]].strip()
+
+    public = prompts | {line.strip() for n, line in enumerate(lines, 1) if n not in solution}
+    student_lines = {line.strip() for line in split_lines(student)}
+
+    return [
+        f"line {number}: `{code}`"
+        for number, code in sorted(solution.items())
+        if code in student_lines and code not in public and not TRIVIAL_LINE_RE.fullmatch(code)
+    ]
 
 
 def test_file(qid: str) -> PurePosixPath:

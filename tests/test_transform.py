@@ -21,6 +21,7 @@ from marimogs.transform import (
     pinned_requirement,
     public_test_files,
     python_literal,
+    solution_leaks,
     student_notebook,
 )
 
@@ -1116,3 +1117,77 @@ def test_export_html_student_copy_with_check_panels(marimo, tmp_path):
     # The page embeds the panel as JSON, which escapes the backslashes of Windows paths.
     assert json.dumps(str(notebook))[1:-1] in page
     assert "Cannot find this notebook" not in page
+
+
+# Leak check
+
+
+LEAKY = """
+@app.cell
+def _():
+    import math
+    # BEGIN SOLUTION
+    # PROMPT: y = ...
+    import math
+    y = math.sqrt(
+        2
+    )
+    pass
+    ...
+    # END SOLUTION
+    return (y,)
+
+
+@app.cell
+def _():
+    n = 3  # SOLUTION
+    return (n,)
+"""
+
+
+def leaks_in(student_text: str) -> list[str]:
+    src = HEADER + LEAKY
+    return solution_leaks(parse_notebook(src), student_text)
+
+
+def line_in_leaky(text: str) -> int:
+    lines = (HEADER + LEAKY).splitlines()
+    return next(number for number, line in enumerate(lines, start=1) if line == text)
+
+
+def test_solution_leaks_names_region_line():
+    found = leaks_in("x = 1\n    y = math.sqrt(\n")
+
+    assert len(found) == 1, found
+    assert f"line {line_in_leaky('    y = math.sqrt(')}:" in found[0]
+    assert "`y = math.sqrt(`" in found[0]
+
+
+def test_solution_leaks_names_inline_solution_line():
+    found = leaks_in("    n = 3\n")
+
+    assert len(found) == 1, found
+    assert f"line {line_in_leaky('    n = 3  # SOLUTION')}:" in found[0]
+
+
+def test_solution_leaks_skips_trivial_public_and_prompt_lines():
+    assert leaks_in("    import math\n    pass\n    ...\n    )\n        2\n    y = ...\n") == []
+
+
+def test_solution_leaks_none_in_student_copy():
+    assert leaks_in(student_of(LEAKY)) == []
+    assert solution_leaks(parse_notebook(SOLUTION.read_text()), student(SOLUTION)) == []
+
+
+def test_student_notebook_refuses_leaked_solution(monkeypatch):
+    # A transform bug that keeps the regions as written must not reach students.
+    monkeypatch.setattr("marimogs.transform._solution_regions", lambda *args: set())
+
+    with pytest.raises(SourceError, match=r"y = math\.sqrt\("):
+        student_of(LEAKY)
+
+
+def test_solved_copy_skips_leak_check():
+    assert "y = math.sqrt(" in student_notebook(
+        HEADER + LEAKY, parse_notebook(HEADER + LEAKY), CONFIG, REQUIREMENT, solutions=True
+    )
