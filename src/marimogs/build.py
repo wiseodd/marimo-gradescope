@@ -174,8 +174,12 @@ def find_notebook(assignment_dir: Path) -> Path:
     reading it explains the change.
 
     Raises:
-        BuildError: If `assignment_dir` is not a folder, or it holds no such file or several.
+        BuildError: If `assignment_dir` is missing or not a folder, or it holds no such file
+            or several.
     """
+
+    if not assignment_dir.exists():
+        raise BuildError(f"{assignment_dir} does not exist.")
 
     if not assignment_dir.is_dir():
         raise BuildError(f"{assignment_dir} is not a folder.")
@@ -200,6 +204,26 @@ def find_notebook(assignment_dir: Path) -> Path:
                 f"Several notebooks in {assignment_dir} call `mogs.assignment(...)`; keep "
                 f"exactly one:\n{names}"
             )
+
+
+def source_notebook(path: Path) -> Path:
+    """The source notebook at `path`, a notebook file or the assignment folder holding it.
+
+    Raises:
+        BuildError: If `path` is missing, is a file that does not call `assignment(...)`, or is
+            a folder that `find_notebook` rejects.
+    """
+
+    if not path.is_file():
+        return find_notebook(path)
+
+    if not _is_notebook(path.read_text(encoding="utf-8", errors="replace")):
+        raise BuildError(
+            f"{path} does not call `mogs.assignment(...)`. Pass the source notebook or the "
+            "assignment folder."
+        )
+
+    return path
 
 
 def _is_notebook(text: str) -> bool:
