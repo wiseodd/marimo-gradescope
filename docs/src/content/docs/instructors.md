@@ -52,6 +52,8 @@ Available options are:
 
 Question ids are letters and digits, and start with a letter, e.g., `q1` or `bonus`.
 They can't contain `_`: test names use `_` to separate the id from the rest of the name.
+Two ids can't differ only in case, like `q1` and `Q1`, and an id can't be a name Windows reserves, like `con` or `nul`.
+Each id names a file in the student zip, `tests/<id>.py`.
 
 ## Notebook
 
@@ -115,6 +117,8 @@ Write it in a normal cell and put its solution between the markers.
 
 A test is a function named `test_<qid>_<name>`, e.g., `test_q1_whole_numbers`.
 Put the public tests of each question in their own cell, with nothing else in it.
+A public test cell can't contain solution markers.
+Students get the public tests as written.
 The tests are plain `pytest` functions, and you can run them all with `pytest notebook.py`.
 
 Hidden tests go in a separate cell with a `# HIDDEN` line:
