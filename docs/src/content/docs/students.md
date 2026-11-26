@@ -3,10 +3,15 @@ title: Students
 description: Work on the assignment and submit it to Gradescope.
 ---
 
-## Installing uv
+## Installing marimo
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
-It fetches Python, marimo and the assignment's packages for you.
+Install Python 3.13 or 3.14, for example via [pyenv](https://github.com/pyenv/pyenv#installation).
+Then, install marimo and uv in your Python environment.
+
+```bash
+pip install marimo uv
+```
+
 This only needs to be done once.
 
 ## Open
@@ -27,12 +32,14 @@ hw/
 In the directory containing the assignment, run this:
 
 ```bash
-uvx marimo edit --sandbox <assignment filename>.py
+marimo edit <assignment filename>.py
 ```
 
-The sandbox is a separate Python environment with the notebook's packages.
+marimo asks whether to run the notebook in a sandbox with the notebook's packages.
+Press Enter to say yes.
+The sandbox is a separate Python environment.
 Its packages don't clash with the ones you already have.
-The first start takes a while: uv has to download the packages.
+The first start takes a while since it has to install the required packages.
 
 ## Work
 
