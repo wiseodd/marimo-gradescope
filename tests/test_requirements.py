@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from marimo_gradescope.config import ConfigError, read_config
-from marimo_gradescope.grader._user import STUDENT_USER
-from marimo_gradescope.grader.templates import UV_VERSION, run_autograder_script, setup_script
-from marimo_gradescope.requirements import RequirementsError, gradescope_requirements
+from marimogs.config import ConfigError, read_config
+from marimogs.grader._user import STUDENT_USER
+from marimogs.grader.templates import UV_VERSION, run_autograder_script, setup_script
+from marimogs.requirements import RequirementsError, gradescope_requirements
 
 REPO = Path(__file__).parent.parent
 TOOL = "marimo-gradescope==0.1.0"
@@ -16,7 +16,7 @@ TOOL = "marimo-gradescope==0.1.0"
 CODE = """
 import marimo
 
-import marimo_gradescope as mogs
+import marimogs as mogs
 
 app = marimo.App()
 
@@ -375,7 +375,7 @@ def test_setup_script(tmp_path):
     assert f"useradd --system --no-create-home --shell /usr/sbin/nologin {STUDENT_USER}" in script
     assert "chmod -R a+rX /opt/mgs-python /opt/mgs-venv" in script
     assert "chmod -R go-rwx /autograder/source" in script
-    sanity = 'python -c "import marimo_gradescope, marimo"'
+    sanity = 'python -c "import marimogs, marimo"'
     assert script.rstrip().endswith(f"runuser -u {STUDENT_USER} -- /opt/mgs-venv/bin/{sanity}")
     assert "${" not in script
     bash_check(script, tmp_path)
@@ -394,9 +394,9 @@ def test_uv_installer_url_exists():
 
 def test_templates_do_not_import_the_sandbox():
     code = (
-        "import sys, marimo_gradescope.grader.templates\n"
+        "import sys, marimogs.grader.templates\n"
         "assert 'resource' not in sys.modules, 'resource'\n"
-        "assert 'marimo_gradescope.grader.sandbox' not in sys.modules, 'sandbox'\n"
+        "assert 'marimogs.grader.sandbox' not in sys.modules, 'sandbox'\n"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
 
@@ -417,7 +417,7 @@ def test_run_autograder_script(tmp_path):
     assert script == (
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        "exec /opt/mgs-venv/bin/python -m marimo_gradescope.grader.main\n"
+        "exec /opt/mgs-venv/bin/python -m marimogs.grader.main\n"
     )
     bash_check(script, tmp_path)
 
@@ -436,12 +436,12 @@ def test_wheel_ships_templates_and_typst_packages(tmp_path):
         check=True,
     ).stdout
 
-    assert "marimo_gradescope/grader/templates/setup.sh" in names
-    assert "marimo_gradescope/grader/templates/run_autograder" in names
+    assert "marimogs/grader/templates/setup.sh" in names
+    assert "marimogs/grader/templates/run_autograder" in names
 
     # The Typst packages the PDF of written answers needs, with their licenses.
     for package in ("cmarker/0.1.10", "mitex/0.2.7"):
-        folder = f"marimo_gradescope/_typst/preview/{package}"
+        folder = f"marimogs/_typst/preview/{package}"
         assert f"{folder}/typst.toml" in names
         assert f"{folder}/lib.typ" in names
         assert f"{folder}/LICENSE" in names

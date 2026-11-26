@@ -32,13 +32,13 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from marimo_gradescope.build import build, write_zip
-from marimo_gradescope.config import normalized_name, read_config
-from marimo_gradescope.grader.bundle import bundle_from_notebook
-from marimo_gradescope.grader.main import main as grader_main
-from marimo_gradescope.grader.results import find_submission
-from marimo_gradescope.source import BEGIN, parse_notebook
-from marimo_gradescope.transform import pinned_requirement, student_notebook
+from marimogs.build import build, write_zip
+from marimogs.config import normalized_name, read_config
+from marimogs.grader.bundle import bundle_from_notebook
+from marimogs.grader.main import main as grader_main
+from marimogs.grader.results import find_submission
+from marimogs.source import BEGIN, parse_notebook
+from marimogs.transform import pinned_requirement, student_notebook
 
 REPO = Path(__file__).parents[2]
 DEMO = REPO / "examples" / "demo"

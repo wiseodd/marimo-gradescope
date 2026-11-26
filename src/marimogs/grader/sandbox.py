@@ -27,16 +27,16 @@ from collections.abc import Mapping, Sequence
 from enum import Enum, auto
 from pathlib import Path, PurePosixPath
 
-from marimo_gradescope.grader._process import (
+from marimogs.grader._process import (
     Child,
     check_user,
     describe_exit,
     kill_user,
     launch_options,
 )
-from marimo_gradescope.grader.bundle import GradingBundle, Phase
-from marimo_gradescope.grader.datafiles import SUBMISSION, data_files
-from marimo_gradescope.grader.protocol import (
+from marimogs.grader.bundle import GradingBundle, Phase
+from marimogs.grader.datafiles import SUBMISSION, data_files
+from marimogs.grader.protocol import (
     Event,
     Job,
     Loaded,
@@ -44,7 +44,7 @@ from marimo_gradescope.grader.protocol import (
     Result,
     Start,
 )
-from marimo_gradescope.runner import FailureReason, Outcome, cap
+from marimogs.runner import FailureReason, Outcome, cap
 
 MAX_RESPAWNS = 3
 GRACE = 5.0

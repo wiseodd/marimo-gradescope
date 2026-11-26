@@ -254,7 +254,7 @@ def run_test_source(
         One outcome per name.
     """
 
-    from marimo_gradescope._assertrewrite import compile_tests
+    from marimogs._assertrewrite import compile_tests
 
     try:
         exec(compile_tests(source, filename), namespace)

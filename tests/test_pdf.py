@@ -7,17 +7,17 @@ import pytest
 from pypdf import PdfReader
 from pypdf.generic import DictionaryObject
 
-from marimo_gradescope import pdf
-from marimo_gradescope.config import read_config
-from marimo_gradescope.pdf import (
+from marimogs import pdf
+from marimogs.config import read_config
+from marimogs.pdf import (
     Formula,
     PdfUnavailable,
     cell_markdown,
     find_formulas,
     render_manual_pdf,
 )
-from marimo_gradescope.source import parse_notebook
-from marimo_gradescope.transform import student_notebook
+from marimogs.source import parse_notebook
+from marimogs.transform import student_notebook
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SOLUTION = FIXTURES / "solution.py"

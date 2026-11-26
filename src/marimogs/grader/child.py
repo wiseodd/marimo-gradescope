@@ -1,6 +1,6 @@
 """Grading child: runs one phase's tests on a submission and reports events.
 
-Usage: `python -m marimo_gradescope.grader.child EVENT_FD`. The parent passes a writable file
+Usage: `python -m marimogs.grader.child EVENT_FD`. The parent passes a writable file
 descriptor `EVENT_FD` (e.g. with `pass_fds`) and writes a `Job` to stdin; the child writes
 events to `EVENT_FD`, as `grader.protocol` describes. Stdout and stderr belong to the
 student's code.
@@ -15,11 +15,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from types import FrameType
 
-from marimo_gradescope._assertrewrite import compile_tests
-from marimo_gradescope.grader.bundle import HiddenHelper, TestCell
-from marimo_gradescope.grader.protocol import Event, Job, Loaded, Loading, Result, Start, encode
-from marimo_gradescope.loader import bind
-from marimo_gradescope.runner import (
+from marimogs._assertrewrite import compile_tests
+from marimogs.grader.bundle import HiddenHelper, TestCell
+from marimogs.grader.protocol import Event, Job, Loaded, Loading, Result, Start, encode
+from marimogs.loader import bind
+from marimogs.runner import (
     FailureReason,
     Outcome,
     cap,

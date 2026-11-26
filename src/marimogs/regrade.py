@@ -8,7 +8,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from marimo_gradescope.build import (
+from marimogs.build import (
     BuildError,
     data_files,
     grade_locally,
@@ -16,12 +16,12 @@ from marimo_gradescope.build import (
     require_posix,
     total,
 )
-from marimo_gradescope.config import TOOL
-from marimo_gradescope.environment import grading_python
-from marimo_gradescope.grader.bundle import GradingBundle, bundle_from_notebook
-from marimo_gradescope.grader.results import Results, build_results, find_submission
-from marimo_gradescope.requirements import gradescope_requirements
-from marimo_gradescope.runner import Outcome
+from marimogs.config import TOOL
+from marimogs.environment import grading_python
+from marimogs.grader.bundle import GradingBundle, bundle_from_notebook
+from marimogs.grader.results import Results, build_results, find_submission
+from marimogs.requirements import gradescope_requirements
+from marimogs.runner import Outcome
 
 
 @dataclass(frozen=True, slots=True)

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from marimo_gradescope.config import (
+from marimogs.config import (
     AssignmentConfig,
     ConfigError,
     Question,
@@ -70,7 +70,7 @@ def test_read_header_invalid_toml():
 # read_config
 
 
-def cells(*bodies: str, alias: str = "import marimo_gradescope as mogs") -> str:
+def cells(*bodies: str, alias: str = "import marimogs as mogs") -> str:
     """A notebook with a header, a setup cell importing this package, and plain cells."""
 
     out = HEADER + f"\nimport marimo\n\napp = marimo.App()\n\nwith app.setup:\n    {alias}\n"
@@ -155,8 +155,8 @@ def test_all_assignment_arguments():
 @pytest.mark.parametrize(
     "alias",
     [
-        "import marimo_gradescope as grader",
-        "from marimo_gradescope import assignment, grade as run_grade",
+        "import marimogs as grader",
+        "from marimogs import assignment, grade as run_grade",
     ],
 )
 def test_calls_follow_the_import_names(alias):

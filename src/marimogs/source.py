@@ -14,7 +14,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 
-from marimo_gradescope.config import (
+from marimogs.config import (
     ASSIGNMENT,
     Api,
     AssignmentConfig,

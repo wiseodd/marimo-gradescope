@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-marimo-gradescope = "marimo_gradescope.cli:main"
+marimo-gradescope = "marimogs.cli:main"
 
 [project.optional-dependencies]
 # The vendored Typst packages in `_typst` need Typst 0.15.
@@ -27,6 +27,10 @@ pdf = ["typst>=0.15,<0.16"]
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# The distribution is `marimo-gradescope`; the import name is shorter.
+module-name = "marimogs"
 
 [dependency-groups]
 dev = [

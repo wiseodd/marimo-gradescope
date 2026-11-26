@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from marimo_gradescope.config import read_config
-from marimo_gradescope.grader import main as main_module
-from marimo_gradescope.grader.bundle import bundle_from_notebook
-from marimo_gradescope.grader.main import main
-from marimo_gradescope.source import parse_notebook
+from marimogs.config import read_config
+from marimogs.grader import main as main_module
+from marimogs.grader.bundle import bundle_from_notebook
+from marimogs.grader.main import main
+from marimogs.source import parse_notebook
 
 pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="the grader is Linux only")
 

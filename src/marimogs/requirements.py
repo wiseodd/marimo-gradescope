@@ -13,7 +13,7 @@ from pathlib import Path
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
-from marimo_gradescope.config import (
+from marimogs.config import (
     ASSIGNMENT,
     TOOL,
     AssignmentConfig,

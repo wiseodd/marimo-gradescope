@@ -12,15 +12,15 @@ from collections.abc import Set as AbstractSet
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 
-from marimo_gradescope import __version__
-from marimo_gradescope.config import (
+from marimogs import __version__
+from marimogs.config import (
     PACKAGE,
     AssignmentConfig,
     normalize_newlines,
     set_dependency,
     split_lines,
 )
-from marimo_gradescope.source import (
+from marimogs.source import (
     BEGIN,
     END,
     SOLUTION,

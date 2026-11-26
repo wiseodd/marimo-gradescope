@@ -20,8 +20,8 @@ from functools import partial
 from pathlib import Path
 from typing import IO
 
-from marimo_gradescope._env import grading_env
-from marimo_gradescope.grader.protocol import Event, ProtocolError, decode
+from marimogs._env import grading_env
+from marimogs.grader.protocol import Event, ProtocolError, decode
 
 OUTPUT_LIMIT = 64 * 1024
 LINE_LIMIT = 1024 * 1024
@@ -59,7 +59,7 @@ class LaunchOptions:
 def child_command(event_fd: int, python: str) -> list[str]:
     """The command line of a grading child that runs on `python` and writes events to `event_fd`."""
 
-    return [python, "-m", "marimo_gradescope.grader.child", str(event_fd)]
+    return [python, "-m", "marimogs.grader.child", str(event_fd)]
 
 
 def child_env(workdir: Path) -> dict[str, str]:

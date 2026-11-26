@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from marimo_gradescope.build import build, read_assignment
-from marimo_gradescope.cli import main
-from marimo_gradescope.config import ConfigError
-from marimo_gradescope.scaffold import InitError, init
-from marimo_gradescope.source import CellKind
+from marimogs.build import build, read_assignment
+from marimogs.cli import main
+from marimogs.config import ConfigError
+from marimogs.scaffold import InitError, init
+from marimogs.source import CellKind
 
 
 def test_init_writes_one_notebook_named_after_the_folder(tmp_path):
@@ -40,7 +40,7 @@ def test_init_notebook_has_a_guide_for_the_instructor(tmp_path):
 def test_init_notebook_imports_the_package_as_mogs(tmp_path):
     text = init(tmp_path / "A12").read_text(encoding="utf-8")
 
-    assert "    import marimo_gradescope as mogs\n" in text
+    assert "    import marimogs as mogs\n" in text
     assert "mgs." not in text.replace("mogs.", "")
     assert 'mogs.assignment(name="A12")' in text
 

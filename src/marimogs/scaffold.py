@@ -4,8 +4,8 @@ from importlib.metadata import version
 from pathlib import Path
 from string import Template
 
-from marimo_gradescope.config import check_name
-from marimo_gradescope.transform import python_literal
+from marimogs.config import check_name
+from marimogs.transform import python_literal
 
 NOTEBOOK = Template('''\
 # /// script
@@ -20,7 +20,7 @@ app = marimo.App()
 
 with app.setup:
     import marimo as mo
-    import marimo_gradescope as mogs
+    import marimogs as mogs
 
 
 @app.cell

@@ -14,11 +14,11 @@ from pathlib import Path
 
 import pytest
 
-from marimo_gradescope.config import AssignmentConfig, Question
-from marimo_gradescope.grader import _process, sandbox
-from marimo_gradescope.grader.bundle import GradingBundle, Phase, TestCell
-from marimo_gradescope.grader.sandbox import grade, run_phase
-from marimo_gradescope.runner import FailureReason, Outcome
+from marimogs.config import AssignmentConfig, Question
+from marimogs.grader import _process, sandbox
+from marimogs.grader.bundle import GradingBundle, Phase, TestCell
+from marimogs.grader.sandbox import grade, run_phase
+from marimogs.runner import FailureReason, Outcome
 
 # The sandbox also runs on macOS, but these tests rely on Linux-only limits: the memory bomb
 # fixture needs RLIMIT_AS, and the process cap and `resource` checks are Linux values.
@@ -123,7 +123,7 @@ def test_misbehaving_test_fails_alone(tmp_path, name, reason, detail):
 
 
 def test_stdout_flood_finishes_and_keeps_only_the_tail(tmp_path, caplog):
-    caplog.set_level(logging.INFO, logger="marimo_gradescope.grader.sandbox")
+    caplog.set_level(logging.INFO, logger="marimogs.grader.sandbox")
 
     start = time.monotonic()
     results = run(tmp_path, fixture("stdout_flood"), bundle())
@@ -302,7 +302,7 @@ def test_slow_check_cell_does_not_stall_the_notebook_run(tmp_path):
             with app.setup:
                 import time
 
-                import marimo_gradescope as mogs
+                import marimogs as mogs
 
 
             @app.cell
@@ -544,7 +544,7 @@ def test_launch_without_user(tmp_path):
     assert _process.child_command(7, "/env/bin/python") == [
         "/env/bin/python",
         "-m",
-        "marimo_gradescope.grader.child",
+        "marimogs.grader.child",
         "7",
     ]
 
@@ -630,8 +630,8 @@ def test_limits_never_exceed_the_hard_limit():
 def test_events_before_a_bad_line_still_count(tmp_path):
     source = """\
 import os, sys
-from marimo_gradescope.grader.protocol import Result, encode
-from marimo_gradescope.runner import Outcome
+from marimogs.grader.protocol import Result, encode
+from marimogs.runner import Outcome
 
 def test_q1_before():
     assert add(1, 2) == 3

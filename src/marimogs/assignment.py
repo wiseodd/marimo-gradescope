@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from marimo_gradescope._env import grading
-from marimo_gradescope.check import (
+from marimogs._env import grading
+from marimogs.check import (
     FAIL,
     ITEM_STYLE,
     LIST_STYLE,
@@ -19,8 +19,8 @@ from marimo_gradescope.check import (
     format_points,
     locate,
 )
-from marimo_gradescope.config import AssignmentConfig, ConfigError, read_config
-from marimo_gradescope.source import Notebook, SourceError, parse_notebook, validate
+from marimogs.config import AssignmentConfig, ConfigError, read_config
+from marimogs.source import Notebook, SourceError, parse_notebook, validate
 
 if TYPE_CHECKING:
     import marimo as mo
@@ -133,7 +133,7 @@ def _problems(name: str, problems: list[str], path: Path) -> str:
 def _data_problems(path: Path, cfg: AssignmentConfig) -> list[str]:
     """The build's complaint about the data files, if any."""
 
-    from marimo_gradescope.build import data_files
+    from marimogs.build import data_files
 
     try:
         data_files(path.parent, cfg)

@@ -6,13 +6,13 @@ import sys
 from copy import replace
 from pathlib import Path
 
-from marimo_gradescope import __version__
-from marimo_gradescope.build import BuildError, BuildResult, build, failure_report
-from marimo_gradescope.config import ConfigError
-from marimo_gradescope.regrade import GradeResult, grade_submission
-from marimo_gradescope.requirements import RequirementsError
-from marimo_gradescope.scaffold import InitError, init
-from marimo_gradescope.source import SourceError
+from marimogs import __version__
+from marimogs.build import BuildError, BuildResult, build, failure_report
+from marimogs.config import ConfigError
+from marimogs.regrade import GradeResult, grade_submission
+from marimogs.requirements import RequirementsError
+from marimogs.scaffold import InitError, init
+from marimogs.source import SourceError
 
 
 def main(argv: list[str] | None = None) -> int:
