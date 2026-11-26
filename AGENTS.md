@@ -74,8 +74,6 @@ make fix         # ruff fixes, then format
 ## Git
 
 - Never commit to `main`. Work on a branch off `main` and open one plain PR
-  into `main`, one commit per logical change. Don't stack PRs. Code commits
-  on the branch are fine. Use plain conventional commit messages.
-- **Never commit README or docs changes without the author's approval.** Leave
-  them in the working tree and summarize them.
+  into `main`, one commit per logical change. Don't stack PRs. Use plain
+  conventional commit messages.
 - No design notes or plans in the repo.
