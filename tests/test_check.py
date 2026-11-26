@@ -360,7 +360,7 @@ def test_discovers_question_tests_from_caller_globals():
     )
     text = text_of(ns["panel"])
 
-    assert "1/2 public tests passed" in text
+    assert "1/2 tests passed" in text
     assert "test_q1_a" in text
     assert "test_q1_b" in text
     assert "test_q10_c" not in text
@@ -631,6 +631,31 @@ def test_grade_in_the_source_finds_written_questions_in_the_saved_notebook(qid, 
     exec(f'panel = grade("{qid}", points=5)', namespace)
 
     assert shown in text_of(namespace["panel"])
+
+
+def test_written_panel_in_the_source_does_not_mention_export(tmp_path):
+    notebook = tmp_path / "hw.py"
+    notebook.write_text(WRITTEN_SOURCE, encoding="utf-8")
+    namespace: dict[str, Any] = {"__file__": str(notebook), "grade": grade}
+
+    exec('panel = grade("q2", points=5)', namespace)
+
+    text = text_of(namespace["panel"])
+    assert "when you export" not in text
+    assert "PDF" in text
+
+
+def test_written_panel_in_the_student_copy_mentions_export():
+    assert "when you export" in text_of(grade("q3", points=5, manual=True))
+
+
+def test_source_panel_does_not_call_hidden_tests_public():
+    namespace: dict[str, Any] = {"grade": grade}
+    exec("def test_q1_a():\n    assert True\n\npanel = grade('q1', points=1)", namespace)
+
+    text = text_of(namespace["panel"])
+    assert "1/1 tests passed" in text
+    assert "public" not in text
 
 
 def test_grade_without_a_saved_notebook_shows_no_tests():
