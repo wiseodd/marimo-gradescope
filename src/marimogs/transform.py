@@ -79,8 +79,9 @@ def student_notebook(
       at the indent of `# BEGIN SOLUTION`, or `...` without them. In a Markdown cell the
       markers are `<!-- BEGIN SOLUTION -->`, `<!-- END SOLUTION -->` and
       `<!-- PROMPT: <text> -->`, and the placeholder is `*Write your answer here.*`.
-    - `x = rhs  # SOLUTION` becomes `x = ...`; another statement ending in `# SOLUTION` is
-      dropped.
+    - `x = rhs  # SOLUTION` becomes `x = ...`, and the same goes for `x: T = rhs`,
+      `return rhs`, `yield rhs` and `yield from rhs`. Another statement ending in
+      `# SOLUTION` is dropped.
     - `# HIDDEN` cells, public test cells, the `assignment(...)` cell and instructor cells
       are dropped with the blank lines after them. The public tests go to their own files
       instead (`public_test_files`).
@@ -533,7 +534,10 @@ def _solution_regions(
 def _inline_solutions(
     edits: Edits, lines: list[str], src: str, keep: bool, regions: set[int]
 ) -> None:
-    """Blank out the value of `x = rhs  # SOLUTION`; drop other statements so marked.
+    """Blank out the value of a statement marked `# SOLUTION`, or drop the statement.
+
+    `x = rhs`, `x: T = rhs`, `return rhs`, `yield rhs` and `yield from rhs` keep everything
+    but the value, which becomes `...`. Any other simple statement is dropped.
 
     With `keep`, only the comments go. A comment inside a solution region (`regions`) is not
     checked, since the student copy drops the whole region; with `keep` it is removed, and so
@@ -584,6 +588,17 @@ def _inline_solutions(
             case ast.AnnAssign(target=target, annotation=annotation, value=ast.expr()):
                 names = f"{_segment(src, target)}: {_segment(src, annotation)}"
                 _replace(edits, stmt.lineno, number, [f"{before}{names} = ..."])
+            case (
+                ast.Return(value=ast.expr())
+                | ast.Expr(value=ast.Yield(value=ast.expr()) | ast.YieldFrom())
+            ) if keep:
+                _replace(edits, number, number, uncommented)
+            case ast.Return(value=ast.expr()):
+                _replace(edits, stmt.lineno, number, [f"{before}return ..."])
+            case ast.Expr(value=ast.Yield(value=ast.expr())):
+                _replace(edits, stmt.lineno, number, [f"{before}yield ..."])
+            case ast.Expr(value=ast.YieldFrom()):
+                _replace(edits, stmt.lineno, number, [f"{before}yield from ..."])
             case (
                 ast.FunctionDef()
                 | ast.AsyncFunctionDef()

@@ -173,6 +173,53 @@ def _():
     )
 
 
+def test_inline_solution_return_and_yield_keep_the_keyword():
+    out = student_of("""
+@app.function
+def area(r):
+    return 3.14 * r * r  # SOLUTION
+
+
+@app.function
+def squares(n):
+    yield from range(n)  # SOLUTION
+
+
+@app.function
+def evens(n):
+    yield 2 * n  # SOLUTION
+""")
+
+    assert "def area(r):\n    return ...\n" in out
+    assert "def squares(n):\n    yield from ...\n" in out
+    assert "def evens(n):\n    yield ...\n" in out
+    ast.parse(out)
+
+
+def test_inline_solution_bare_return_and_yield_are_dropped():
+    out = student_of("""
+@app.function
+def f(n):
+    print(n)
+    yield  # SOLUTION
+    return  # SOLUTION
+""")
+
+    assert "def f(n):\n    print(n)\n\n" in out
+
+
+def test_inline_solution_augmented_assignment_is_dropped():
+    out = student_of("""
+@app.cell
+def _():
+    x = 1
+    x += 2  # SOLUTION
+    return
+""")
+
+    assert "    x = 1\n    return\n" in out
+
+
 def test_inline_solution_chained_and_tuple_targets():
     out = student_of("""
 @app.cell
