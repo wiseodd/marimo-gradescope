@@ -8,22 +8,21 @@ import ast
 import io
 import tokenize
 from collections.abc import Mapping, Sequence
+from collections.abc import Set as AbstractSet
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 
 from marimo_gradescope import __version__
 from marimo_gradescope.config import (
+    PACKAGE,
     AssignmentConfig,
     normalize_newlines,
     set_dependency,
     split_lines,
-    strip_tool_table,
 )
 from marimo_gradescope.source import (
     BEGIN,
     END,
-    PACKAGE,
-    PROMPT,
     SOLUTION,
     Cell,
     CellKind,
@@ -32,12 +31,14 @@ from marimo_gradescope.source import (
     SourceError,
     answer_placeholders,
     cell_names,
+    line_marker,
     parse_notebook,
     question_id,
 )
 
 EXPORT_BUTTON = "export_button"
-DEFAULT_ALIAS = "mgs"
+MARKDOWN_PLACEHOLDER = "*Write your answer here.*"
+DEFAULT_ALIAS = "mogs"
 MARIMO_ALIAS = "mo"
 TESTS_FOLDER = "tests"
 
@@ -72,18 +73,24 @@ def student_notebook(
     r"""Turn a source notebook into the notebook students get.
 
     - A `# BEGIN SOLUTION` ... `# END SOLUTION` region becomes its `# PROMPT: <code>` lines,
-      or `...` if it has none, at the indent of `# BEGIN SOLUTION`.
+      at the indent of `# BEGIN SOLUTION`, or `...` without them. In a Markdown cell the
+      markers are `<!-- BEGIN SOLUTION -->`, `<!-- END SOLUTION -->` and
+      `<!-- PROMPT: <text> -->`, and the placeholder is `*Write your answer here.*`.
     - `x = rhs  # SOLUTION` becomes `x = ...`; another statement ending in `# SOLUTION` is
       dropped.
-    - `# HIDDEN` cells and public test cells are dropped with the blank lines after them. The
-      public tests go to their own files instead (`public_test_files`).
-    - `check("q1")` becomes `check("q1", test_file="tests/q1.py", uses=[<names>],
-      points=<p>, hidden=<n>, title=<title>)`, where `uses` lists the student names the
-      public tests read, so marimo runs the check again when one of them changes.
+    - `# HIDDEN` cells, public test cells, the `assignment(...)` cell and instructor cells
+      are dropped with the blank lines after them. The public tests go to their own files
+      instead (`public_test_files`).
+    - `grade("q1", points=<p>)` becomes `grade("q1", points=<p>, title=<title>,
+      test_file="tests/q1.py", uses=[<names>], hidden=<n>)`, where `uses` lists the student
+      names the public tests read, so marimo runs the cell again when one of them changes.
+      For a written question it becomes `grade("q2", points=<p>, title=<title>,
+      manual=True)`. The points and title come from `cfg`.
+    - A written question's Markdown cells are named for the export: its answers
+      `answer_<qid>`, `answer_<qid>_2`, ..., and the prompts before them `prompt_<qid>`, ...
     - Export cells go after the last cell: a "Submit" note, the export button and the export
       panel (`export_cells`).
-    - The header loses the `[tool.marimo-gradescope]` table and depends on
-      `tool_requirement`.
+    - The header depends on `tool_requirement`.
 
     With `solutions=True` it makes the solved copy instead: the same notebook, except that a
     solution region keeps its code without the marker and `# PROMPT:` lines, and
@@ -102,10 +109,9 @@ def student_notebook(
 
     Raises:
         ValueError: If `nb` was not parsed from `src`.
-        SourceError: If a `# SOLUTION` comment does not end a statement it can edit, a check
-            call has arguments besides the question id or names an unknown question, solution
-            markers do not pair up, the source defines `export_button` itself, or the result
-            is not valid Python.
+        SourceError: If a `# SOLUTION` comment does not end a statement it can edit, a grade
+            call names an unknown question, solution markers do not pair up, the source
+            defines `export_button` itself, or the result is not valid Python.
         ConfigError: If a header edit fails.
     """
 
@@ -122,20 +128,24 @@ def student_notebook(
     edits: Edits = {}
 
     for cell in nb.cells:
-        if cell.hidden or cell.tests:
+        if cell.hidden or cell.tests or cell.assignment or cell.instructor:
             _drop_cell(edits, lines, cell)
 
-    regions = _solution_regions(edits, lines, solutions)
+    regions = _solution_regions(edits, lines, solutions, nb.markdown_lines())
     _inline_solutions(edits, lines, nb.src, solutions, regions)
 
     for cell in nb.cells:
-        if cell.check_qid is not None and not cell.hidden:
-            _rewrite_check(edits, lines, nb, cell, cfg)
+        if cell.grade_qid is not None and not cell.hidden and not cell.instructor:
+            _rewrite_grade(edits, lines, nb, cell, cfg)
+
+    for question in cfg.questions.values():
+        if question.manual:
+            _name_written_cells(edits, lines, nb, question.id)
 
     text = "\n".join(
         new for number, line in enumerate(lines, start=1) for new in edits.get(number, [line])
     )
-    text = set_dependency(strip_tool_table(text), tool_requirement)
+    text = set_dependency(text, tool_requirement)
 
     try:
         ast.parse(text)
@@ -161,7 +171,7 @@ def test_file(qid: str) -> PurePosixPath:
 
 
 def public_test_files(nb: Notebook) -> dict[PurePosixPath, str]:
-    """The public test file of each question with a check call, by `test_file` path.
+    """The public test file of each auto-graded question, by `test_file` path.
 
     A file holds the bodies of the question's public test cells, in file order. A question
     without public tests gets a file with only its first comment line.
@@ -170,14 +180,17 @@ def public_test_files(nb: Notebook) -> dict[PurePosixPath, str]:
         nb: The source notebook. It should pass `validate`.
     """
 
+    tested = nb.tests_by_question()
     qids = dict.fromkeys(
-        cell.check_qid for cell in nb.cells if cell.check_qid is not None and not cell.hidden
+        cell.grade_qid
+        for cell in nb.cells
+        if cell.grade_qid in tested and not cell.hidden and not cell.instructor
     )
     files = {}
 
     for qid in qids:
         bodies = [nb.cell_body_source(cell) for cell in _public_test_cells(nb, qid)]
-        head = f'# Public tests for {qid}, run by check("{qid}") in the notebook.\n'
+        head = f'# Public tests for {qid}, run by grade("{qid}") in the notebook.\n'
         files[test_file(qid)] = "\n\n".join([head, *bodies])
 
     return files
@@ -195,7 +208,7 @@ def package_alias(nb: Notebook) -> str | None:
     """The name the setup cell imports this package as, if it does.
 
     Raises:
-        SourceError: If it does not, and `mgs`, the name the export cells would import it
+        SourceError: If it does not, and `mogs`, the name the export cells would import it
             as, is already taken.
     """
 
@@ -264,7 +277,7 @@ def export_cells(
     Args:
         cfg: Assignment config.
         alias: The setup cell's name for this package; `None` adds a cell that imports it as
-            `mgs`.
+            `mogs`.
         placeholders: The student copy's answer text per manual question, so the export
             can warn about an answer left as it was.
         marimo: Which cell has `import marimo as mo`; `MISSING` adds a cell that does.
@@ -397,10 +410,14 @@ def _drop_cell(edits: Edits, lines: list[str], cell: Cell) -> None:
         edits[number] = []
 
 
-def _solution_regions(edits: Edits, lines: list[str], keep: bool) -> set[int]:
-    """Replace each solution region with its prompt lines, or `...`.
+def _solution_regions(
+    edits: Edits, lines: list[str], keep: bool, markdown: AbstractSet[int]
+) -> set[int]:
+    """Replace each solution region with its prompt lines, or a placeholder.
 
-    With `keep`, drop only the marker and prompt lines.
+    Lines in `markdown` belong to Markdown cells, whose markers are HTML comments. There the
+    placeholder is `MARKDOWN_PLACEHOLDER`; elsewhere it is `...`. With `keep`, drop only
+    the marker and prompt lines.
 
     Returns:
         The numbers of the lines inside the regions, markers excluded.
@@ -413,9 +430,9 @@ def _solution_regions(edits: Edits, lines: list[str], keep: bool) -> set[int]:
     inside: set[int] = set()
 
     for number, line in enumerate(lines, start=1):
-        stripped = line.strip()
+        marker, text = line_marker(line, number in markdown)
 
-        match stripped, start:
+        match marker, start:
             case Marker.BEGIN, None:
                 start, indent, prompt = number, line[: len(line) - len(line.lstrip())], []
                 prompts = []
@@ -428,13 +445,14 @@ def _solution_regions(edits: Edits, lines: list[str], keep: bool) -> set[int]:
             case Marker.END, int():
                 inside.update(range(start + 1, number))
                 if start not in edits:
-                    stub = [indent + code if code else "" for code in prompt or ["..."]]
+                    default = MARKDOWN_PLACEHOLDER if start in markdown else "..."
+                    stub = [indent + code if code else "" for code in prompt or [default]]
                     _replace(edits, start, number, stub)
                 start = None
             case Marker.BEGIN | Marker.END, _:
-                raise SourceError(f"line {number}: `{stripped}` does not pair up.")
-            case _, int() if stripped.startswith(PROMPT):
-                prompt.append(stripped.removeprefix(PROMPT).removeprefix(" "))
+                raise SourceError(f"line {number}: `{line.strip()}` does not pair up.")
+            case Marker.PROMPT, int():
+                prompt.append(text)
                 prompts.append(number)
 
     if start is not None:
@@ -525,23 +543,16 @@ def _inline_solutions(
                 )
 
 
-def _rewrite_check(
+def _rewrite_grade(
     edits: Edits, lines: list[str], nb: Notebook, cell: Cell, cfg: AssignmentConfig
 ) -> None:
-    """Pass the test file, the names its tests use, points, hidden-test count and title."""
+    """Pass points and title, and the test file, its names and hidden-test count, or `manual`."""
 
-    call = nb.check_call(cell)
-    qid = cell.check_qid
-
-    if call.keywords or len(call.args) != 1:
-        raise SourceError(
-            f"line {call.lineno}: in the source notebook, check() takes only the question id, "
-            'e.g. mgs.check("q1").'
-        )
-
+    call = nb.grade_call(cell)
+    qid = cell.grade_qid
     question = cfg.questions.get(qid) if qid is not None else None
     if qid is None or question is None:
-        raise SourceError(f"line {call.lineno}: check() names an unknown question {qid!r}.")
+        raise SourceError(f"line {call.lineno}: grade() names an unknown question {qid!r}.")
 
     _, hidden = nb.tests_by_question().get(qid, ([], []))
     students = nb.student_names()
@@ -555,10 +566,12 @@ def _rewrite_check(
     points = question.points
     shown = str(int(points)) if points.is_integer() else repr(points)
     func = ast.get_source_segment(nb.src, call.func)
+    head = f"{func}({python_literal(qid)}, points={shown}, title={python_literal(question.title)}"
     new_call = (
-        f"{func}({python_literal(qid)}, test_file={python_literal(str(test_file(qid)))}, "
-        f"uses=[{', '.join(uses)}], points={shown}, hidden={len(hidden)}, "
-        f"title={python_literal(question.title)})"
+        f"{head}, manual=True)"
+        if question.manual
+        else f"{head}, test_file={python_literal(str(test_file(qid)))}, "
+        f"uses=[{', '.join(uses)}], hidden={len(hidden)})"
     )
 
     first = lines[call.lineno - 1]
@@ -566,6 +579,23 @@ def _rewrite_check(
     start = _char_col(first, call.col_offset)
     end = _char_col(last, _end_col(call))
     _replace(edits, call.lineno, _end_line(call), [first[:start] + new_call + last[end:]])
+
+
+def _name_written_cells(edits: Edits, lines: list[str], nb: Notebook, qid: str) -> None:
+    """Name a written question's prompt and answer cells, so the export can find them."""
+
+    prompts, answers = nb.written_cells(qid)
+
+    for prefix, cells in (("prompt", prompts), ("answer", answers)):
+        for index, cell in enumerate(cells, start=1):
+            name = f"{prefix}_{qid}" if index == 1 else f"{prefix}_{qid}_{index}"
+            old = f"def {cell.name}("
+            number = next((n for n in range(cell.start, cell.end + 1) if old in lines[n - 1]), None)
+
+            if number is None:
+                raise SourceError(f"line {cell.start}: cannot name the cell `{name}`.")
+
+            _replace(edits, number, number, [lines[number - 1].replace(old, f"def {name}(", 1)])
 
 
 def _segment(src: str, node: ast.expr) -> str:

@@ -4,19 +4,13 @@
 #     "marimo",
 # ]
 #
-# [tool.marimo-gradescope]
-# name = "Pure test cells"
-#
-# [tool.marimo-gradescope.questions]
-# q1 = 2
-# q2 = 3
-#
 # [tool.marimo.runtime]
 # reactive_tests = false
 # ///
 
-# Runs under marimo without this package's runtime API: no check calls, so
-# `marimo export html` exercises only marimo's pytest hook on pure test cells.
+# Runs under marimo without this package's runtime API: no config or check calls, so
+# `marimo export html` exercises only marimo's pytest hook on pure test cells. Tests pass
+# its config themselves.
 
 import marimo
 

@@ -10,7 +10,6 @@ from marimo_gradescope.config import (
     read_header,
     remove_dependency,
     set_dependency,
-    strip_tool_table,
 )
 
 NB = Path("/course/A_01/hw1.py")
@@ -40,9 +39,6 @@ dependencies = [
     "marimo-gradescope",
     "numpy",
 ]
-
-[tool.marimo-gradescope]
-questions = { q1 = 25, q2 = 10.5 }
 """
 )
 
@@ -74,45 +70,54 @@ def test_read_header_invalid_toml():
 # read_config
 
 
-def test_questions_short_form():
-    cfg = read_config(BASIC, NB)
+def cells(*bodies: str, alias: str = "import marimo_gradescope as mogs") -> str:
+    """A notebook with a header, a setup cell importing this package, and plain cells."""
 
-    assert cfg.questions == {
-        "q1": Question("q1", "Question 1", 25),
-        "q2": Question("q2", "Question 2", 10.5),
-    }
+    out = HEADER + f"\nimport marimo\n\napp = marimo.App()\n\nwith app.setup:\n    {alias}\n"
+
+    for body in bodies:
+        indented = "".join(f"    {line}\n" if line else "\n" for line in body.splitlines())
+        out += f"\n\n@app.cell\ndef _():\n{indented}    return\n"
+
+    return out
 
 
-def test_questions_table_form():
-    src = notebook(
-        """
-[tool.marimo-gradescope.questions]
-q1 = 25
-q2 = { points = 10, title = "Gradients" }
+HEADER = (
+    '# /// script\n# requires-python = ">=3.13"\n# dependencies = ["marimo-gradescope"]\n# ///\n'
+)
+ASSIGNMENT = 'mogs.assignment(name="HW1")'
 
-[tool.marimo-gradescope.questions.essay]
-points = 5
-manual = true
-"""
+
+def test_questions_from_grade_calls_in_file_order():
+    src = cells(
+        ASSIGNMENT,
+        "def test_q2_a():\n    assert True",
+        'mogs.grade("q2", points=10, title="Gradients")',
+        'mogs.grade("essay", points=5)',
+        "# HIDDEN\ndef test_q1_a():\n    assert True",
+        'mogs.grade("q1", points=2.5)',
     )
 
     cfg = read_config(src, NB)
 
+    assert list(cfg.questions) == ["q2", "essay", "q1"]
     assert cfg.questions == {
-        "q1": Question("q1", "Question 1", 25),
         "q2": Question("q2", "Gradients", 10),
         "essay": Question("essay", "essay", 5, manual=True),
+        "q1": Question("q1", "Question 1", 2.5),
     }
 
 
-def test_defaults():
-    cfg = read_config(BASIC, NB)
+def test_a_question_without_tests_is_graded_by_hand():
+    src = cells(ASSIGNMENT, 'mogs.grade("q1", points=1)', "def test_q12_a():\n    assert True")
 
-    assert cfg == AssignmentConfig(
-        name="hw1",
-        notebook="hw1.py",
-        questions=cfg.questions,
-    )
+    assert read_config(src, NB).questions["q1"].manual
+
+
+def test_defaults():
+    cfg = read_config(cells("mogs.assignment()", 'mogs.grade("q1", points=1)'), NB)
+
+    assert cfg == AssignmentConfig(name="hw1", notebook="hw1.py", questions=cfg.questions)
     assert cfg.files == ()
     assert cfg.timeout == 60
     assert cfg.budget == 540
@@ -121,19 +126,18 @@ def test_defaults():
     assert cfg.requirements is None
 
 
-def test_all_keys():
-    src = notebook(
-        """
-[tool.marimo-gradescope]
-name = "Assignment 1"
-questions = { q1 = 1 }
-files = ["data.csv", "img/cat.png"]
-timeout = 30
-budget = 300.5
-memory = 2048
-python = "3.14"
-requirements = "../requirements.txt"
-"""
+def test_all_assignment_arguments():
+    src = cells(
+        "mogs.assignment(\n"
+        '    name="Assignment 1",\n'
+        '    files=["data.csv", "img/cat.png"],\n'
+        "    timeout=30,\n"
+        "    budget=300.5,\n"
+        "    memory=2048,\n"
+        '    python="3.14",\n'
+        '    requirements="../requirements.txt",\n'
+        ")",
+        'mogs.grade("q1", points=1)',
     )
 
     cfg = read_config(src, NB)
@@ -148,66 +152,163 @@ requirements = "../requirements.txt"
     assert cfg.requirements == Path("/course/A_01/../requirements.txt")
 
 
-def test_missing_header():
-    with pytest.raises(ConfigError, match="# /// script"):
-        read_config(CODE, NB)
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "import marimo_gradescope as grader",
+        "from marimo_gradescope import assignment, grade as run_grade",
+    ],
+)
+def test_calls_follow_the_import_names(alias):
+    prefix = "grader." if alias.startswith("import") else ""
+    grade = "grader.grade" if prefix else "run_grade"
+    src = cells(
+        f'{prefix}assignment(name="x")',
+        f'{grade}("q1", points=1)',
+        f'{grade}("q2", points=2)',
+        alias=alias,
+    )
+
+    cfg = read_config(src, NB)
+
+    assert cfg.name == "x"
+    assert list(cfg.questions) == ["q1", "q2"]
 
 
-def test_missing_tool_table():
-    with pytest.raises(ConfigError, match=r"\[tool\.marimo-gradescope\]"):
-        read_config(notebook('dependencies = ["numpy"]'), NB)
+def test_calls_of_other_modules_do_not_count():
+    src = cells(ASSIGNMENT, 'mogs.grade("q1", points=1)', 'other.grade("q2", points=1)')
+
+    assert list(read_config(src, NB).questions) == ["q1"]
+
+
+def test_missing_assignment_call():
+    with pytest.raises(ConfigError, match=r"mogs\.assignment"):
+        read_config(cells('mogs.grade("q1", points=1)'), NB)
+
+
+def test_two_assignment_calls():
+    src = cells(ASSIGNMENT, ASSIGNMENT, 'mogs.grade("q1", points=1)')
+
+    with pytest.raises(ConfigError, match="more than once"):
+        read_config(src, NB)
+
+
+def test_no_questions():
+    with pytest.raises(ConfigError, match=r"no questions.*mogs\.grade"):
+        read_config(cells(ASSIGNMENT), NB)
+
+
+def test_question_declared_twice():
+    src = cells(ASSIGNMENT, 'mogs.grade("q1", points=1)', 'mogs.grade("q1", points=1)')
+
+    with pytest.raises(ConfigError, match=r"`q1`.*more than once"):
+        read_config(src, NB)
+
+
+def test_header_table_is_refused():
+    src = cells(ASSIGNMENT, 'mogs.grade("q1", points=1)').replace(
+        "# ///\n", "#\n# [tool.marimo-gradescope]\n# name = 'x'\n# ///\n", 1
+    )
+
+    with pytest.raises(ConfigError, match=r"\[tool\.marimo-gradescope\].*mogs\.assignment"):
+        read_config(src, NB)
+
+
+def test_works_without_a_header():
+    src = cells(ASSIGNMENT, 'mogs.grade("q1", points=1)').removeprefix(HEADER)
+
+    assert read_config(src, NB).name == "HW1"
+
+
+def test_invalid_python():
+    with pytest.raises(ConfigError, match="not valid Python"):
+        read_config(cells(ASSIGNMENT) + "\ndef (:\n", NB)
 
 
 @pytest.mark.parametrize(
-    ("table", "key"),
+    ("call", "match"),
     [
-        ("questions = { q1 = 'ten' }", "q1"),
-        ("questions = { q1 = true }", "q1"),
-        ("questions = { q1 = -1 }", "q1"),
-        ("questions = { q1 = { title = 'x' } }", "q1"),
-        ("questions = { q1 = { points = 1, bonus = 2 } }", "bonus"),
-        ("questions = { q1 = { points = 1, manual = 'yes' } }", "manual"),
-        ("questions = { q_1 = 1 }", "q_1"),
-        ("questions = {}", "questions"),
-        ("name = 1\nquestions = { q1 = 1 }", "name"),
-        ("questions = { q1 = 1 }\nmemory = 1000", "memory"),
-        ("questions = { q1 = 1 }\nmemory = 4096.5", "memory"),
-        ("questions = { q1 = 1 }\ntimeout = 0", "timeout"),
-        ("questions = { q1 = 1 }\nbudget = 'long'", "budget"),
-        ("questions = { q1 = 1 }\nfiles = 'data.csv'", "files"),
-        ("questions = { q1 = 1 }\npython = 3.13", "python"),
-        ("questions = { q1 = 1 }\nrequirements = 1", "requirements"),
-        ("questions = { q1 = 1 }\ntimeuot = 10", "timeuot"),
+        ('mogs.grade("q1")', "needs `points`"),
+        ('mogs.grade("q1", points="ten")', "points"),
+        ('mogs.grade("q1", points=True)', "points"),
+        ('mogs.grade("q1", points=-1)', "points"),
+        ('mogs.grade("q1", points=n)', "`points`.*literal"),
+        ('mogs.grade("q1", points=1, title=3)', "title"),
+        ('mogs.grade("q1", points=1, bonus=2)', "bonus"),
+        ('mogs.grade("q1", points=1, hidden=2)', "hidden"),
+        ('mogs.grade("q1", 1)', "keyword"),
+        ("mogs.grade(points=1)", "question id"),
+        ("mogs.grade(qid, points=1)", "question id"),
+        ('mogs.grade("q1", **extra)', r"\*\*"),
+        ('mogs.grade("q_1", points=1)', "q_1"),
+        ('mogs.grade("q1", points=1, manual=True)', "manual"),
     ],
 )
-def test_bad_values_name_the_key(table: str, key: str):
-    src = notebook("[tool.marimo-gradescope]\n" + table)
+def test_bad_question_arguments(call: str, match: str):
+    src = cells(ASSIGNMENT, call)
+
+    with pytest.raises(ConfigError, match=match):
+        read_config(src, NB)
+
+
+def test_bad_question_names_its_call_and_line():
+    src = cells(ASSIGNMENT, 'mogs.grade("q1", points="ten")')
+    line = src.splitlines().index('    mogs.grade("q1", points="ten")') + 1
+
+    with pytest.raises(ConfigError, match=rf"mogs\.grade\(\) \(line {line}\)"):
+        read_config(src, NB)
+
+
+@pytest.mark.parametrize(
+    ("arguments", "key"),
+    [
+        ("name=1", "name"),
+        ("memory=1000", "memory"),
+        ("memory=4096.5", "memory"),
+        ("timeout=0", "timeout"),
+        ('budget="long"', "budget"),
+        ('files="data.csv"', "files"),
+        ("python=3.13", "python"),
+        ("requirements=1", "requirements"),
+        ("timeuot=10", "timeuot"),
+        ("name=NAME", "name"),
+        ('"HW1"', "keyword"),
+    ],
+)
+def test_bad_assignment_arguments_name_the_key(arguments: str, key: str):
+    src = cells(f"mogs.assignment({arguments})", 'mogs.grade("q1", points=1)')
 
     with pytest.raises(ConfigError, match=key):
         read_config(src, NB)
 
 
+def test_files_may_be_a_tuple():
+    src = cells('mogs.assignment(files=("a.csv",))', 'mogs.grade("q1", points=1)')
+
+    assert read_config(src, NB).files == ("a.csv",)
+
+
+def named(name: str) -> str:
+    return cells(f"mogs.assignment(name={name!r})", 'mogs.grade("q1", points=1)')
+
+
 @pytest.mark.parametrize(
-    "name", ["../../escaped", "HW 1/2", "a\\\\b", ".hidden", "", "tab\\there", "nul\\u0000"]
+    "name", ["../../escaped", "HW 1/2", "a\\b", ".hidden", "", "tab\there", "nul\u0000"]
 )
 def test_name_unfit_for_a_file_name(name: str):
-    src = notebook(f'[tool.marimo-gradescope]\nname = "{name}"\nquestions = {{ q1 = 1 }}')
-
     with pytest.raises(ConfigError, match="`name`"):
-        read_config(src, NB)
+        read_config(named(name), NB)
 
 
 @pytest.mark.parametrize("name", ["CON", "aux", "com1", "Nul.tar", "a:b", "why?", "dot.", "space "])
 def test_name_must_work_on_windows(name: str):
     # The student zip and the folder in it are named after `name`.
-    src = notebook(f'[tool.marimo-gradescope]\nname = "{name}"\nquestions = {{ q1 = 1 }}')
-
     with pytest.raises(ConfigError, match="`name`.*Windows"):
-        read_config(src, NB)
+        read_config(named(name), NB)
 
 
 def test_default_name_from_the_notebook_must_work_on_windows():
-    src = notebook("[tool.marimo-gradescope]\nquestions = { q1 = 1 }")
+    src = cells("mogs.assignment()", 'mogs.grade("q1", points=1)')
 
     with pytest.raises(ConfigError, match="`name`.*Windows"):
         read_config(src, Path("con.py"))
@@ -215,66 +316,7 @@ def test_default_name_from_the_notebook_must_work_on_windows():
 
 @pytest.mark.parametrize("name", ["HW1", "hw 1", "CS9840B_A01", "console", "con-1"])
 def test_name_fit_for_windows(name: str):
-    src = notebook(f'[tool.marimo-gradescope]\nname = "{name}"\nquestions = {{ q1 = 1 }}')
-
-    assert read_config(src, NB).name == name
-
-
-def test_missing_questions():
-    src = notebook("[tool.marimo-gradescope]\nname = 'x'")
-
-    with pytest.raises(ConfigError, match="questions"):
-        read_config(src, NB)
-
-
-# strip_tool_table
-
-
-def test_strip_tool_table_keeps_deps_and_code():
-    src = notebook(
-        """
-requires-python = ">=3.13"
-dependencies = [
-    "marimo-gradescope",
-    "numpy",
-]
-
-[tool.marimo-gradescope]
-questions = { q1 = 25 }
-files = [
-    "data.csv",
-]
-
-[tool.marimo-gradescope.questions.q2]
-points = 5
-
-[tool.uv]
-exclude-newer = "2026-11-01T00:00:00Z"
-"""
-    )
-
-    out = strip_tool_table(src)
-    header = read_header(out)
-
-    assert "marimo-gradescope" not in header.get("tool", {})
-    assert header["dependencies"] == ["marimo-gradescope", "numpy"]
-    assert header["tool"]["uv"] == {"exclude-newer": "2026-11-01T00:00:00Z"}
-    assert out.endswith(CODE)
-
-
-def test_strip_tool_table_at_end_leaves_no_trailing_blank():
-    out = strip_tool_table(BASIC)
-
-    assert "marimo-gradescope]" not in out
-    assert "#\n# ///" not in out
-    assert read_header(out)["dependencies"] == ["marimo-gradescope", "numpy"]
-    assert out.endswith(CODE)
-
-
-def test_strip_tool_table_without_table_is_identity():
-    src = notebook('dependencies = ["numpy"]')
-
-    assert strip_tool_table(src) == src
+    assert read_config(named(name), NB).name == name
 
 
 # set_dependency
@@ -318,7 +360,7 @@ def test_set_dependency_keeps_other_header_text():
     out = set_dependency(BASIC, "marimo-gradescope==0.1.0")
 
     assert read_header(out)["dependencies"] == ["marimo-gradescope==0.1.0", "numpy"]
-    assert read_config(out, NB) == read_config(BASIC, NB)
+    assert out.endswith(CODE)
 
 
 # remove_dependency
@@ -350,32 +392,20 @@ def test_remove_dependency_rejects_bad_name():
         remove_dependency(BASIC, "==1.0")
 
 
-def test_read_config_keeps_unicode_line_separator_in_value():
-    src = BASIC.replace("[tool.marimo-gradescope]\n", '[tool.marimo-gradescope]\n# name = "a b"\n')
-
-    assert read_config(src, NB).name == "a b"
-
-
-def test_strip_tool_table_crlf():
-    out = strip_tool_table(BASIC.replace("\n", "\r\n"))
-
-    assert "tool" not in read_header(out)
-
-
 # Question ids become file names
 
 
 @pytest.mark.parametrize(
-    ("questions", "message"),
+    ("qids", "message"),
     [
-        ("{ q1 = 1, Q1 = 2 }", "`Q1`.*`q1`"),
-        ("{ CON = 1 }", "`CON`"),
-        ("{ nul = 1 }", "`nul`"),
-        ("{ com1 = 1 }", "`com1`"),
+        (["q1", "Q1"], "`Q1`.*`q1`"),
+        (["CON"], "`CON`"),
+        (["nul"], "`nul`"),
+        (["com1"], "`com1`"),
     ],
 )
-def test_question_ids_must_make_portable_file_names(questions, message):
-    src = notebook(f"[tool.marimo-gradescope]\nquestions = {questions}")
+def test_question_ids_must_make_portable_file_names(qids, message):
+    src = cells(ASSIGNMENT, *(f'mogs.grade("{qid}", points=1)' for qid in qids))
 
     with pytest.raises(ConfigError, match=message):
         read_config(src, Path("hw.py"))

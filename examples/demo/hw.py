@@ -4,14 +4,6 @@
 #     "marimo",
 #     "marimo-gradescope",
 # ]
-#
-# [tool.marimo-gradescope]
-# files = ["data/scores.csv"]
-#
-# [tool.marimo-gradescope.questions]
-# q1 = { points = 4, title = "Average" }
-# q2 = { points = 6, title = "Reading scores" }
-# q3 = { points = 5, title = "Empty lists", manual = true }
 # ///
 
 import marimo
@@ -24,9 +16,15 @@ with app.setup:
 
     import marimo as mo
 
-    import marimo_gradescope as mgs
+    import marimo_gradescope as mogs
 
     SCORES = mo.notebook_dir() / "data" / "scores.csv"
+
+
+@app.cell
+def _():
+    mogs.assignment(files=["data/scores.csv"])
+    return
 
 
 @app.cell(hide_code=True)
@@ -77,7 +75,7 @@ def _():
 
 @app.cell
 def _():
-    mgs.check("q1")
+    mogs.grade("q1", points=4, title="Average")
     return
 
 
@@ -144,12 +142,12 @@ def _():
 
 @app.cell
 def _():
-    mgs.check("q2")
+    mogs.grade("q2", points=6, title="Reading scores")
     return
 
 
 @app.cell(hide_code=True)
-def prompt_q3():
+def _():
     mo.md(r"""
     ## Question 3: Empty lists
 
@@ -160,10 +158,19 @@ def prompt_q3():
 
 
 @app.cell
-def answer_q3():
+def _():
     mo.md(r"""
-    *Write your answer here.*
+    <!-- BEGIN SOLUTION -->
+    It divides by zero and raises `ZeroDivisionError`. That is a fair answer: an empty list
+    has no average, and returning 0 would hide the mistake.
+    <!-- END SOLUTION -->
     """)
+    return
+
+
+@app.cell
+def _():
+    mogs.grade("q3", points=5, title="Empty lists")
     return
 
 

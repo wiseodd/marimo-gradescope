@@ -1,7 +1,7 @@
 """The `requirements.txt` that Gradescope installs.
 
 It comes from the notebook header's dependencies, pinned by `uv export`, or from the file
-that `[tool.marimo-gradescope] requirements` names. Either way it ends with one line for
+that `mogs.assignment(requirements=...)` names. Either way it ends with one line for
 marimo-gradescope itself.
 """
 
@@ -14,6 +14,7 @@ from pathlib import Path
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
 from marimo_gradescope.config import (
+    ASSIGNMENT,
     TOOL,
     AssignmentConfig,
     ConfigError,
@@ -94,7 +95,7 @@ def _read_requirements(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except OSError as e:
-        raise ConfigError(f"[tool.{TOOL}] `requirements`: cannot read {path}: {e}") from e
+        raise ConfigError(f"{ASSIGNMENT} `requirements`: cannot read {path}: {e}") from e
 
 
 def _check_portable(line: str, path: Path) -> None:
@@ -105,7 +106,7 @@ def _check_portable(line: str, path: Path) -> None:
         return
 
     error = ConfigError(
-        f"[tool.{TOOL}] `requirements`: {path} has {line.strip()!r}, which points at a local "
+        f"{ASSIGNMENT} `requirements`: {path} has {line.strip()!r}, which points at a local "
         "file that Gradescope does not have. Use package names or URLs."
     )
 
@@ -226,6 +227,6 @@ def _python_warnings(src: str, cfg: AssignmentConfig) -> list[str]:
         return []
 
     return [
-        f"[tool.{TOOL}] python = {cfg.python!r} does not satisfy the header's "
+        f"{ASSIGNMENT} python={cfg.python!r} does not satisfy the header's "
         f"requires-python = {spec!r}."
     ]

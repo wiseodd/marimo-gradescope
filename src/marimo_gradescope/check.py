@@ -1,4 +1,4 @@
-"""The `check()` panel a student sees under each auto-graded question."""
+"""The panel a student sees at the end of each question: `grade()`."""
 
 import ast
 import html
@@ -11,7 +11,7 @@ from types import CodeType, FunctionType
 from typing import TYPE_CHECKING
 
 from marimo_gradescope._env import grading
-from marimo_gradescope.config import default_title
+from marimo_gradescope.config import default_title, read_config
 from marimo_gradescope.runner import Outcome, run_test, run_test_source, shorten
 from marimo_gradescope.source import module_tests
 
@@ -44,68 +44,130 @@ NO_NOTEBOOK = (
 )
 
 
-def check(
+def grade(
     qid: str,
     *,
+    points: float | None = None,
+    title: str | None = None,
     tests: Sequence[Callable[[], object]] | None = None,
     test_file: str | None = None,
     uses: Sequence[object] = (),
-    points: float | None = None,
     hidden: int = 0,
-    title: str | None = None,
+    manual: bool = False,
 ) -> "mo.Html":
-    """Run a question's public tests and show the results as a panel.
+    """End a question: declare its points, and show how the answer does as a panel.
 
-    In the source notebook, `check("q1")` finds every `test_q1_*` callable among the caller's
-    globals, hidden tests included. The student copy keeps its public tests in a file next to
-    the notebook and passes its path as `test_file`. That file runs as a module in a copy of the
+    The build reads `points` and `title` from the source notebook without running it, so they
+    must be literals there. The other arguments are for the student copy, which the build
+    writes.
+
+    For an auto-graded question, the panel runs its public tests. In the source notebook,
+    `grade("q1", points=4)` finds every `test_q1_*` callable among the caller's globals,
+    hidden tests included. The student copy keeps its public tests in a file next to the
+    notebook and passes its path as `test_file`. That file runs as a module in a copy of the
     caller's globals, with assertion rewriting. The student copy also passes the names the
-    tests use as `uses`, so marimo runs the check cell again when one of them changes.
+    tests use as `uses`, so marimo runs the cell again when one of them changes.
 
     Each test is compiled again from its source with pytest's assertion rewriting, so failed
     asserts show their values. The recompiled test runs against its own snapshot of its
-    globals, copied when `check` runs, so the kernel's globals stay untouched. A test without
+    globals, copied when `grade` runs, so the kernel's globals stay untouched. A test without
     source, one whose source does not match its code (as with marimo's mangled `_private`
     names), or one that does not compile again runs as it is.
+
+    A question without tests is written: the panel shows its points and that it is graded by
+    hand. The student copy says so with `manual=True`; in the source notebook, a question
+    without tests in the caller's globals is looked up in the saved notebook.
 
     While grading (`MGS_GRADING=1`), it runs nothing and returns an empty panel, so a whole
     notebook run on the grader does not run the public tests a second time.
 
     Args:
         qid: Question id, e.g. `"q1"`.
+        points: Points for the question, shown in the title.
+        title: Question title; `None` gives `Question N` for `qN`, else `qid`.
         tests: The tests to run; `None` finds them in the caller's globals, unless `test_file`
             is given.
         test_file: Path of a file with the tests, relative to the notebook's folder.
         uses: The names the tests use. Only marimo reads them, to know when to run the cell.
-        points: Points for the question, shown in the title.
         hidden: Number of hidden tests, shown as a note.
-        title: Question title for the panel; `None` gives `Question N` for `qN`, else `qid`.
+        manual: The question is graded by hand.
 
     Returns:
         The panel, as marimo HTML.
 
     Raises:
         ValueError: If both `tests` and `test_file` are given.
+        ConfigError: If the question has no tests in the source notebook and the saved
+            notebook's config is invalid.
     """
 
     import marimo as mo
 
     if tests is not None and test_file is not None:
-        raise ValueError("check() takes `tests` or `test_file`, not both.")
+        raise ValueError("grade() takes `tests` or `test_file`, not both.")
 
     if grading():
         return mo.Html("")
 
     namespace = sys._getframe(1).f_globals
+
+    if manual:
+        return mo.Html(written_panel(qid, points, title))
+
     problem = None
 
     if test_file is not None:
         outcomes, problem = file_outcomes(test_file, namespace)
     else:
         found = discover(qid, namespace) if tests is None else tests
+
+        if not found and tests is None and _written_in_source(qid, namespace):
+            return mo.Html(written_panel(qid, points, title))
+
         outcomes = [run_test(name_of(test), with_rewritten_asserts(test)) for test in found]
 
     return mo.Html(panel(qid, outcomes, points, hidden, title, problem))
+
+
+def written_panel(qid: str, points: float | None, title: str | None) -> str:
+    """HTML for a written question: its title and points, and where the answer goes."""
+
+    title = question_title(qid) if title is None else title
+
+    if points:
+        title += f" — {format_points(points)}"
+        note = "Written answer, graded by hand."
+    else:
+        note = "Written answer, not graded."
+
+    note += " Write it in the cell above. It goes into the PDF when you export."
+
+    return (
+        f'<div style="{PANEL_STYLE.format(accent=SHADE, shade=SHADE)}">'
+        f'<div style="{TITLE_STYLE}">{html.escape(title)}</div>'
+        f'<div style="{NOTE_STYLE}">{html.escape(note)}</div></div>'
+    )
+
+
+def _written_in_source(qid: str, namespace: Mapping[str, object]) -> bool:
+    """Whether the saved notebook makes `qid` a written question; `False` when unreadable.
+
+    Raises:
+        ConfigError: If the saved notebook's config is invalid.
+    """
+
+    path = locate(namespace)
+    if path is None:
+        return False
+
+    try:
+        src = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+
+    question = read_config(src, path).questions.get(qid)
+
+    return question is not None and question.manual
 
 
 def file_outcomes(

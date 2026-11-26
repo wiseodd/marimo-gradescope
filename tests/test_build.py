@@ -19,6 +19,7 @@ from marimo_gradescope.build import (
     data_files,
     failure_report,
     find_notebook,
+    read_assignment,
 )
 from marimo_gradescope.cli import main, report
 from marimo_gradescope.config import ConfigError, read_config
@@ -124,7 +125,7 @@ def test_bundle_has_hidden_tests_and_student_copy_does_not(demo):
     assert "# BEGIN SOLUTION" not in student
     assert "csv.DictReader" not in student
     assert f'"marimo-gradescope[pdf]=={__version__}"' in student
-    assert "[tool.marimo-gradescope]" not in student
+    assert "mogs.assignment(" not in student
 
 
 @pytest.mark.network
@@ -210,8 +211,8 @@ def test_solved_copy_and_requirements_next_to_the_zip(demo):
     assert "SOLUTION" not in solved
     assert "test_q1_negative" not in solved
     assert "def test_" not in solved
-    assert "export_button = mgs.export_button()" in solved
-    assert "[tool.marimo-gradescope]" not in solved
+    assert "export_button = mogs.export_button()" in solved
+    assert "mogs.assignment(" not in solved
 
 
 # Failures through the CLI
@@ -243,8 +244,8 @@ def test_self_check_installs_the_header_dependencies(tmp_path, capsys):
     )
     edit(
         folder / "hw.py",
-        "    import marimo_gradescope as mgs\n",
-        "    import marimo_gradescope as mgs\n    import tabulate\n",
+        "    import marimo_gradescope as mogs\n",
+        "    import marimo_gradescope as mogs\n    import tabulate\n",
     )
 
     code = main(["build", str(folder)])
@@ -275,14 +276,15 @@ def test_blank_score_warning_names_passing_tests(tmp_path, capsys):
 
 def test_validation_errors_all_listed_and_no_dist(tmp_path, capsys):
     folder = demo_copy(tmp_path / "demo")
-    edit(folder / "hw.py", 'mgs.check("q2")', 'mgs.check("q7")')
+    edit(folder / "hw.py", 'mogs.grade("q2", points=6', 'mogs.grade("q7", points=6')
     edit(folder / "hw.py", "def test_q1_single", "def test_q9_single")
 
     code = main(["build", str(folder)])
     err = capsys.readouterr().err
 
     assert code == 1
-    assert 'check("q7")' in err
+    assert "Question `q7` has no tests" in err
+    assert "test_q2_reads_scores" in err
     assert "test_q9_single" in err
     assert not (folder / "dist").exists()
 
@@ -315,6 +317,35 @@ def test_find_notebook_ignores_other_scripts(tmp_path):
     assert find_notebook(folder) == folder / "hw.py"
 
 
+def test_find_notebook_names_a_header_table_left_over(tmp_path):
+    (tmp_path / "hw.py").write_text(
+        "# /// script\n# [tool.marimo-gradescope]\n# name = 'x'\n# ///\n", encoding="utf-8"
+    )
+
+    assert find_notebook(tmp_path) == tmp_path / "hw.py"
+
+    with pytest.raises(ConfigError, match=r"mogs\.assignment"):
+        read_assignment(tmp_path)
+
+
+def test_find_notebook_follows_renamed_imports(tmp_path):
+    (tmp_path / "hw.py").write_text(
+        "from marimo_gradescope import assignment as configure, grade\n\nconfigure()\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "other.py").write_text("def assignment():\n    pass\n", encoding="utf-8")
+
+    assert find_notebook(tmp_path) == tmp_path / "hw.py"
+
+
+def test_find_notebook_keeps_a_notebook_with_a_syntax_error(tmp_path):
+    (tmp_path / "hw.py").write_text(
+        "import marimo_gradescope as mogs\nmogs.assignment(\n", encoding="utf-8"
+    )
+
+    assert find_notebook(tmp_path) == tmp_path / "hw.py"
+
+
 def test_missing_dir_is_an_error(tmp_path):
     with pytest.raises(BuildError, match="not a folder"):
         find_notebook(tmp_path / "nope")
@@ -337,7 +368,7 @@ def test_bad_data_files(tmp_path, files, message):
     (folder / "setup.sh").write_text("", encoding="utf-8")
     (folder / "tests").mkdir()
     (folder / "tests" / "x.txt").write_text("", encoding="utf-8")
-    edit(folder / "hw.py", '# files = ["data/scores.csv"]', f"# files = {files}")
+    edit(folder / "hw.py", 'files=["data/scores.csv"]', f"files={files}")
 
     with pytest.raises(ConfigError, match=message):
         build(folder)
@@ -350,7 +381,7 @@ def test_data_files_cannot_take_reserved_names_in_any_case(tmp_path, name):
     # The files don't exist: the reserved names are checked first. Writing `HW.py` would
     # replace `hw.py` on a case-insensitive file system.
     folder = demo_copy(tmp_path / "demo")
-    edit(folder / "hw.py", '# files = ["data/scores.csv"]', f'# files = ["{name}"]')
+    edit(folder / "hw.py", 'files=["data/scores.csv"]', f'files=["{name}"]')
 
     with pytest.raises(ConfigError, match="would replace"):
         build(folder)
@@ -384,7 +415,7 @@ def test_failed_write_keeps_the_old_dist(tmp_path, monkeypatch, capsys):
 
 def test_name_cannot_escape_dist(tmp_path):
     folder = demo_copy(tmp_path / "demo")
-    edit(folder / "hw.py", "# files =", '# name = "../../escaped"\n# files =')
+    edit(folder / "hw.py", "mogs.assignment(", 'mogs.assignment(name="../../escaped", ')
 
     with pytest.raises(ConfigError, match="`name`"):
         build(folder)
@@ -522,8 +553,8 @@ def test_zero_point_manual_question_builds_without_warnings(tmp_path):
     folder = demo_copy(tmp_path / "demo")
     edit(
         folder / "hw.py",
-        'q3 = { points = 5, title = "Empty lists", manual = true }',
-        'q3 = { points = 0, title = "Empty lists", manual = true }',
+        'mogs.grade("q3", points=5, title="Empty lists")',
+        'mogs.grade("q3", points=0, title="Empty lists")',
     )
 
     result = build(folder)
@@ -564,7 +595,7 @@ def test_data_files_skip_junk(tmp_path):
     for junk in ("data/__pycache__/x.pyc", "data/__marimo__/session.json", "data/.DS_Store"):
         (folder / junk).parent.mkdir(parents=True, exist_ok=True)
         (folder / junk).write_text("junk", encoding="utf-8")
-    edit(folder / "hw.py", '# files = ["data/scores.csv"]', '# files = ["data"]')
+    edit(folder / "hw.py", 'files=["data/scores.csv"]', 'files=["data"]')
     src = (folder / "hw.py").read_text(encoding="utf-8")
 
     files = data_files(folder, read_config(src, folder / "hw.py"))

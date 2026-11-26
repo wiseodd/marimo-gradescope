@@ -34,8 +34,8 @@ HEADER = """\
 # /// script
 # dependencies = ["marimo"]
 #
-# [tool.marimo-gradescope]
-# questions = { q1 = 2.5 }
+# [tool.uv]
+# exclude-newer = "2026-01-01T00:00:00Z"
 #
 # [tool.marimo.runtime]
 # reactive_tests = false
@@ -46,11 +46,21 @@ import marimo
 app = marimo.App()
 
 with app.setup:
-    import marimo_gradescope as mgs
+    import marimo_gradescope as mogs
 
 """
 
 CONFIG = AssignmentConfig(name="nb", notebook="nb.py", questions={"q1": Question("q1", "Q1", 2.5)})
+# The pure fixture has no config calls, so that it runs without this package.
+PURE_CONFIG = AssignmentConfig(
+    name="Pure test cells",
+    notebook=PURE.name,
+    questions={"q1": Question("q1", "Question 1", 2), "q2": Question("q2", "Question 2", 3)},
+)
+
+
+def config_of(src: str, path: Path) -> AssignmentConfig:
+    return PURE_CONFIG if path == PURE else read_config(src, path)
 
 
 def outside_pytest() -> dict[str, str]:
@@ -61,7 +71,7 @@ def outside_pytest() -> dict[str, str]:
 
 def student(path: Path, *, solutions: bool = False) -> str:
     src = path.read_text(encoding="utf-8")
-    cfg = read_config(src, path)
+    cfg = config_of(src, path)
     return student_notebook(src, parse_notebook(src), cfg, REQUIREMENT, solutions=solutions)
 
 
@@ -180,7 +190,7 @@ def _():
 
 def solved(path: Path) -> str:
     src = path.read_text(encoding="utf-8")
-    cfg = read_config(src, path)
+    cfg = config_of(src, path)
     return student_notebook(src, parse_notebook(src), cfg, REQUIREMENT, solutions=True)
 
 
@@ -202,7 +212,7 @@ def test_solved_copy_is_the_student_copy_with_solutions():
     assert "# HIDDEN" not in out and "# HIDDEN" not in blank
     assert "[tool.marimo-gradescope]" not in out
     assert f'"{REQUIREMENT}"' in out
-    assert "export_button = mgs.export_button()" in out
+    assert "export_button = mogs.export_button()" in out
     # Only solution lines differ.
     assert body(out).count("@app.") == body(blank).count("@app.")
 
@@ -369,7 +379,8 @@ def test_hidden_cell_trailing_blanks_removed():
     out = student(SOLUTION)
 
     assert (
-        '    """Sum of two numbers."""\n    ...\n\n\n@app.cell\ndef _():\n    mgs.check("q1"' in out
+        '    """Sum of two numbers."""\n    ...\n\n\n@app.cell\ndef _():\n'
+        '    mogs.grade("q1"' in out
     )
 
 
@@ -389,7 +400,7 @@ def test_public_test_files_hold_each_question_s_public_tests():
 
     assert list(files) == [PurePosixPath("tests/q1.py"), PurePosixPath("tests/q2.py")]
     assert files[PurePosixPath("tests/q1.py")] == (
-        '# Public tests for q1, run by check("q1") in the notebook.\n\n\n'
+        '# Public tests for q1, run by grade("q1") in the notebook.\n\n\n'
         "def test_q1_add():\n    assert add(1, 2) == 3\n\n"
         "def test_q1_add_negative():\n    assert add(-1, -2) == -3\n"
     )
@@ -421,7 +432,7 @@ def test_q1_b():
 
 @app.cell
 def _():
-    mgs.check("q1")
+    mogs.grade("q1")
     return
 """
     )
@@ -442,12 +453,12 @@ def test_check_calls_rewritten():
     out = student(SOLUTION)
 
     assert (
-        '    mgs.check("q1", test_file="tests/q1.py", uses=[add], points=4, hidden=1, '
-        'title="Question 1")\n' in out
+        '    mogs.grade("q1", points=4, title="Question 1", test_file="tests/q1.py", '
+        "uses=[add], hidden=1)\n" in out
     )
     assert (
-        '    mgs.check("q2", test_file="tests/q2.py", uses=[count_vowels], points=6, hidden=2, '
-        'title="Vowels")\n' in out
+        '    mogs.grade("q2", points=6, title="Vowels", test_file="tests/q2.py", '
+        "uses=[count_vowels], hidden=2)\n" in out
     )
 
 
@@ -461,7 +472,7 @@ def _():
 
 @app.cell
 def _():
-    from marimo_gradescope import check as c
+    from marimo_gradescope import grade as c
     panel = c(
         "q1",
     )  # comment
@@ -470,19 +481,23 @@ def _():
 """)
 
     assert (
-        '    panel = c("q1", test_file="tests/q1.py", uses=[], points=2.5, hidden=0, title="Q1")'
+        '    panel = c("q1", points=2.5, title="Q1", test_file="tests/q1.py", uses=[], hidden=0)'
         "  # comment\n" in out
     )
 
 
-def test_check_call_with_other_arguments_raises():
-    with pytest.raises(SourceError, match="only the question id"):
-        student_of("""
+def test_check_call_points_and_title_come_from_the_config():
+    out = student_of("""
 @app.cell
 def _():
-    mgs.check("q1", points=3)
+    mogs.grade("q1", points=3, title="Old")
     return
 """)
+
+    assert (
+        '    mogs.grade("q1", points=2.5, title="Q1", test_file="tests/q1.py", uses=[], hidden=0)\n'
+        in out
+    )
 
 
 def test_check_call_after_unicode_text_on_line():
@@ -495,13 +510,13 @@ def _():
 
 @app.cell
 def _():
-    x = "é"; mgs.check("q1")
+    x = "é"; mogs.grade("q1")
     return
 """)
 
     assert (
-        '    x = "é"; mgs.check("q1", test_file="tests/q1.py", uses=[], points=2.5, hidden=0, '
-        'title="Q1")\n' in out
+        '    x = "é"; mogs.grade("q1", points=2.5, title="Q1", test_file="tests/q1.py", '
+        "uses=[], hidden=0)\n" in out
     )
 
 
@@ -521,7 +536,7 @@ def _():
 
 @app.cell
 def _():
-    mgs.check("q1")
+    mogs.grade("q1")
     return
 """
     )
@@ -576,10 +591,10 @@ def _():
 
 @app.cell
 def _():
-    mgs.check("q1")
+    mogs.grade("q1")
     return
 """)
-    [line] = [line for line in out.splitlines() if "mgs.check(" in line]
+    [line] = [line for line in out.splitlines() if "mogs.grade(" in line]
     path = tmp_path / "call.py"
     path.write_text(line.strip() + "\n", encoding="utf-8")
 
@@ -595,10 +610,44 @@ def _():
 # Header
 
 
-def test_header_tool_table_stripped():
-    header = read_header(student(SOLUTION))
+# Instructor-only cells
 
-    assert "marimo-gradescope" not in header.get("tool", {})
+
+@pytest.mark.parametrize("solutions", [False, True])
+def test_assignment_and_instructor_cells_are_dropped(solutions):
+    src = (
+        HEADER
+        + """
+@app.cell
+def _():
+    mogs.assignment(name="nb")
+    return
+
+
+@app.cell(hide_code=True)
+def instructor_guide():
+    mo.md("How to write this assignment")
+    return
+
+
+@app.cell
+def _():
+    x = 1
+    return
+"""
+    )
+    out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT, solutions=solutions)
+
+    assert "assignment(" not in out
+    assert "instructor_guide" not in out
+    assert "How to write" not in out
+    assert "    x = 1\n" in out
+
+
+def test_written_call_stays():
+    out = student(SOLUTION)
+
+    assert '    mogs.grade("q3", points=5, title="Question 3", manual=True)\n' in out
 
 
 def test_header_pins_tool_once():
@@ -612,7 +661,7 @@ def test_header_gets_no_runtime_flag():
     src = HEADER.replace("#\n# [tool.marimo.runtime]\n# reactive_tests = false\n", "")
     out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT)
 
-    assert "tool" not in read_header(out)
+    assert "marimo" not in read_header(out).get("tool", {})
 
 
 def test_pinned_requirement():
@@ -631,13 +680,13 @@ def test_export_cells_appended_before_main_guard():
     out = student(SOLUTION)
     tail = out.split("def answer_q3", 1)[1]
 
-    assert tail.index("## Submit") < tail.index("export_button = mgs.export_button()")
-    assert tail.index("export_button = mgs.export_button()") < tail.index("mgs.export(")
-    assert tail.index("mgs.export(") < tail.index('if __name__ == "__main__":')
+    assert tail.index("## Submit") < tail.index("export_button = mogs.export_button()")
+    assert tail.index("export_button = mogs.export_button()") < tail.index("mogs.export(")
+    assert tail.index("mogs.export(") < tail.index('if __name__ == "__main__":')
     assert "import marimo_gradescope" not in tail
     assert "    export_button\n" in tail
     assert (
-        'mgs.export(export_button, name="solution", manual=["q3"], titles={"q1": "Question 1", '
+        'mogs.export(export_button, name="solution", manual=["q3"], titles={"q1": "Question 1", '
         '"q2": "Vowels", "q3": "Question 3"}, '
         'placeholders={"q3": "Because the order of the terms does not change the sum."})' in tail
     )
@@ -661,13 +710,13 @@ def _():
 """)
 
     assert (
-        'mgs.export(export_button, name="nb", manual=[], titles={"q1": "Q1"}, placeholders={})'
+        'mogs.export(export_button, name="nb", manual=[], titles={"q1": "Q1"}, placeholders={})'
         in out
     )
 
 
 def test_export_cells_use_the_setup_alias():
-    src = HEADER.replace("as mgs", "as grading") + "\n@app.cell\ndef _():\n    x = 1\n    return\n"
+    src = HEADER.replace("as mogs", "as grading") + "\n@app.cell\ndef _():\n    x = 1\n    return\n"
     out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT)
 
     assert "export_button = grading.export_button()" in out
@@ -678,18 +727,18 @@ def test_export_cells_import_the_package_when_setup_does_not():
     out = student(PURE)
     nb = parse_notebook(out)
 
-    assert "mgs.export(export_button" in out
-    assert "mgs" in nb.student_names()
-    assert out.count("import marimo_gradescope as mgs") == 1
+    assert "mogs.export(export_button" in out
+    assert "mogs" in nb.student_names()
+    assert out.count("import marimo_gradescope as mogs") == 1
 
 
 def test_export_cells_refuse_a_taken_mgs_name():
     src = PURE.read_text(encoding="utf-8").replace(
-        "    import marimo as mo\n", "    import marimo as mo\n    mgs = 1\n"
+        "    import marimo as mo\n", "    import marimo as mo\n    mogs = 1\n"
     )
 
     with pytest.raises(SourceError, match="marimo_gradescope"):
-        student_notebook(src, parse_notebook(src), read_config(src, PURE), REQUIREMENT)
+        student_notebook(src, parse_notebook(src), PURE_CONFIG, REQUIREMENT)
 
 
 def submit_cell(out: str) -> str:
@@ -741,14 +790,14 @@ MO_IN_A_CELL = "@app.cell\ndef _():\n    import marimo as mo\n\n    return (mo,)
 
 @pytest.mark.parametrize(
     ("cell", "importer"),
-    [("", "return (mo, mgs)"), (MO_IN_A_CELL, "return (mgs,)")],
+    [("", "return (mo, mogs)"), (MO_IN_A_CELL, "return (mogs,)")],
 )
 def test_export_cells_take_names_from_other_cells_as_parameters(cell, importer, tmp_path):
     pure = PURE.read_text(encoding="utf-8")
     src = pure.replace("    import marimo as mo\n", "    import math\n").replace(
         "@app.function\ndef add", cell + "@app.function\ndef add"
     )
-    out = student_notebook(src, parse_notebook(src), read_config(src, PURE), REQUIREMENT)
+    out = student_notebook(src, parse_notebook(src), PURE_CONFIG, REQUIREMENT)
     notebook = tmp_path / "student.py"
     notebook.write_text(out, encoding="utf-8")
 
@@ -761,8 +810,8 @@ def test_export_cells_take_names_from_other_cells_as_parameters(cell, importer, 
     )
 
     assert 'def _(mo):\n    mo.md(r"""\n    ## Submit' in out
-    assert "def _(mgs):\n    export_button = mgs.export_button()" in out
-    assert "def _(export_button, mgs):\n    mgs.export(" in out
+    assert "def _(mogs):\n    export_button = mogs.export_button()" in out
+    assert "def _(export_button, mogs):\n    mogs.export(" in out
     assert importer in out
     assert out.count("import marimo as mo") == 1
     assert result.returncode == 0, result.stdout + result.stderr
@@ -814,7 +863,7 @@ def test_export_call_round_trips_non_bmp_text():
         notebook="hw 🎉.py",
         questions={"q1": Question("q1", "Bonus 🎉", 1, manual=True)},
     )
-    cells = export_cells(config, "mgs", {"q1": "*Answer 🎉 here.*"})
+    cells = export_cells(config, "mogs", {"q1": "*Answer 🎉 here.*"})
     [call] = [
         node
         for node in ast.walk(ast.parse(cells))
@@ -856,7 +905,7 @@ def test_source_with_its_own_export_button_is_refused():
         student_of("""
 @app.cell
 def _():
-    export_button = mgs.export_button()
+    export_button = mogs.export_button()
     return (export_button,)
 """)
 
@@ -889,14 +938,59 @@ def test_src_must_match_notebook():
 
 def test_untouched_cells_unchanged():
     src = SOLUTION.read_text(encoding="utf-8")
-    out = student(SOLUTION).replace(
-        export_cells(read_config(src, SOLUTION), "mgs", {"q3": ANSWER}) + "\n\n", ""
+    out = student(SOLUTION)
+    question2 = '    mo.md(r"""\n    ## Question 2\n'
+
+    assert question2 in src
+    assert (
+        body(src).split(question2)[1].split("@app.function")[0]
+        == (body(out).split(question2)[1].split("@app.function")[0])
     )
 
-    assert (
-        body(src).split("@app.cell(hide_code=True)\ndef prompt_q3")[1]
-        == (body(out).split("@app.cell(hide_code=True)\ndef prompt_q3")[1])
+
+# Written questions
+
+
+def test_written_answer_and_prompt_cells_are_named_in_the_copy():
+    out = student(SOLUTION)
+    nb = parse_notebook(out)
+
+    [prompt] = nb.prompt_cells("q3")
+    [answer] = nb.answer_cells("q3")
+
+    assert "## Question 3" in nb.cell_body_source(prompt)
+    assert nb.cell_body_source(answer) == f'mo.md(r"""\n{ANSWER}\n""")\n'
+
+
+def test_written_answer_without_prompt_lines_gets_a_placeholder():
+    src = SOLUTION.read_text(encoding="utf-8").replace(
+        "    <!-- PROMPT: Because the order of the terms does not change the sum. -->\n", ""
     )
+    out = student_notebook(src, parse_notebook(src), read_config(src, SOLUTION), REQUIREMENT)
+
+    [answer] = parse_notebook(out).answer_cells("q3")
+
+    assert "    *Write your answer here.*\n" in out
+    assert "Addition of numbers" not in out
+    assert answer.name == "answer_q3"
+
+
+def test_solved_copy_keeps_the_written_answer():
+    out = solved(SOLUTION)
+
+    assert "    Addition of numbers is commutative: a + b = b + a.\n" in out
+    assert "PROMPT" not in out
+    assert "def answer_q3():" in out
+
+
+def test_written_grade_call_says_manual():
+    out = student(SOLUTION)
+
+    assert '    mogs.grade("q3", points=5, title="Question 3", manual=True)\n' in out
+    files = public_test_files(parse_notebook(SOLUTION.read_text()))
+
+    assert PurePosixPath("tests/q3.py") not in files
+    assert PurePosixPath("tests/q1.py") in files
 
 
 @pytest.mark.parametrize("path", [SOLUTION, PURE])

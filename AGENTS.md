@@ -8,9 +8,10 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - Design, plans and progress notes live outside this repo, in the author's
   private planning directory. Never put design notes, plans or local paths in
   the repo.
-- `src/marimo_gradescope/`: the package. `config.py` reads the
-  `[tool.marimo-gradescope]` table from the notebook's PEP 723 header and edits
-  that header as text.
+- `src/marimo_gradescope/`: the package. `config.py` reads the config from the
+  notebook's `mogs.assignment(...)` and `mogs.grade(...)` calls (statically,
+  from the AST) and edits the PEP 723 header as text.
+  `scaffold.py` is `marimo-gradescope init`.
 - `src/marimo_gradescope/_typst/`: the Typst packages cmarker and mitex,
   vendored for the PDF of written answers (`pdf.py`). They need the Typst
   version the `pdf` extra pins (`typst>=0.15,<0.16`): bump the pin and the
@@ -55,7 +56,7 @@ make fix         # ruff fixes, then format
 - **Immutable objects.** Frozen `slots=True` dataclasses; build new ones with
   `copy.replace`.
 - **Private pytest.** Only `_assertrewrite.py` imports `_pytest`.
-- **Cross-platform student code.** The student side (`check`, export, PDF,
+- **Cross-platform student code.** The student side (`grade`, export, PDF,
   self-check) uses no `signal.SIGALRM`, `resource` or setuid.
 - **Typing.** `ty` must be clean on `src` and `tests`. Justify any
   `# ty: ignore[...]` in one line.
@@ -71,8 +72,9 @@ make fix         # ruff fixes, then format
 
 ## Git
 
-- Work on `main` unless told otherwise. Code commits are fine. Use plain
-  conventional commit messages.
+- Never commit to `main`. Work on a branch off `main` and open one plain PR
+  into `main`, one commit per logical change. Don't stack PRs. Code commits
+  on the branch are fine. Use plain conventional commit messages.
 - **Never commit README or docs changes without the author's approval.** Leave
   them in the working tree and summarize them.
 - No design notes or plans in the repo.

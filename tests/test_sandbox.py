@@ -302,7 +302,7 @@ def test_slow_check_cell_does_not_stall_the_notebook_run(tmp_path):
             with app.setup:
                 import time
 
-                import marimo_gradescope as mgs
+                import marimo_gradescope as mogs
 
 
             @app.cell
@@ -324,7 +324,7 @@ def test_slow_check_cell_does_not_stall_the_notebook_run(tmp_path):
                 def slow():
                     time.sleep(30)
 
-                mgs.check("q1", tests=[slow])
+                mogs.grade("q1", tests=[slow])
                 return
             """
         ),

@@ -49,7 +49,7 @@ Keep each function self-contained.
 Your solution must only use the provided function arguments, the imports at the top of the notebook, and other functions.
 Don't rename the functions since otherwise the autograder will fail and you will not receive the correct score.
 
-Under each question, there's a check cell that runs the public tests whenever you edit your code.
+At the end of each question, a grade cell runs the public tests whenever you edit your code.
 It reads the tests from the `tests` directory.
 Do not modify, delete, or move that directory.
 

@@ -53,8 +53,8 @@ SCRIPTS = ("setup.sh", "run_autograder")
 TAIL = 4000
 
 # A short per-test timeout and the smallest memory cap, so misbehaving submissions end fast.
-FILES_LINE = '# files = ["data/scores.csv"]\n'
-LIMIT_LINES = "# timeout = 5\n# memory = 2048\n"
+FILES_ARGUMENT = 'files=["data/scores.csv"]'
+LIMIT_ARGUMENTS = ", timeout=5, memory=2048"
 
 PDF = b"%PDF-1.4\n%%EOF\n"
 JUNK = b"\x00\x05\x16\x07\x00\x02\x00\x00Mac OS X        "
@@ -323,7 +323,9 @@ def demo_assignment(folder: Path) -> Path:
     shutil.copytree(DEMO, folder, ignore=shutil.ignore_patterns("dist", "__marimo__"))
     path = folder / NOTEBOOK
     path.write_text(
-        replace_once(path.read_text(encoding="utf-8"), FILES_LINE, FILES_LINE + LIMIT_LINES),
+        replace_once(
+            path.read_text(encoding="utf-8"), FILES_ARGUMENT, FILES_ARGUMENT + LIMIT_ARGUMENTS
+        ),
         encoding="utf-8",
     )
 
@@ -671,8 +673,7 @@ def test_demo_assignment_has_short_limits(tmp_path):
     assert sorted(path.name for path in folder.iterdir()) == ["data", NOTEBOOK]
 
     text = (folder / NOTEBOOK).read_text(encoding="utf-8")
-    assert "# timeout = 5\n" in text
-    assert "# memory = 2048\n" in text
+    assert 'mogs.assignment(files=["data/scores.csv"], timeout=5, memory=2048)' in text
 
 
 def test_every_submission_has_an_expectation(assignment):

@@ -14,17 +14,28 @@ Install it as a `uv` tool:
 uv tool install marimo-gradescope
 ```
 
-## Example
+## Start an assignment
 
-The config goes in the notebook's header:
-
-```python
-# [tool.marimo-gradescope.questions]
-# q1 = { points = 4, title = "Average" }
-# q2 = { points = 5, title = "Empty lists", manual = true }
+```bash
+marimo-gradescope init A1
+marimo edit --sandbox A1/A1.py
 ```
 
-A question consists of a function, its tests, and a check cell:
+`init` creates `A1/A1.py`, a notebook with a short guide and two example questions.
+You write the whole assignment in marimo's editor.
+
+## Example
+
+The assignment's settings go in a cell of their own:
+
+```python
+@app.cell
+def _():
+    mogs.assignment(name="A1")
+    return
+```
+
+A question consists of a function, its tests, and a grade cell with its points:
 
 ```python
 @app.function
@@ -53,11 +64,12 @@ def _():
 
 @app.cell
 def _():
-    mgs.check("q1")
+    mogs.grade("q1", points=4)
     return
 ```
 
-The build removes the `# HIDDEN` cell from the student notebook, and only Gradescope runs it.
+The build removes the `# HIDDEN` cell and the `mogs.assignment` cell from the student notebook.
+Only Gradescope runs the hidden tests.
 
 ## Build
 

@@ -15,7 +15,7 @@ __generated_with = "0.25.2"
 app = marimo.App()
 
 with app.setup:
-    import marimo_gradescope as mgs
+    import marimo_gradescope as mogs
 
 
 @app.function
@@ -38,7 +38,7 @@ def _():
 @app.cell
 def _():
     # Names from the test cell, which ruff cannot see.
-    mgs.check("q1", tests=[test_q1_add, test_q1_zero], points=25, hidden=4)  # noqa: F821
+    mogs.grade("q1", tests=[test_q1_add, test_q1_zero], points=25, hidden=4)  # noqa: F821
     return
 
 

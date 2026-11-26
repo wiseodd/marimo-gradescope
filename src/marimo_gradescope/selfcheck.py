@@ -7,7 +7,7 @@ notebook work.
 
 Tests are found statically and run the way the grader's public phase runs them: the setup
 cell first, then the student names bound from the notebook, then each test cell compiled with
-assertion rewriting. A student copy has no test cells; its check calls name the files that
+assertion rewriting. A student copy has no test cells; its grade calls name the files that
 hold its public tests (`test_file`), and those run the same way. A file that cannot be read
 counts as one failed test named after it. There is no per-test timer here; the caller caps
 the whole run.
@@ -110,10 +110,10 @@ def public_results(path: Path) -> Summary:
 
 
 def test_files(nb: Notebook) -> list[tuple[str, str]]:
-    """Question id and `test_file` of each check call that names one, without repeats."""
+    """Question id and `test_file` of each grade call that names one, without repeats."""
 
-    calls = [cell for cell in nb.cells if cell.check_qid is not None and not cell.hidden]
-    pairs = [(cell.check_qid, nb.check_test_file(cell)) for cell in calls]
+    calls = [cell for cell in nb.cells if cell.grade_qid is not None and not cell.hidden]
+    pairs = [(cell.grade_qid, nb.grade_test_file(cell)) for cell in calls]
 
     return list(
         dict.fromkeys((qid, file) for qid, file in pairs if qid is not None and file is not None)

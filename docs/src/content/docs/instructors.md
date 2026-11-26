@@ -7,7 +7,7 @@ An assignment is a directory with one source notebook and its data files, for ex
 
 ```text
 hw1/
-├── hw.py
+├── hw1.py
 └── data/
     └── scores.csv
 ```
@@ -16,51 +16,80 @@ hw1/
 [`examples/demo`](https://github.com/wiseodd/marimo-gradescope/tree/main/examples/demo) is a complete example.
 See also [marimo's official tutorial](https://docs.marimo.io/getting_started/quickstart/).
 
-## Header
+## Start
 
-A marimo notebook is just a plain Python `.py` file.
-The `marimo-gradescope` config must be put in the notebook's header:
+```bash
+marimo-gradescope init hw1
+marimo edit --sandbox hw1/hw1.py
+```
+
+`init` creates `hw1/hw1.py` with the cells every assignment needs, a guide, and two example questions.
+It refuses a directory that already has files in it.
+The notebook builds as it is, so you can run `marimo-gradescope build hw1` before changing anything.
+
+Everything below can be written in marimo's editor.
+
+## Settings
+
+The assignment's settings go in a cell with a single `mogs.assignment(...)` call:
 
 ```python
-# /// script
-# requires-python = ">=3.13"
-# dependencies = ["marimo", "marimo-gradescope", "numpy"]
-#
-# [tool.marimo-gradescope]
-# name = "HW1"
-# files = ["data/"]
-#
-# [tool.marimo-gradescope.questions]
-# q1 = 25
-# q2 = { points = 25, title = "Gradient descent" }
-# q3 = { points = 10, title = "Discussion", manual = true }
-# ///
+@app.cell
+def _():
+    mogs.assignment(name="HW1", files=["data/"])
+    return
 ```
+
+In the editor, this cell shows the questions, their points and tests, and any problem the build would report.
+It reads the saved notebook, so run it again after you save changes.
+The build removes the cell from the student notebook.
 
 Available options are:
 
-| Key            | Default   | Example                                            | Description                                                                                                                          |
-| -------------- | --------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `questions`    | required  | `q2 = { points = 25, title = "Gradient descent" }` | Points per question, or a dict with `points`, `title` and `manual`.                                                                  |
-| `name`         | file name | `name = "HW1"`                                     | Names the student zip `<name>.zip` and the autograder zip `<name>-autograder-<timestamp>.zip`. Must be a valid file name on Windows. |
-| `files`        | `[]`      | `files = ["data/"]`                                | Data files and directories, relative to the notebook. `tests` is reserved for the public tests.                                      |
-| `timeout`      | `60`      | `timeout = 120`                                    | Seconds per test.                                                                                                                    |
-| `budget`       | `540`     | `budget = 900`                                     | Seconds for the whole grading run.                                                                                                   |
-| `memory`       | `4096`    | `memory = 8192`                                    | MB per grading process, at least 2048. Linux only.                                                                                   |
-| `python`       | `"3.13"`  | `python = "3.14"`                                  | Python version on Gradescope.                                                                                                        |
-| `requirements` | none      | `requirements = "requirements.txt"`                | A requirements file for Gradescope, relative to the notebook. It's used instead of `dependencies`.                                   |
+| Argument       | Default   | Example                            | Description                                                                                                                          |
+| -------------- | --------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`         | file name | `name="HW1"`                       | Names the student zip `<name>.zip` and the autograder zip `<name>-autograder-<timestamp>.zip`. Must be a valid file name on Windows. |
+| `files`        | `[]`      | `files=["data/"]`                  | Data files and directories, relative to the notebook. `tests` is reserved for the public tests.                                      |
+| `timeout`      | `60`      | `timeout=120`                      | Seconds per test.                                                                                                                    |
+| `budget`       | `540`     | `budget=900`                       | Seconds for the whole grading run.                                                                                                   |
+| `memory`       | `4096`    | `memory=8192`                      | MB per grading process, at least 2048. Linux only.                                                                                   |
+| `python`       | `"3.13"`  | `python="3.14"`                    | Python version on Gradescope.                                                                                                        |
+| `requirements` | none      | `requirements="requirements.txt"`  | A requirements file for Gradescope, relative to the notebook. It's used instead of `dependencies`.                                   |
+
+The build reads the arguments without running the notebook.
+So they must be written out as literals: `timeout=120` works, `timeout=2 * LIMIT` doesn't.
+The same goes for the arguments of `mogs.grade` below.
+
+Each question ends with a grade cell, `mogs.grade("q1", points=25)`.
+The questions appear on Gradescope in the order of these cells.
+`mogs.grade` takes:
+
+| Argument    | Default     | Example                    | Description                                                                               |
+| ----------- | ----------- | -------------------------- | ----------------------------------------------------------------------------------------- |
+| question id | required    | `"q1"`                     | The first argument.                                                                       |
+| `points`    | required    | `points=25`                | Points for the question. A written question can be worth 0.                               |
+| `title`     | from the id | `title="Gradient descent"` | Name on Gradescope and in the PDF. `q1` becomes `Question 1`; other ids stay as they are. |
 
 Question ids are letters and digits, and start with a letter, e.g., `q1` or `bonus`.
 They can't contain `_`: test names use `_` to separate the id from the rest of the name.
 Two ids can't differ only in case, like `q1` and `Q1`, and an id can't be a name Windows reserves, like `con` or `nul`.
 Each id names a file in the student zip, `tests/<id>.py`.
 
+The notebook's header lists the packages it needs:
+
+```python
+# /// script
+# requires-python = ">=3.13"
+# dependencies = ["marimo", "marimo-gradescope", "numpy"]
+# ///
+```
+
 ## Notebook
 
 The source notebook is a regular marimo notebook with a few conventions.
 
 Put all imports in the setup cell (`with app.setup:`).
-This includes `import marimo_gradescope as mgs` and any library the tests need.
+This includes `import marimo_gradescope as mogs` and any library the tests need.
 
 ```python
 with app.setup:
@@ -69,7 +98,7 @@ with app.setup:
     import marimo as mo
     import numpy as np
 
-    import marimo_gradescope as mgs
+    import marimo_gradescope as mogs
 ```
 
 Write each function that the students have to fill in as an `@app.function` cell.
@@ -108,12 +137,14 @@ For a single line, put `# SOLUTION` at the end of it.
 For example, `lr = 0.1  # SOLUTION` becomes `lr = ...` in the student notebook.
 A misspelled marker (e.g., `# SOULTION`) will fail the build.
 
-The markers work in any cell, including Markdown cells.
-This is useful for ungraded exercises.
-An ungraded exercise doesn't need an entry in `questions`.
-Write it in a normal cell and put its solution between the markers.
+The markers work in any cell.
+In a Markdown cell, where a `#` line is a heading, write them as HTML comments: `<!-- BEGIN SOLUTION -->`, `<!-- END SOLUTION -->` and `<!-- PROMPT: ... -->`.
+A `#` marker in a Markdown cell fails the build.
+There, the student gets `*Write your answer here.*` instead of `...`.
+
+This is useful for ungraded exercises: write one in a normal cell and put its solution between the markers.
 Its answer stays in the notebook and doesn't go into the PDF.
-To collect a written answer without grading it, see [Written answers](#written-answers).
+In a question without tests, a Markdown cell with markers is the answer instead; see [Written answers](#written-answers).
 
 ### Tests
 
@@ -138,17 +169,18 @@ def _():
 The build removes this cell from the student notebook, and only Gradescope runs it.
 A hidden cell can also hold data or helpers that the hidden tests need.
 
-Each question with public tests needs a check cell:
+The question ends with a grade cell, which also sets its points:
 
 ```python
 @app.cell
 def _():
-    mgs.check("q1")
+    mogs.grade("q1", points=25)
     return
 ```
 
-In the student notebook, the check cell shows the question's points and whether each public test passes.
+In the student notebook, the grade cell shows the question's points and whether each public test passes.
 It updates whenever the student edits their code.
+In your source notebook it also runs the hidden tests, but it doesn't rerun when you edit a solution: run it again by hand.
 
 The build command writes each question's public tests to `tests/<qid>.py` in the same directory as the student notebook.
 While the student can modify the tests and get a 100 locally, Gradescope has the ground-truth tests---public and hidden.
@@ -156,20 +188,45 @@ So, tampering with the test files is useless for the student.
 
 ### Written answers
 
-A question with `manual = true` is graded by hand on Gradescope and has no tests.
-It needs a Markdown cell named `answer_<qid>`, where the student writes the answer.
-Optionally, add a `prompt_<qid>` cell with the question.
+A question without tests is graded by hand on Gradescope.
+Write your answer in a Markdown cell between the solution markers, before the grade cell:
 
-When the student clicks the export button, these cells go into a PDF, with the LaTeX math rendered.
+```python
+@app.cell
+def _():
+    mo.md(r"""
+    <!-- BEGIN SOLUTION -->
+    It divides by zero and raises `ZeroDivisionError`.
+    <!-- END SOLUTION -->
+    """)
+    return
+
+
+@app.cell
+def _():
+    mogs.grade("q3", points=10)
+    return
+```
+
+Students get `*Write your answer here.*` in place of your answer, or your `<!-- PROMPT: ... -->` text if you wrote some.
+The Markdown cells before the answer, back to the previous grade cell, are the question's text.
+
+When the student clicks the export button, the question's text and the answer go into a PDF, with the LaTeX math rendered.
 The PDF goes into the submission zip, together with the notebook.
 
-A manual question can be worth 0 points, e.g., `q5 = { points = 0, title = "Proof", manual = true }`.
+A written question can be worth 0 points, e.g., `mogs.grade("q5", points=0)`.
 Its answer goes into the PDF, but it doesn't count toward the total.
 Use this for a written exercise that you want to read but not grade.
 
 Some things can't be rendered.
-LaTeX that the PDF doesn't support (e.g., TikZ) shows as source, and so does a prompt cell that isn't plain `mo.md(...)`.
+LaTeX that the PDF doesn't support (e.g., TikZ) shows as source, and so does question text that isn't plain `mo.md(...)`.
 Images show as their alt text.
+
+### Notes for yourself
+
+A cell named `instructor` or `instructor_<anything>`, like the guide that `init` writes, is for you only.
+The build removes it from the student notebook.
+It can't define names that other cells use, hold tests, or call `mogs.grade`.
 
 ## Build
 

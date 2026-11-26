@@ -2,10 +2,10 @@
 
 The build appends two cells to the student notebook:
 
-    export_button = mgs.export_button()
+    export_button = mogs.export_button()
     export_button
 
-    mgs.export(export_button, name="hw", manual=["q3"],
+    mogs.export(export_button, name="hw", manual=["q3"],
                titles={"q1": "Question 1", "q2": "Question 2", "q3": "Question 3"},
                placeholders={"q3": "*Write your answer here.*"})
 
