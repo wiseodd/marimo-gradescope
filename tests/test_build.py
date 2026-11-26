@@ -635,3 +635,11 @@ def test_data_files_skip_junk(tmp_path):
     files = data_files(folder, read_config(src, folder / "hw.py"))
 
     assert [str(rel) for rel in files] == ["data/scores.csv"]
+
+
+def test_report_says_one_pt(tmp_path):
+    result = fake_result(tmp_path / "dist", scores=(QuestionScore("q3", "Proof", 1, None, None),))
+
+    text = report(result)
+
+    assert "- q3 Proof: 1 pt, graded by hand" in text
