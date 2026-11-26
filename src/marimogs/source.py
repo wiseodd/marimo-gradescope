@@ -696,7 +696,7 @@ def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
     errors += _hidden_grade_errors(nb) + _public_cell_errors(nb) + _marker_errors(nb)
     errors += _assignment_errors(nb) + _instructor_errors(nb)
     errors += _public_marker_errors(nb)
-    errors += _hidden_name_errors(nb)
+    errors += _hidden_name_errors(nb) + _cell_variable_errors(nb)
 
     return errors
 
@@ -930,6 +930,115 @@ def _hidden_name_errors(nb: Notebook) -> list[str]:
     errors += _helper_cycle_errors({cell: names[cell] for cell in nb.helper_cells()})
 
     return errors
+
+
+CELL_VARIABLE_FIX = (
+    "The grader imports the functions the tests use without running the notebook, so it "
+    "can't get that name. Write the answer as an `@app.function` that the test calls, and put "
+    "data the tests need in the setup cell (`with app.setup:`) or load it in the test."
+)
+
+
+def _cell_variable_errors(nb: Notebook) -> list[str]:
+    """Tests and hidden helpers that read a name defined by a student's plain cell.
+
+    The grader can get such a name only by running the whole notebook (see `loader`), where
+    one failing cell anywhere makes it unavailable. Graded answers are functions instead.
+    """
+
+    errors = []
+    defined = _cell_variable_lines(nb)
+    helpers = nb.helper_cells()
+
+    for cell in nb.cells:
+        if cell.tests:
+            for test, line, read in _test_reads(nb, cell):
+                errors += [
+                    f"Question `{question_id(test)}`: `{test}` (line {line}) reads `{name}`, "
+                    f"which a plain `@app.cell` defines at line {defined[name]}. "
+                    + CELL_VARIABLE_FIX
+                    for name in sorted(read & defined.keys())
+                ]
+        elif cell in helpers:
+            _, read = cell_names(nb.cell_body_source(cell))
+            errors += [
+                f"The `{HIDDEN}` cell at line {cell.start} reads `{name}`, which a plain "
+                f"`@app.cell` defines at line {defined[name]}. " + CELL_VARIABLE_FIX
+                for name in sorted(read & defined.keys())
+            ]
+
+    return errors
+
+
+def _cell_variable_lines(nb: Notebook) -> dict[str, int]:
+    """Each name a student's plain cell returns, with the line that first binds it."""
+
+    lines = {}
+
+    for cell in nb.cells:
+        if cell.kind is not CellKind.CELL or cell.tests or cell.hidden:
+            continue
+
+        node = _cell_node(nb.src, cell)
+        for name in _returned_names(node):
+            lines[name] = _binding_line(node, name) or cell.start
+
+    return lines
+
+
+def _binding_line(node: ast.stmt, name: str) -> int | None:
+    """Line of the first statement in a plain cell's body that binds `name`."""
+
+    match node:
+        case ast.FunctionDef(body=body) | ast.AsyncFunctionDef(body=body):
+            pass
+        case _:
+            return None
+
+    for stmt in body:
+        for sub in ast.walk(stmt):
+            match sub:
+                case ast.Name(id=found, ctx=ast.Store()) if found == name:
+                    return sub.lineno
+                case (
+                    ast.FunctionDef(name=found)
+                    | ast.AsyncFunctionDef(name=found)
+                    | ast.ClassDef(name=found)
+                ) if found == name:
+                    return sub.lineno
+                case ast.alias(name=imported, asname=alias) if (
+                    alias or imported.split(".")[0]
+                ) == name:
+                    return stmt.lineno
+
+    return None
+
+
+def _test_reads(nb: Notebook, cell: Cell) -> list[tuple[str, int, set[str]]]:
+    """Each test of a cell, its line, and the global names it reads.
+
+    Names the cell reads outside its tests, such as in a helper function of a hidden test
+    cell, count for every test of the cell.
+    """
+
+    node = _cell_node(nb.src, cell)
+    bound, read = cell_names(nb.cell_body_source(cell))
+
+    match node:
+        case ast.FunctionDef(body=body) | ast.AsyncFunctionDef(body=body) if (
+            cell.kind is CellKind.CELL
+        ):
+            functions = [stmt for stmt in body if isinstance(stmt, ast.FunctionDef)]
+        case ast.FunctionDef():
+            functions = [node]
+        case _:
+            functions = []
+
+    tests = {fn.name: fn for fn in functions if fn.name in cell.tests}
+    own = {name: cell_names(ast.unparse(fn))[1] - bound for name, fn in tests.items()}
+    rest = read - set().union(*own.values())
+
+    return [(name, fn.lineno, own[name] | rest) for name, fn in tests.items()]
 
 
 def _graded(cell: Cell) -> bool:

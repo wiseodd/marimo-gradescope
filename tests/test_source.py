@@ -1297,3 +1297,152 @@ def test_html_solution_like_comment_ok(line):
 )
 def test_markdown_heading_like_solution_ok(line):
     assert errors(md(line)) == errors("")
+
+
+# Tests that read cell variables
+
+
+DATA_SETUP = HEADER.replace(
+    "    import marimogs as mogs\n",
+    "    import marimogs as mogs\n    prices = [1.0, None, None, 4.0, None]\n",
+)
+
+VARIABLE = """
+@app.cell
+def _():
+    n_missing = sum(p is None for p in prices)  # SOLUTION
+    return (n_missing,)
+"""
+
+VARIABLE_TEST = """
+@app.cell
+def _():
+    def test_q1_count():
+        assert n_missing == 3
+    return
+"""
+
+FUNCTION = """
+@app.function
+def count_missing(values):
+    return sum(v is None for v in values)  # SOLUTION
+"""
+
+FUNCTION_TEST = """
+@app.cell
+def _():
+    def test_q1_count():
+        assert count_missing(prices) == 3
+    return
+"""
+
+
+def line_containing(src: str, text: str) -> int:
+    return next(number for number, line in enumerate(src.splitlines(), 1) if text in line)
+
+
+def test_validate_test_reading_a_cell_variable():
+    cells = VARIABLE + VARIABLE_TEST + CHECK
+    src = nb(cells, DATA_SETUP)
+    defined = line_containing(src, "n_missing = sum(")
+    test = line_containing(src, "def test_q1_count")
+
+    error = one_error(cells, header=DATA_SETUP)
+
+    assert error == (
+        f"Question `q1`: `test_q1_count` (line {test}) reads `n_missing`, which a plain "
+        f"`@app.cell` defines at line {defined}. The grader imports the functions the tests "
+        "use without running the notebook, so it can't get that name. Write the answer as an "
+        "`@app.function` that the test calls, and put data the tests need in the setup cell "
+        "(`with app.setup:`) or load it in the test."
+    )
+
+
+PLAIN_FUNCTION = """
+@app.cell
+def _():
+    def count_missing(values):
+        return sum(v is None for v in values)
+    return (count_missing,)
+"""
+
+
+def test_validate_test_reading_a_function_of_a_plain_cell():
+    cells = PLAIN_FUNCTION + FUNCTION_TEST + CHECK
+
+    error = one_error(cells, header=DATA_SETUP)
+
+    assert "`test_q1_count`" in error
+    assert "reads `count_missing`" in error
+    assert f"line {line_containing(nb(cells, DATA_SETUP), 'def count_missing')}" in error
+
+
+def test_validate_hidden_test_reading_a_cell_variable():
+    hidden = hidden_cell("def test_q1_h():\n    assert n_missing == 3")
+
+    error = one_error(VARIABLE + PUBLIC + CHECK + hidden, header=DATA_SETUP)
+
+    assert error.startswith("Question `q1`: `test_q1_h` (line ")
+    assert "reads `n_missing`" in error
+
+
+def test_validate_hidden_helper_reading_a_cell_variable():
+    helper = hidden_cell("expected = n_missing + 1")
+    test = hidden_cell("def test_q1_h():\n    assert expected == 4")
+
+    error = one_error(VARIABLE + PUBLIC + CHECK + helper + test, header=DATA_SETUP)
+
+    assert error.startswith("The `# HIDDEN` cell at line ")
+    assert "reads `n_missing`" in error
+
+
+def test_validate_reports_every_cell_variable_read():
+    other = """
+@app.cell
+def _():
+    total = 5
+    return (total,)
+"""
+    tests = """
+@app.cell
+def _():
+    def test_q1_a():
+        assert n_missing == 3
+
+    def test_q1_b():
+        assert total == 5 and n_missing == 3
+    return
+"""
+
+    found = errors(VARIABLE + other + tests + CHECK, header=DATA_SETUP)
+
+    assert [error.split(" (line")[0] for error in found] == [
+        "Question `q1`: `test_q1_a`",
+        "Question `q1`: `test_q1_b`",
+        "Question `q1`: `test_q1_b`",
+    ]
+    assert ["reads `n_missing`" in found[0], "reads `n_missing`" in found[1]] == [True, True]
+    assert "reads `total`" in found[2]
+
+
+def test_validate_test_calling_an_app_function_ok():
+    assert errors(FUNCTION + FUNCTION_TEST + CHECK, header=DATA_SETUP) == []
+
+
+def test_validate_test_reading_setup_data_ok():
+    test = PUBLIC.replace("assert True", "assert len(prices) == 5")
+
+    assert errors(test + CHECK, header=DATA_SETUP) == []
+
+
+def test_validate_test_reading_helper_cell_names_ok():
+    helper = hidden_cell("expected = 3")
+    test = hidden_cell("def test_q1_h():\n    assert count_missing(prices) == expected")
+
+    assert errors(FUNCTION + PUBLIC + CHECK + helper + test, header=DATA_SETUP) == []
+
+
+def test_validate_test_reading_its_own_cell_names_ok():
+    hidden = hidden_cell("n_missing = 3\n\ndef test_q1_h():\n    assert n_missing == 3")
+
+    assert errors(PUBLIC + CHECK + hidden) == []
