@@ -14,6 +14,8 @@ Compatible with Gradescope.
 
 ## Installation
 
+Install [`uv`](https://docs.astral.sh/uv/#installation). Then:
+
 ```bash
 uv tool install marimo-gradescope
 ```
