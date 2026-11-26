@@ -19,7 +19,6 @@ from mogs.build import (
     data_files,
     failure_report,
     find_notebook,
-    read_assignment,
 )
 from mogs.cli import main, report
 from mogs.config import ConfigError, read_config
@@ -339,17 +338,6 @@ def test_find_notebook_ignores_other_scripts(tmp_path):
     )
 
     assert find_notebook(folder) == folder / "hw.py"
-
-
-def test_find_notebook_names_a_header_table_left_over(tmp_path):
-    (tmp_path / "hw.py").write_text(
-        "# /// script\n# [tool.marimo-gradescope]\n# name = 'x'\n# ///\n", encoding="utf-8"
-    )
-
-    assert find_notebook(tmp_path) == tmp_path / "hw.py"
-
-    with pytest.raises(ConfigError, match=r"mogs\.assignment"):
-        read_assignment(tmp_path)
 
 
 def test_find_notebook_follows_renamed_imports(tmp_path):

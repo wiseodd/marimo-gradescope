@@ -19,8 +19,6 @@ from pathlib import Path
 
 TOOL = "mogs"
 PACKAGE = "mogs"
-# The old config's header table is named after the package's old name.
-OLD_TOOL = "marimo-gradescope"
 ASSIGNMENT = "mogs.assignment()"
 MIN_MEMORY_MB = 2048
 
@@ -141,18 +139,11 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
         path: Notebook path. Names the notebook and anchors `requirements`.
 
     Raises:
-        ConfigError: If a call is missing, repeated or has an invalid argument, or the header
-            still holds a `[tool.marimo-gradescope]` table. The message names the call.
+        ConfigError: If a call is missing, repeated or has an invalid argument. The message
+            names the call.
     """
 
     src = normalize_newlines(src)
-
-    if HEADER_RE.search(src) is not None and OLD_TOOL in read_header(src).get("tool", {}):
-        raise ConfigError(
-            f"The [tool.{OLD_TOOL}] header table is no longer read. Put the assignment settings in "
-            f"a cell with `{ASSIGNMENT[:-1]}name=...)`, and each question's points in a "
-            '`mogs.grade("q1", points=...)` cell at the end of the question.'
-        )
 
     try:
         tree = ast.parse(src)

@@ -258,7 +258,6 @@ def test_solved_copy_is_the_student_copy_with_solutions():
     assert "total = None" not in out
     assert "    factor = 2\n    return factor * x\n" in out
     assert "# HIDDEN" not in out and "# HIDDEN" not in blank
-    assert "[tool.marimo-gradescope]" not in out
     assert f'"{REQUIREMENT}"' in out
     assert "export_button = mogs.export_button()" in out
     # Only solution lines differ.

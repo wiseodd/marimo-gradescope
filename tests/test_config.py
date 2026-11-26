@@ -203,15 +203,6 @@ def test_question_declared_twice():
         read_config(src, NB)
 
 
-def test_header_table_is_refused():
-    src = cells(ASSIGNMENT, 'mogs.grade("q1", points=1)').replace(
-        "# ///\n", "#\n# [tool.marimo-gradescope]\n# name = 'x'\n# ///\n", 1
-    )
-
-    with pytest.raises(ConfigError, match=r"\[tool\.marimo-gradescope\].*mogs\.assignment"):
-        read_config(src, NB)
-
-
 def test_works_without_a_header():
     src = cells(ASSIGNMENT, 'mogs.grade("q1", points=1)').removeprefix(HEADER)
 

@@ -34,7 +34,6 @@ from mogs import __version__
 from mogs._env import clean_env
 from mogs.config import (
     ASSIGNMENT,
-    OLD_TOOL,
     TOOL,
     Api,
     AssignmentConfig,
@@ -61,8 +60,6 @@ if TYPE_CHECKING:
     from mogs.grader.sandbox import Graded
 
 DIST = "dist"
-# A header table is the old config, which `read_config` names in its error.
-TOOL_TABLE_RE = re.compile(rf"^#\s*\[tool\.{re.escape(OLD_TOOL)}[\].]", re.MULTILINE)
 # What an `assignment(...)` call looks like in a file that is not valid Python.
 ASSIGNMENT_RE = re.compile(r"\bassignment\s*\(")
 SCRIPTS = ("setup.sh", "run_autograder")
@@ -178,9 +175,6 @@ def read_assignment(assignment_dir: Path) -> Assignment:
 def find_notebook(assignment_dir: Path) -> Path:
     """The one `*.py` file in `assignment_dir` that calls `assignment(...)`.
 
-    A file whose header still has a `[tool.marimo-gradescope]` table counts too, so that
-    reading it explains the change.
-
     Raises:
         BuildError: If `assignment_dir` is missing or not a folder, or it holds no such file
             or several.
@@ -238,11 +232,8 @@ def _is_notebook(text: str) -> bool:
     """A source notebook: it calls `assignment(...)`, under any name its imports give it.
 
     A file that is not valid Python counts when it looks like it calls `assignment`, so that
-    reading it reports the syntax error. So does a file with the old header table.
+    reading it reports the syntax error.
     """
-
-    if TOOL_TABLE_RE.search(text):
-        return True
 
     try:
         tree = ast.parse(text)
