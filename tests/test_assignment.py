@@ -36,7 +36,7 @@ def test_summary_lists_the_questions_and_the_total(tmp_path):
     assert "q1 Question 1 4 pts auto-graded: 2 public, 1 hidden" in text
     assert "q2 Vowels 6 pts auto-graded: 1 public, 2 hidden" in text
     assert "q3 Question 3 5 pts written" in text
-    assert "marimo-gradescope build" in text
+    assert "marimogs build" in text
 
 
 def test_summary_lists_the_problems(tmp_path):
@@ -101,4 +101,4 @@ def test_summary_names_the_whole_folder_to_build(tmp_path):
     notebook = folder / "hw.py"
     notebook.write_text(FIXTURE.read_text(encoding="utf-8"), encoding="utf-8")
 
-    assert f"marimo-gradescope build '{folder}'" in words(summary(notebook))
+    assert f"marimogs build '{folder}'" in words(summary(notebook))

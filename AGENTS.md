@@ -8,11 +8,11 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - Design, plans and progress notes live outside this repo, in the author's
   private planning directory. Never put design notes, plans or local paths in
   the repo.
-- `src/marimogs/`: the package, imported as `marimogs` and published as
-  `marimo-gradescope`. `config.py` reads the config from the
-  notebook's `mogs.assignment(...)` and `mogs.grade(...)` calls (statically,
-  from the AST) and edits the PEP 723 header as text.
-  `scaffold.py` is `marimo-gradescope init`.
+- `src/marimogs/`: the package, imported as `marimogs`, published as
+  `marimo-gradescope`, and run as the `marimogs` command. `config.py` reads
+  the config from the notebook's `mogs.assignment(...)` and `mogs.grade(...)`
+  calls (statically, from the AST) and edits the PEP 723 header as text.
+  `scaffold.py` is `marimogs init`.
 - `src/marimogs/_typst/`: the Typst packages cmarker and mitex,
   vendored for the PDF of written answers (`pdf.py`). They need the Typst
   version the `pdf` extra pins (`typst>=0.15,<0.16`): bump the pin and the
