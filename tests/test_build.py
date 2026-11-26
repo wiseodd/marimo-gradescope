@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from marimogs import __version__
-from marimogs import build as build_module
-from marimogs.build import (
+from mogs import __version__
+from mogs import build as build_module
+from mogs.build import (
     BuildError,
     BuildResult,
     QuestionScore,
@@ -21,9 +21,9 @@ from marimogs.build import (
     find_notebook,
     read_assignment,
 )
-from marimogs.cli import main, report
-from marimogs.config import ConfigError, read_config
-from marimogs.runner import FailureReason, Outcome
+from mogs.cli import main, report
+from mogs.config import ConfigError, read_config
+from mogs.runner import FailureReason, Outcome
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
 ZIP_RE = re.compile(r"hw-autograder-\d{4}_\d{2}_\d{2}T\d{2}_\d{2}_\d{2}_\d{6}\.zip")
@@ -100,7 +100,7 @@ def test_zip_contents(demo):
         data = archive.read("data/scores.csv")
         setup = archive.read("setup.sh").decode()
 
-    assert requirements.endswith(f"\nmarimo-gradescope=={__version__}\n")
+    assert requirements.endswith(f"\nmogs=={__version__}\n")
     assert data == (folder / "data" / "scores.csv").read_bytes()
     assert setup.startswith("#!")
 
@@ -124,7 +124,7 @@ def test_bundle_has_hidden_tests_and_student_copy_does_not(demo):
     assert "def test_" not in student
     assert "# BEGIN SOLUTION" not in student
     assert "csv.DictReader" not in student
-    assert f'"marimo-gradescope[pdf]=={__version__}"' in student
+    assert f'"mogs[pdf]=={__version__}"' in student
     assert "mogs.assignment(" not in student
 
 
@@ -263,13 +263,13 @@ def test_self_check_installs_the_header_dependencies(tmp_path, capsys):
     folder = demo_copy(tmp_path / "demo")
     edit(
         folder / "hw.py",
-        '#     "marimo-gradescope",\n',
-        '#     "marimo-gradescope",\n#     "tabulate",\n',
+        '#     "mogs",\n',
+        '#     "mogs",\n#     "tabulate",\n',
     )
     edit(
         folder / "hw.py",
-        "    import marimogs as mogs\n",
-        "    import marimogs as mogs\n    import tabulate\n",
+        "    import mogs\n",
+        "    import mogs\n    import tabulate\n",
     )
 
     code = main(["build", str(folder)])
@@ -328,7 +328,7 @@ def test_two_candidates_listed(tmp_path, capsys):
 def test_no_candidate(tmp_path):
     (tmp_path / "plain.py").write_text("print('hi')\n", encoding="utf-8")
 
-    with pytest.raises(BuildError, match=r"No notebook.*`marimogs init`"):
+    with pytest.raises(BuildError, match=r"No notebook.*`mogs init`"):
         find_notebook(tmp_path)
 
 
@@ -354,7 +354,7 @@ def test_find_notebook_names_a_header_table_left_over(tmp_path):
 
 def test_find_notebook_follows_renamed_imports(tmp_path):
     (tmp_path / "hw.py").write_text(
-        "from marimogs import assignment as configure, grade\n\nconfigure()\n",
+        "from mogs import assignment as configure, grade\n\nconfigure()\n",
         encoding="utf-8",
     )
     (tmp_path / "other.py").write_text("def assignment():\n    pass\n", encoding="utf-8")
@@ -363,7 +363,7 @@ def test_find_notebook_follows_renamed_imports(tmp_path):
 
 
 def test_find_notebook_keeps_a_notebook_with_a_syntax_error(tmp_path):
-    (tmp_path / "hw.py").write_text("import marimogs as mogs\nmogs.assignment(\n", encoding="utf-8")
+    (tmp_path / "hw.py").write_text("import mogs\nmogs.assignment(\n", encoding="utf-8")
 
     assert find_notebook(tmp_path) == tmp_path / "hw.py"
 
@@ -461,13 +461,13 @@ def test_windows_is_refused(tmp_path, monkeypatch):
 
 
 def test_cli_does_not_import_the_sandbox():
-    code = "import sys, marimogs.cli; print(sorted(sys.modules))"
+    code = "import sys, mogs.cli; print(sorted(sys.modules))"
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
 
     assert result.returncode == 0, result.stderr
-    assert "marimogs.build" in result.stdout
-    assert "marimogs.grader.sandbox" not in result.stdout
-    assert "marimogs.grader._process" not in result.stdout
+    assert "mogs.build" in result.stdout
+    assert "mogs.grader.sandbox" not in result.stdout
+    assert "mogs.grader._process" not in result.stdout
 
 
 def fake_result(dist: Path, **fields) -> BuildResult:

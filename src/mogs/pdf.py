@@ -23,9 +23,9 @@ from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from marimogs.grader.results import code_block
-from marimogs.runner import exception_summary
-from marimogs.source import (
+from mogs.grader.results import code_block
+from mogs.runner import exception_summary
+from mogs.source import (
     Cell,
     CellKind,
     Notebook,
@@ -260,8 +260,8 @@ def render_manual_pdf(
     except ImportError as exc:
         raise PdfUnavailable(
             "the PDF tool is not installed (typst). Add "
-            '"marimo-gradescope[pdf]" to the notebook\'s dependencies, or run '
-            '`pip install "marimo-gradescope[pdf]"`'
+            '"mogs[pdf]" to the notebook\'s dependencies, or run '
+            '`pip install "mogs[pdf]"`'
         ) from exc
 
     try:

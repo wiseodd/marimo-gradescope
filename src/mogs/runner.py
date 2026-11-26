@@ -259,7 +259,7 @@ def run_test_source(
         One outcome per name.
     """
 
-    from marimogs._assertrewrite import compile_tests
+    from mogs._assertrewrite import compile_tests
 
     try:
         exec(compile_tests(source, filename), namespace)

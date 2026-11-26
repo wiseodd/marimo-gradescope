@@ -4,8 +4,8 @@ import re
 from importlib.resources import files
 from string import Template
 
-from marimogs.config import ASSIGNMENT, AssignmentConfig, ConfigError
-from marimogs.grader._user import STUDENT_USER
+from mogs.config import ASSIGNMENT, AssignmentConfig, ConfigError
+from mogs.grader._user import STUDENT_USER
 
 # The uv that `setup.sh` installs on Gradescope.
 UV_VERSION = "0.11.21"

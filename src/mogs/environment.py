@@ -1,7 +1,7 @@
 """The Python environment the build grades in.
 
-It holds what Gradescope installs: the pinned requirements and marimo-gradescope. The
-marimo-gradescope in it is the one that runs the build, so a build from a source checkout grades
+It holds what Gradescope installs: the pinned requirements and mogs. The
+mogs in it is the one that runs the build, so a build from a source checkout grades
 with that checkout.
 """
 
@@ -13,18 +13,18 @@ from pathlib import Path
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
-from marimogs import __version__
-from marimogs._env import clean_env
-from marimogs.config import TOOL, normalized_name
-from marimogs.requirements import RequirementsError
+from mogs import __version__
+from mogs._env import clean_env
+from mogs.config import TOOL, normalized_name
+from mogs.requirements import RequirementsError
 
 
 def grading_python(requirements: str, folder: Path, python_version: str) -> Path:
     """Create a virtual environment in `folder` and install the grading requirements.
 
     Args:
-        requirements: Text of Gradescope's `requirements.txt`. Its marimo-gradescope line is
-            replaced by the running marimo-gradescope.
+        requirements: Text of Gradescope's `requirements.txt`. Its mogs line is
+            replaced by the running mogs.
         folder: Where to create the environment; must not exist.
         python_version: Python version for the environment, as on Gradescope.
 
@@ -56,7 +56,7 @@ def grading_python(requirements: str, folder: Path, python_version: str) -> Path
 
 
 def tool_install_args(direct_url: str | None) -> list[str]:
-    """`uv pip install` arguments that install the running marimo-gradescope.
+    """`uv pip install` arguments that install the running mogs.
 
     Args:
         direct_url: Its `direct_url.json` (PEP 610), present when it was installed from a

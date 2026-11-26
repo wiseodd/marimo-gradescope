@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-import marimogs
-from marimogs._run import run_capped
-from marimogs.config import read_config
-from marimogs.export import (
+import mogs
+from mogs._run import run_capped
+from mogs.config import read_config
+from mogs.export import (
     Download,
     Line,
     Mark,
@@ -27,14 +27,14 @@ from marimogs.export import (
     package,
     panel,
 )
-from marimogs.pdf import PdfUnavailable
-from marimogs.source import parse_notebook
-from marimogs.transform import public_test_files, student_notebook
+from mogs.pdf import PdfUnavailable
+from mogs.source import parse_notebook
+from mogs.transform import public_test_files, student_notebook
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SOLUTION = FIXTURES / "solution.py"
 # The package's `export` attribute is the function, so take the module from `sys.modules`.
-export_module = importlib.import_module("marimogs.export")
+export_module = importlib.import_module("mogs.export")
 TITLES = {"q1": "Question 1", "q2": "Vowels", "q3": "Question 3"}
 ANSWER = "Because the order of the terms does not change the sum."
 # The student copy's answer cell is the source's, unchanged: its text is the placeholder.
@@ -48,7 +48,7 @@ ANSWER_CELL = (
 
 def student_copy(path: Path = SOLUTION) -> str:
     src = path.read_text(encoding="utf-8")
-    return student_notebook(src, parse_notebook(src), read_config(src, path), "marimo-gradescope")
+    return student_notebook(src, parse_notebook(src), read_config(src, path), "mogs")
 
 
 def export_placeholders(text: str) -> dict[str, str]:
@@ -129,8 +129,8 @@ def no_pdf(monkeypatch):
 
 
 def test_exported_from_package():
-    assert marimogs.export is export
-    assert marimogs.export_button is export_button
+    assert mogs.export is export
+    assert mogs.export_button is export_button
 
 
 def test_export_button_label():
@@ -355,7 +355,7 @@ def test_each_part_is_checked_against_its_own_placeholder(tmp_path, no_pdf, edit
 def test_solved_copy_exports_without_a_warning(tmp_path, no_pdf):
     src = SOLUTION.read_text(encoding="utf-8")
     nb, cfg = parse_notebook(src), read_config(src, SOLUTION)
-    text = student_notebook(src, nb, cfg, "marimo-gradescope", solutions=True)
+    text = student_notebook(src, nb, cfg, "mogs", solutions=True)
     notebook = tmp_path / "hw.py"
     notebook.write_text(text, encoding="utf-8")
 

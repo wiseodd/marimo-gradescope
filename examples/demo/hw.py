@@ -2,7 +2,7 @@
 # requires-python = ">=3.13"
 # dependencies = [
 #     "marimo",
-#     "marimo-gradescope",
+#     "mogs",
 # ]
 # ///
 
@@ -16,7 +16,7 @@ with app.setup:
 
     import marimo as mo
 
-    import marimogs as mogs
+    import mogs
 
     SCORES = mo.notebook_dir() / "data" / "scores.csv"
 

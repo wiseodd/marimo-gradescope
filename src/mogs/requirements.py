@@ -2,7 +2,7 @@
 
 It comes from the notebook header's dependencies, pinned by `uv export`, or from the file
 that `mogs.assignment(requirements=...)` names. Either way it ends with one line for
-marimo-gradescope itself.
+mogs itself.
 """
 
 import re
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
 
-from marimogs.config import (
+from mogs.config import (
     ASSIGNMENT,
     TOOL,
     AssignmentConfig,
@@ -45,22 +45,22 @@ def gradescope_requirements(
 ) -> tuple[str, list[str]]:
     """Build the text of Gradescope's `requirements.txt`.
 
-    With `cfg.requirements`, the file is used as it is, minus any marimo-gradescope line.
-    Otherwise `uv export` pins the header's dependencies, without marimo-gradescope, and each
+    With `cfg.requirements`, the file is used as it is, minus any mogs line.
+    Otherwise `uv export` pins the header's dependencies, without mogs, and each
     `[[tool.uv.index]]` becomes an `--extra-index-url` line (`--index-url` for the default
     index), since the export drops them.
 
     Args:
         src: Notebook source.
         cfg: Its config.
-        tool_requirement: The marimo-gradescope line to append, such as
-            `marimo-gradescope==0.1.0`.
+        tool_requirement: The mogs line to append, such as
+            `mogs==0.1.0`.
 
     Returns:
         The file text, and warnings for the instructor.
 
     Raises:
-        ValueError: If `tool_requirement` is not a marimo-gradescope requirement.
+        ValueError: If `tool_requirement` is not a mogs requirement.
         ConfigError: If the requirements file is missing or names local files, or the header
             is invalid or uses index settings that cannot be carried over.
         RequirementsError: If `uv export` fails.
@@ -192,7 +192,7 @@ def _uv_export(src: str) -> str:
 
 
 def _version_warnings(tool_requirement: str) -> list[str]:
-    """Warn when the pinned marimo-gradescope is a dev or local version."""
+    """Warn when the pinned mogs is a dev or local version."""
 
     match = PIN_RE.search(tool_requirement)
     if match is None:

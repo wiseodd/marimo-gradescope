@@ -10,10 +10,10 @@ from typing import Any
 
 import pytest
 
-import marimogs
-from marimogs import grade
-from marimogs.check import question_title
-from marimogs.config import ConfigError, read_config
+import mogs
+from mogs import grade
+from mogs.check import question_title
+from mogs.config import ConfigError, read_config
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TWO_CELL = FIXTURES / "two_cell_check.py"
@@ -339,7 +339,7 @@ def test_points_formatting(points, shown):
 def test_discovers_question_tests_from_caller_globals():
     ns = define(
         """
-        from marimogs import grade
+        from mogs import grade
 
         def test_q1_a():
             assert 1 == 1
@@ -370,7 +370,7 @@ def test_discovers_question_tests_from_caller_globals():
 def test_discovery_without_tests_warns():
     ns = define(
         """
-        from marimogs import grade
+        from mogs import grade
 
         panel = grade("q1")
         """
@@ -383,11 +383,11 @@ def test_discovery_without_tests_warns():
 
 
 def test_check_exported():
-    assert marimogs.grade is grade
+    assert mogs.grade is grade
 
 
 def test_import_stays_light():
-    script = "import sys, marimogs; print('_pytest' in sys.modules, 'marimo' in sys.modules)"
+    script = "import sys, mogs; print('_pytest' in sys.modules, 'marimo' in sys.modules)"
 
     result = subprocess.run(
         [sys.executable, "-c", script], capture_output=True, text=True, check=True
@@ -492,7 +492,7 @@ def test_test_file_leaves_the_kernel_globals_alone(tmp_path):
     before = dict(namespace)
 
     exec(
-        'import marimogs\nmarimogs.grade("q1", test_file="tests/q1.py")',
+        'import mogs\nmogs.grade("q1", test_file="tests/q1.py")',
         namespace,
     )
 
@@ -572,7 +572,7 @@ def test_check_is_a_no_op_while_grading(monkeypatch):
 
 @pytest.mark.parametrize("qid", ["q1", "q12", "q1a", "bonus", "Q1"])
 def test_panel_title_matches_the_config_default(qid):
-    src = f'import marimogs as mogs\nmogs.assignment()\nmogs.grade("{qid}", points=1)\n'
+    src = f'import mogs\nmogs.assignment()\nmogs.grade("{qid}", points=1)\n'
     cfg = read_config(src, Path("nb.py"))
 
     assert question_title(qid) == cfg.questions[qid].title
@@ -606,7 +606,7 @@ def test_written_is_a_no_op_while_grading(monkeypatch):
 
 
 WRITTEN_SOURCE = """\
-import marimogs as mogs
+import mogs
 
 mogs.assignment()
 

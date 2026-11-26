@@ -9,7 +9,7 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from marimogs.build import (
+from mogs.build import (
     BuildError,
     data_files,
     grade_locally,
@@ -17,12 +17,12 @@ from marimogs.build import (
     require_posix,
     total,
 )
-from marimogs.config import TOOL
-from marimogs.environment import grading_python
-from marimogs.grader.bundle import GradingBundle, bundle_from_notebook
-from marimogs.grader.results import Results, build_results, find_submission
-from marimogs.requirements import gradescope_requirements
-from marimogs.runner import Outcome
+from mogs.config import TOOL
+from mogs.environment import grading_python
+from mogs.grader.bundle import GradingBundle, bundle_from_notebook
+from mogs.grader.results import Results, build_results, find_submission
+from mogs.requirements import gradescope_requirements
+from mogs.runner import Outcome
 
 MAX_ZIP_MEMBERS = 5_000
 MAX_ZIP_BYTES = 500 * 1024 * 1024

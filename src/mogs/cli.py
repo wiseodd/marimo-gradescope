@@ -1,4 +1,4 @@
-"""The `marimogs` command."""
+"""The `mogs` command."""
 
 import argparse
 import shlex
@@ -7,13 +7,13 @@ import sys
 from copy import replace
 from pathlib import Path
 
-from marimogs import __version__
-from marimogs.build import BuildError, BuildResult, build, failure_report, source_notebook
-from marimogs.config import ConfigError
-from marimogs.regrade import GradeResult, grade_submission
-from marimogs.requirements import RequirementsError
-from marimogs.scaffold import InitError, init
-from marimogs.source import NO_TEXT, SourceError
+from mogs import __version__
+from mogs.build import BuildError, BuildResult, build, failure_report, source_notebook
+from mogs.config import ConfigError
+from mogs.regrade import GradeResult, grade_submission
+from mogs.requirements import RequirementsError
+from mogs.scaffold import InitError, init
+from mogs.source import NO_TEXT, SourceError
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -49,8 +49,8 @@ def _init(folder: Path) -> int:
         return 1
 
     print(f"Created {path}")
-    print(f"Edit it  : marimogs edit {shlex.quote(str(folder))}")
-    print(f"Build it : marimogs build {shlex.quote(str(folder))}")
+    print(f"Edit it  : mogs edit {shlex.quote(str(folder))}")
+    print(f"Build it : mogs build {shlex.quote(str(folder))}")
     return 0
 
 
@@ -206,7 +206,7 @@ def _fraction(score: float, points: float) -> str:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="marimogs",
+        prog="mogs",
         description="Build Gradescope autograders from marimo notebooks.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -227,7 +227,7 @@ def _parser() -> argparse.ArgumentParser:
         help="open the source notebook in marimo's editor",
         description=(
             "Run `marimo edit --sandbox` on the source notebook PATH, or the one in the "
-            "assignment folder PATH, with the marimo installed next to marimo-gradescope."
+            "assignment folder PATH, with the marimo installed next to mogs."
         ),
     )
     edit_parser.add_argument(

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-**marimo-gradescope** turns one marimo source notebook into a student notebook
+**mogs** turns one marimo source notebook into a student notebook
 and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 
 ## Where things are
@@ -8,12 +8,12 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - Design, plans and progress notes live outside this repo, in the author's
   private planning directory. Never put design notes, plans or local paths in
   the repo.
-- `src/marimogs/`: the package, imported as `marimogs`, published as
-  `marimo-gradescope`, and run as the `marimogs` command. `config.py` reads
+- `src/mogs/`: the package, imported as `mogs`, published as
+  `mogs`, and run as the `mogs` command. `config.py` reads
   the config from the notebook's `mogs.assignment(...)` and `mogs.grade(...)`
   calls (statically, from the AST) and edits the PEP 723 header as text.
-  `scaffold.py` is `marimogs init`.
-- `src/marimogs/_typst/`: the Typst packages cmarker and mitex,
+  `scaffold.py` is `mogs init`.
+- `src/mogs/_typst/`: the Typst packages cmarker and mitex,
   vendored for the PDF of written answers (`pdf.py`). They need the Typst
   version the `pdf` extra pins (`typst>=0.15,<0.16`): bump the pin and the
   vendored versions together.
@@ -26,7 +26,7 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   makes that a failure. The base image is amd64 only: on an arm64 host it runs
   under emulation, which is slow enough that grading timeouts may trip.
 - `docs/`: the docs site (Astro Starlight, built with Bun), deployed to
-  https://marimo-gradescope.kristia.de by `.github/workflows/docs.yml`. Pages
+  https://mogs.kristia.de by `.github/workflows/docs.yml`. Pages
   are `docs/src/content/docs/` (`index.md`, `instructors.md`,
   `students.md`). The README stays short and links there.
 

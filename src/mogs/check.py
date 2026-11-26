@@ -10,10 +10,10 @@ from pathlib import Path
 from types import CodeType, FunctionType
 from typing import TYPE_CHECKING
 
-from marimogs._env import grading
-from marimogs.config import default_title, read_config
-from marimogs.runner import Outcome, run_test, run_test_source, shorten
-from marimogs.source import module_tests
+from mogs._env import grading
+from mogs.config import default_title, read_config
+from mogs.runner import Outcome, run_test, run_test_source, shorten
+from mogs.source import module_tests
 
 if TYPE_CHECKING:
     import marimo as mo
@@ -260,7 +260,7 @@ def with_rewritten_asserts(test: Callable[[], object]) -> Callable[[], object]:
         case _:
             return test
 
-    from marimogs._assertrewrite import compile_tests
+    from mogs._assertrewrite import compile_tests
 
     try:
         source = textwrap.dedent(inspect.getsource(test))

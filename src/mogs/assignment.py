@@ -6,8 +6,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from marimogs._env import grading
-from marimogs.check import (
+from mogs._env import grading
+from mogs.check import (
     FAIL,
     ITEM_STYLE,
     LIST_STYLE,
@@ -19,8 +19,8 @@ from marimogs.check import (
     format_points,
     locate,
 )
-from marimogs.config import AssignmentConfig, ConfigError, read_config
-from marimogs.source import (
+from mogs.config import AssignmentConfig, ConfigError, read_config
+from mogs.source import (
     NO_TEXT,
     Notebook,
     SourceError,
@@ -147,7 +147,7 @@ def _problems(name: str, problems: list[str], path: Path) -> str:
 def _data_problems(path: Path, cfg: AssignmentConfig) -> list[str]:
     """The build's complaint about the data files, if any."""
 
-    from marimogs.build import data_files
+    from mogs.build import data_files
 
     try:
         data_files(path.parent, cfg)
@@ -160,7 +160,7 @@ def _data_problems(path: Path, cfg: AssignmentConfig) -> list[str]:
 def _footer(path: Path) -> str:
     note = (
         f"Read from {path.name} when this cell ran; run it again after you save changes. "
-        f"Build with: marimogs build {shlex.quote(str(path.parent))}"
+        f"Build with: mogs build {shlex.quote(str(path.parent))}"
     )
     return f'<div style="{NOTE_STYLE}">{html.escape(note)}</div>'
 

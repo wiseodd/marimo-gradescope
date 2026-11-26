@@ -1,6 +1,6 @@
 """Grading child: runs one phase's tests on a submission and reports events.
 
-Usage: `python -m marimogs.grader.child EVENT_FD`. The parent passes a writable file
+Usage: `python -m mogs.grader.child EVENT_FD`. The parent passes a writable file
 descriptor `EVENT_FD` (e.g. with `pass_fds`) and writes a `Job` to stdin; the child writes
 events to `EVENT_FD`, as `grader.protocol` describes. Stdout and stderr belong to the
 student's code.
@@ -15,11 +15,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from types import FrameType
 
-from marimogs._assertrewrite import compile_tests
-from marimogs.grader.bundle import HiddenHelper, TestCell
-from marimogs.grader.protocol import Event, Job, Loaded, Loading, Result, Start, encode
-from marimogs.loader import bind, load
-from marimogs.runner import (
+from mogs._assertrewrite import compile_tests
+from mogs.grader.bundle import HiddenHelper, TestCell
+from mogs.grader.protocol import Event, Job, Loaded, Loading, Result, Start, encode
+from mogs.loader import bind, load
+from mogs.runner import (
     FailureReason,
     Outcome,
     cap,

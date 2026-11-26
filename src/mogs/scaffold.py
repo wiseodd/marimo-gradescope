@@ -1,16 +1,16 @@
-"""`marimogs init`: a new assignment folder with a notebook to start from."""
+"""`mogs init`: a new assignment folder with a notebook to start from."""
 
 from importlib.metadata import version
 from pathlib import Path
 from string import Template
 
-from marimogs.config import check_name
-from marimogs.transform import python_literal
+from mogs.config import check_name
+from mogs.transform import python_literal
 
 NOTEBOOK = Template('''\
 # /// script
 # requires-python = ">=3.13"
-# dependencies = ["marimo", "marimo-gradescope"]
+# dependencies = ["marimo", "mogs"]
 # ///
 
 import marimo
@@ -20,7 +20,7 @@ app = marimo.App()
 
 with app.setup:
     import marimo as mo
-    import marimogs as mogs
+    import mogs
 
 
 @app.cell
@@ -33,7 +33,7 @@ def instructor_guide():
     mo.md(r"""
     ## How to write this assignment
 
-    See docs: https://marimo-gradescope.kristia.de/instructors
+    See docs: https://mogs.kristia.de/instructors
 
     The two questions below are examples. Change them into your own questions or delete
     them. Each question ends with a `mogs.grade("<id>", points=...)` cell.

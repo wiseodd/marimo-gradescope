@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from marimogs.config import (
+from mogs.config import (
     AssignmentConfig,
     ConfigError,
     Question,
@@ -36,7 +36,7 @@ BASIC = notebook(
     """
 requires-python = ">=3.13"
 dependencies = [
-    "marimo-gradescope",
+    "mogs",
     "numpy",
 ]
 """
@@ -54,7 +54,7 @@ def test_read_header_parses_toml():
     header = read_header(BASIC)
 
     assert header["requires-python"] == ">=3.13"
-    assert header["dependencies"] == ["marimo-gradescope", "numpy"]
+    assert header["dependencies"] == ["mogs", "numpy"]
 
 
 def test_read_header_missing():
@@ -70,7 +70,7 @@ def test_read_header_invalid_toml():
 # read_config
 
 
-def cells(*bodies: str, alias: str = "import marimogs as mogs") -> str:
+def cells(*bodies: str, alias: str = "import mogs") -> str:
     """A notebook with a header, a setup cell importing this package, and plain cells."""
 
     out = HEADER + f"\nimport marimo\n\napp = marimo.App()\n\nwith app.setup:\n    {alias}\n"
@@ -82,9 +82,7 @@ def cells(*bodies: str, alias: str = "import marimogs as mogs") -> str:
     return out
 
 
-HEADER = (
-    '# /// script\n# requires-python = ">=3.13"\n# dependencies = ["marimo-gradescope"]\n# ///\n'
-)
+HEADER = '# /// script\n# requires-python = ">=3.13"\n# dependencies = ["mogs"]\n# ///\n'
 ASSIGNMENT = 'mogs.assignment(name="HW1")'
 
 
@@ -155,8 +153,8 @@ def test_all_assignment_arguments():
 @pytest.mark.parametrize(
     "alias",
     [
-        "import marimogs as grader",
-        "from marimogs import assignment, grade as run_grade",
+        "import mogs as grader",
+        "from mogs import assignment, grade as run_grade",
     ],
 )
 def test_calls_follow_the_import_names(alias):
@@ -324,42 +322,42 @@ def test_name_fit_for_windows(name: str):
 
 @pytest.mark.parametrize(
     "existing",
-    ["marimo-gradescope", "marimo-gradescope>=0.1", "marimo_gradescope[pdf] >= 0.1"],
+    ["mogs", "mogs>=0.1", "Mogs[pdf] >= 0.1"],
 )
 def test_set_dependency_replaces(existing: str):
     src = notebook(f'dependencies = [\n    "numpy",\n    "{existing}",\n    "scipy",\n]')
 
-    out = set_dependency(src, "marimo-gradescope==0.1.0")
+    out = set_dependency(src, "mogs==0.1.0")
 
-    assert read_header(out)["dependencies"] == ["numpy", "marimo-gradescope==0.1.0", "scipy"]
+    assert read_header(out)["dependencies"] == ["numpy", "mogs==0.1.0", "scipy"]
     assert out.endswith(CODE)
 
 
 def test_set_dependency_adds():
     src = notebook('dependencies = ["nbconvert[webpdf]", "numpy"]\n\n[tool.uv]\nfoo = "]"')
 
-    out = set_dependency(src, "marimo-gradescope==0.1.0")
+    out = set_dependency(src, "mogs==0.1.0")
     header = read_header(out)
 
-    assert header["dependencies"] == ["nbconvert[webpdf]", "numpy", "marimo-gradescope==0.1.0"]
+    assert header["dependencies"] == ["nbconvert[webpdf]", "numpy", "mogs==0.1.0"]
     assert header["tool"]["uv"] == {"foo": "]"}
 
 
 def test_set_dependency_without_dependencies_key():
     src = notebook('requires-python = ">=3.13"\n\n[tool.uv]\nfoo = 1')
 
-    out = set_dependency(src, "marimo-gradescope==0.1.0")
+    out = set_dependency(src, "mogs==0.1.0")
     header = read_header(out)
 
-    assert header["dependencies"] == ["marimo-gradescope==0.1.0"]
+    assert header["dependencies"] == ["mogs==0.1.0"]
     assert header["requires-python"] == ">=3.13"
     assert header["tool"]["uv"] == {"foo": 1}
 
 
 def test_set_dependency_keeps_other_header_text():
-    out = set_dependency(BASIC, "marimo-gradescope==0.1.0")
+    out = set_dependency(BASIC, "mogs==0.1.0")
 
-    assert read_header(out)["dependencies"] == ["marimo-gradescope==0.1.0", "numpy"]
+    assert read_header(out)["dependencies"] == ["mogs==0.1.0", "numpy"]
     assert out.endswith(CODE)
 
 
@@ -368,11 +366,11 @@ def test_set_dependency_keeps_other_header_text():
 
 def test_remove_dependency_drops_every_match():
     src = notebook(
-        'dependencies = [\n    "numpy",\n    "marimo-gradescope==0.1.0",\n    "scipy",\n'
-        '    "marimo_gradescope[pdf]",\n]\n\n[tool.uv]\nfoo = "]"'
+        'dependencies = [\n    "numpy",\n    "mogs==0.1.0",\n    "scipy",\n'
+        '    "Mogs[pdf]",\n]\n\n[tool.uv]\nfoo = "]"'
     )
 
-    out = remove_dependency(src, "marimo-gradescope")
+    out = remove_dependency(src, "mogs")
     header = read_header(out)
 
     assert header["dependencies"] == ["numpy", "scipy"]
@@ -383,7 +381,7 @@ def test_remove_dependency_drops_every_match():
 def test_remove_dependency_absent_is_unchanged():
     src = notebook('requires-python = ">=3.13"\n\n[tool.uv]\nfoo = 1')
 
-    assert remove_dependency(src, "marimo-gradescope") == src
+    assert remove_dependency(src, "mogs") == src
     assert remove_dependency(BASIC, "scipy") == BASIC
 
 

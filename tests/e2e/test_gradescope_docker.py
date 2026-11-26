@@ -32,13 +32,13 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from marimogs.build import build, write_zip
-from marimogs.config import normalized_name, read_config
-from marimogs.grader.bundle import bundle_from_notebook
-from marimogs.grader.main import main as grader_main
-from marimogs.grader.results import find_submission
-from marimogs.source import BEGIN, parse_notebook
-from marimogs.transform import pinned_requirement, student_notebook
+from mogs.build import build, write_zip
+from mogs.config import normalized_name, read_config
+from mogs.grader.bundle import bundle_from_notebook
+from mogs.grader.main import main as grader_main
+from mogs.grader.results import find_submission
+from mogs.source import BEGIN, parse_notebook
+from mogs.transform import pinned_requirement, student_notebook
 
 REPO = Path(__file__).parents[2]
 DEMO = REPO / "examples" / "demo"
@@ -418,7 +418,7 @@ def write_tree(root: Path, files: Files) -> None:
 def wheel_requirement(wheel: Path) -> str:
     """The requirements line that installs `wheel` from the image's wheel folder."""
 
-    return f"marimo-gradescope @ file://{WHEELS / wheel.name}"
+    return f"mogs @ file://{WHEELS / wheel.name}"
 
 
 def build_context(context: Path, archive: Path) -> None:
@@ -474,7 +474,7 @@ def build_image(runtime: str, assignment: Assignment, context: Path) -> str:
     )
     build_context(context, result.zip)
 
-    tag = f"localhost/marimo-gradescope-e2e:{uuid.uuid4().hex[:12]}"
+    tag = f"localhost/mogs-e2e:{uuid.uuid4().hex[:12]}"
     command = [runtime, "build", "--platform", PLATFORM, "--tag", tag, str(context)]
     run(command, timeout=1800)
 
@@ -719,12 +719,10 @@ def test_submission_files(assignment, tmp_path, name):
 
 
 def test_wheel_requirement_names_the_tool():
-    requirement = wheel_requirement(Path("/x/marimo_gradescope-0.1.0-py3-none-any.whl"))
+    requirement = wheel_requirement(Path("/x/mogs-0.1.0-py3-none-any.whl"))
 
-    assert requirement == (
-        "marimo-gradescope @ file:///wheels/marimo_gradescope-0.1.0-py3-none-any.whl"
-    )
-    assert normalized_name(requirement) == "marimo-gradescope"
+    assert requirement == ("mogs @ file:///wheels/mogs-0.1.0-py3-none-any.whl")
+    assert normalized_name(requirement) == "mogs"
 
 
 def test_build_context_unpacks_the_zip_with_modes(tmp_path):

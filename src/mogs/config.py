@@ -17,8 +17,10 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 
-TOOL = "marimo-gradescope"
-PACKAGE = "marimogs"
+TOOL = "mogs"
+PACKAGE = "mogs"
+# The old config's header table is named after the package's old name.
+OLD_TOOL = "marimo-gradescope"
 ASSIGNMENT = "mogs.assignment()"
 MIN_MEMORY_MB = 2048
 
@@ -145,9 +147,9 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
 
     src = normalize_newlines(src)
 
-    if HEADER_RE.search(src) is not None and TOOL in read_header(src).get("tool", {}):
+    if HEADER_RE.search(src) is not None and OLD_TOOL in read_header(src).get("tool", {}):
         raise ConfigError(
-            f"The [tool.{TOOL}] header table is no longer read. Put the assignment settings in "
+            f"The [tool.{OLD_TOOL}] header table is no longer read. Put the assignment settings in "
             f"a cell with `{ASSIGNMENT[:-1]}name=...)`, and each question's points in a "
             '`mogs.grade("q1", points=...)` cell at the end of the question.'
         )

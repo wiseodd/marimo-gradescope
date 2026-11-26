@@ -13,15 +13,15 @@ from collections.abc import Set as AbstractSet
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 
-from marimogs import __version__
-from marimogs.config import (
+from mogs import __version__
+from mogs.config import (
     PACKAGE,
     AssignmentConfig,
     normalize_newlines,
     set_dependency,
     split_lines,
 )
-from marimogs.source import (
+from mogs.source import (
     BEGIN,
     END,
     SOLUTION,
@@ -63,7 +63,7 @@ def pinned_requirement(cfg: AssignmentConfig) -> str:
     """Requirement on this exact package version, with the `pdf` extra if a question is manual."""
 
     extra = "[pdf]" if any(question.manual for question in cfg.questions.values()) else ""
-    return f"marimo-gradescope{extra}=={__version__}"
+    return f"mogs{extra}=={__version__}"
 
 
 def student_notebook(
@@ -325,7 +325,10 @@ def export_cells(
     names = [as_name for _, as_name in imports]
     importer = (
         "@app.cell(hide_code=True)\ndef _():\n"
-        + "".join(f"    import {module} as {as_name}\n" for module, as_name in imports)
+        + "".join(
+            f"    import {module}\n" if module == as_name else f"    import {module} as {as_name}\n"
+            for module, as_name in imports
+        )
         + f"\n    return {_returned(names)}\n\n\n"
         if imports
         else ""

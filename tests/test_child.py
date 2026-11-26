@@ -9,15 +9,15 @@ from pathlib import Path
 
 import pytest
 
-from marimogs.config import AssignmentConfig, Question, read_config
-from marimogs.grader.bundle import (
+from mogs.config import AssignmentConfig, Question, read_config
+from mogs.grader.bundle import (
     GradingBundle,
     HiddenHelper,
     Phase,
     TestCell,
     bundle_from_notebook,
 )
-from marimogs.grader.protocol import (
+from mogs.grader.protocol import (
     Event,
     Job,
     Loaded,
@@ -28,8 +28,8 @@ from marimogs.grader.protocol import (
     decode,
     encode,
 )
-from marimogs.runner import FailureReason, Outcome
-from marimogs.source import SourceError, parse_notebook
+from mogs.runner import FailureReason, Outcome
+from mogs.source import SourceError, parse_notebook
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SOLUTION = FIXTURES / "solution.py"
@@ -120,7 +120,7 @@ def run_child(tmp_path: Path, job: Job) -> list[Event]:
 
     with events.open("w") as sink:
         result = subprocess.run(
-            [sys.executable, "-m", "marimogs.grader.child", str(sink.fileno())],
+            [sys.executable, "-m", "mogs.grader.child", str(sink.fileno())],
             input=job.to_json(),
             pass_fds=(sink.fileno(),),
             capture_output=True,
@@ -154,7 +154,7 @@ def test_bundle_cells_from_notebook():
         ("q2", False, ("test_q2_count",)),
         ("q2", True, ("test_q2_upper", "test_q2_empty")),
     ]
-    assert "import marimogs as mogs" in bundle.setup_code
+    assert "import mogs" in bundle.setup_code
     assert bundle.cells[1].source.startswith("# HIDDEN\ndef big(n):")
 
 
@@ -656,7 +656,7 @@ def test_hidden_helpers_feed_hidden_tests(tmp_path):
 def test_child_rejects_standard_descriptors(tmp_path, fd):
     job = Job(GradingBundle(config(), "", ()), submission(tmp_path))
     result = subprocess.run(
-        [sys.executable, "-m", "marimogs.grader.child", fd],
+        [sys.executable, "-m", "mogs.grader.child", fd],
         input=job.to_json(),
         capture_output=True,
         text=True,

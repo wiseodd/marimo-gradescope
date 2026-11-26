@@ -6,11 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from marimogs.config import read_config
-from marimogs.grader import main as main_module
-from marimogs.grader.bundle import bundle_from_notebook
-from marimogs.grader.main import main
-from marimogs.source import parse_notebook
+from mogs.config import read_config
+from mogs.grader import main as main_module
+from mogs.grader.bundle import bundle_from_notebook
+from mogs.grader.main import main
+from mogs.source import parse_notebook
 
 pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="the grader is Linux only")
 

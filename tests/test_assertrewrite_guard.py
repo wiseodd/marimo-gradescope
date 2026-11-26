@@ -2,9 +2,9 @@ import inspect
 import re
 from pathlib import Path
 
-import marimogs
+import mogs
 
-PACKAGE = Path(marimogs.__file__).parent
+PACKAGE = Path(mogs.__file__).parent
 PRIVATE_IMPORT = re.compile(r"^\s*(from|import)\s+_pytest\b", re.MULTILINE)
 
 

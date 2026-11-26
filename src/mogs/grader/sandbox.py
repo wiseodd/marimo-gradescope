@@ -28,16 +28,16 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from pathlib import Path, PurePosixPath
 
-from marimogs.grader._process import (
+from mogs.grader._process import (
     Child,
     check_user,
     describe_exit,
     kill_user,
     launch_options,
 )
-from marimogs.grader.bundle import GradingBundle, Phase
-from marimogs.grader.datafiles import SUBMISSION, data_files
-from marimogs.grader.protocol import (
+from mogs.grader.bundle import GradingBundle, Phase
+from mogs.grader.datafiles import SUBMISSION, data_files
+from mogs.grader.protocol import (
     Event,
     Job,
     Loaded,
@@ -45,7 +45,7 @@ from marimogs.grader.protocol import (
     Result,
     Start,
 )
-from marimogs.runner import FailureReason, Outcome, cap
+from mogs.runner import FailureReason, Outcome, cap
 
 MAX_RESPAWNS = 3
 GRACE = 5.0
@@ -93,7 +93,7 @@ def grade(
         user: Dedicated grading user to run student code as, or `None` to keep the current one.
         files_root: Directory the data files are relative to. Required when `files` is given.
         files: Data files or directories for the notebook, as relative paths.
-        python: Interpreter for the children. It must have marimo-gradescope and the
+        python: Interpreter for the children. It must have mogs and the
             notebook's dependencies.
 
     Returns:

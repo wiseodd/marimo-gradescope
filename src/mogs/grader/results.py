@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NotRequired, TypedDict
 
-from marimogs.grader.bundle import GradingBundle
-from marimogs.runner import Outcome, cap
+from mogs.grader.bundle import GradingBundle
+from mogs.runner import Outcome, cap
 
 SKIPPED_DIRS = {"__MACOSX", "__pycache__"}
 NOTICE_ROW = "Submission"

@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from marimogs.build import build, read_assignment
-from marimogs.cli import main
-from marimogs.config import ConfigError
-from marimogs.scaffold import InitError, init
-from marimogs.source import CellKind
+from mogs.build import build, read_assignment
+from mogs.cli import main
+from mogs.config import ConfigError
+from mogs.scaffold import InitError, init
+from mogs.source import CellKind
 
 
 def test_init_writes_one_notebook_named_after_the_folder(tmp_path):
@@ -34,13 +34,13 @@ def test_init_notebook_has_a_guide_for_the_instructor(tmp_path):
 
     assert "def instructor_guide():" in text
     assert "examples" in text
-    assert "https://marimo-gradescope.kristia.de/instructors" in text
+    assert "https://mogs.kristia.de/instructors" in text
 
 
 def test_init_notebook_imports_the_package_as_mogs(tmp_path):
     text = init(tmp_path / "A12").read_text(encoding="utf-8")
 
-    assert "    import marimogs as mogs\n" in text
+    assert "    import mogs\n" in text
     assert "mgs." not in text.replace("mogs.", "")
     assert 'mogs.assignment(name="A12")' in text
 
@@ -135,8 +135,8 @@ def test_cli_init_says_what_to_do_next(tmp_path, monkeypatch, capsys):
     assert code == 0
     assert out.splitlines() == [
         "Created A12/A12.py",
-        "Edit it  : marimogs edit A12",
-        "Build it : marimogs build A12",
+        "Edit it  : mogs edit A12",
+        "Build it : mogs build A12",
     ]
 
 

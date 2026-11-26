@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from marimogs.config import AssignmentConfig, Question, read_config
-from marimogs.source import (
+from mogs.config import AssignmentConfig, Question, read_config
+from mogs.source import (
     Cell,
     CellKind,
     SourceError,
@@ -33,7 +33,7 @@ import marimo
 app = marimo.App()
 
 with app.setup:
-    import marimogs as mogs
+    import mogs
 
 """
 
@@ -192,7 +192,7 @@ def _():
 
 
 def test_parse_check_with_alias():
-    src = nb(CHECK.replace("mogs.", "g."), header=HEADER.replace("as mogs", "as g"))
+    src = nb(CHECK.replace("mogs.", "g."), header=HEADER.replace("import mogs", "import mogs as g"))
 
     assert parse_notebook(src).cells[-1].grade_qid == "q1"
 
@@ -200,7 +200,7 @@ def test_parse_check_with_alias():
 def test_parse_check_imported_function():
     src = nb(
         CHECK.replace("mogs.grade", "grade"),
-        header=HEADER.replace("import marimogs as mogs", "from marimogs import grade"),
+        header=HEADER.replace("import mogs", "from mogs import grade"),
     )
 
     assert parse_notebook(src).cells[-1].grade_qid == "q1"
@@ -415,11 +415,11 @@ def answer_q10():
 def test_setup_source():
     notebook, _ = fixture()
 
-    assert notebook.setup_source() == "import marimo as mo\n\nimport marimogs as mogs\n"
+    assert notebook.setup_source() == "import marimo as mo\n\nimport mogs\n"
 
 
 def test_setup_source_without_setup_cell():
-    src = nb(PUBLIC, header=HEADER.replace("with app.setup:\n    import marimogs as mogs\n", ""))
+    src = nb(PUBLIC, header=HEADER.replace("with app.setup:\n    import mogs\n", ""))
 
     assert parse_notebook(src).setup_source() == ""
 
@@ -687,8 +687,8 @@ def test_validate_hidden_cell_redefines_setup_name():
 
 def test_validate_hidden_cell_may_reuse_private_names():
     setup = HEADER.replace(
-        "    import marimogs as mogs\n",
-        "    import marimogs as mogs\n    _here = 1\n",
+        "    import mogs\n",
+        "    import mogs\n    _here = 1\n",
     )
     student = "\n@app.cell\ndef _():\n    _x = 1\n    return\n"
     hidden = hidden_cell("_here = 7\n_x = 2\n\ndef test_q1_h():\n    assert True")
@@ -1031,7 +1031,7 @@ def check_cell_of(code: str) -> tuple:
 
 def test_grade_test_file_reads_the_keyword():
     nb, cell = check_cell_of(
-        "with app.setup:\n    import marimogs as mogs\n\n@app.cell\ndef _():\n"
+        "with app.setup:\n    import mogs\n\n@app.cell\ndef _():\n"
         '    mogs.grade("q1", test_file="tests/q1.py", uses=[])\n    return\n'
     )
 
@@ -1041,7 +1041,7 @@ def test_grade_test_file_reads_the_keyword():
 @pytest.mark.parametrize("arguments", ["", ", test_file=name", ", tests=[]"])
 def test_grade_test_file_is_none_without_a_literal(arguments):
     nb, cell = check_cell_of(
-        "with app.setup:\n    import marimogs as mogs\n\n@app.cell\ndef _():\n"
+        "with app.setup:\n    import mogs\n\n@app.cell\ndef _():\n"
         f'    mogs.grade("q1"{arguments})\n    return\n'
     )
 
@@ -1303,8 +1303,8 @@ def test_markdown_heading_like_solution_ok(line):
 
 
 DATA_SETUP = HEADER.replace(
-    "    import marimogs as mogs\n",
-    "    import marimogs as mogs\n    prices = [1.0, None, None, 4.0, None]\n",
+    "    import mogs\n",
+    "    import mogs\n    prices = [1.0, None, None, 4.0, None]\n",
 )
 
 VARIABLE = """

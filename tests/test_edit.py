@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from marimogs import cli
+from mogs import cli
 
 SOLUTION = Path(__file__).parent / "fixtures" / "solution.py"
 

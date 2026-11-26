@@ -7,17 +7,17 @@ import pytest
 from pypdf import PdfReader
 from pypdf.generic import DictionaryObject
 
-from marimogs import pdf
-from marimogs.config import read_config
-from marimogs.pdf import (
+from mogs import pdf
+from mogs.config import read_config
+from mogs.pdf import (
     Formula,
     PdfUnavailable,
     cell_markdown,
     find_formulas,
     render_manual_pdf,
 )
-from marimogs.source import parse_notebook
-from marimogs.transform import student_notebook
+from mogs.source import parse_notebook
+from mogs.transform import student_notebook
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SOLUTION = FIXTURES / "solution.py"
@@ -52,7 +52,7 @@ where the inequality is Jensen's.
 
 def student_copy(path: Path = SOLUTION) -> str:
     src = path.read_text(encoding="utf-8")
-    return student_notebook(src, parse_notebook(src), read_config(src, path), "marimo-gradescope")
+    return student_notebook(src, parse_notebook(src), read_config(src, path), "mogs")
 
 
 def md_cell(name: str, text: str) -> str:
@@ -526,7 +526,7 @@ def test_missing_typst_names_the_extra(tmp_path, monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", no_typst)
 
-    with pytest.raises(PdfUnavailable, match=r"marimo-gradescope\[pdf\]"):
+    with pytest.raises(PdfUnavailable, match=r"mogs\[pdf\]"):
         render_manual_pdf(notebook, ["q1"], {}, tmp_path / "out.pdf")
 
 

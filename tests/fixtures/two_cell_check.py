@@ -2,7 +2,7 @@
 # requires-python = ">=3.13"
 # dependencies = [
 #     "marimo",
-#     "marimo-gradescope",
+#     "mogs",
 # ]
 # ///
 
@@ -15,7 +15,7 @@ __generated_with = "0.25.2"
 app = marimo.App()
 
 with app.setup:
-    import marimogs as mogs
+    import mogs
 
 
 @app.function

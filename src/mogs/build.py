@@ -30,10 +30,11 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
-from marimogs import __version__
-from marimogs._env import clean_env
-from marimogs.config import (
+from mogs import __version__
+from mogs._env import clean_env
+from mogs.config import (
     ASSIGNMENT,
+    OLD_TOOL,
     TOOL,
     Api,
     AssignmentConfig,
@@ -41,15 +42,15 @@ from marimogs.config import (
     api_calls,
     read_config,
 )
-from marimogs.environment import grading_python
-from marimogs.grader.bundle import GradingBundle, bundle_from_notebook
-from marimogs.grader.datafiles import data_files as shared_data_files
-from marimogs.grader.results import Results, build_results
-from marimogs.grader.templates import run_autograder_script, setup_script
-from marimogs.requirements import gradescope_requirements
-from marimogs.runner import FailureReason, Outcome
-from marimogs.source import Notebook, parse_notebook, prompt_previews, question_id, validate
-from marimogs.transform import (
+from mogs.environment import grading_python
+from mogs.grader.bundle import GradingBundle, bundle_from_notebook
+from mogs.grader.datafiles import data_files as shared_data_files
+from mogs.grader.results import Results, build_results
+from mogs.grader.templates import run_autograder_script, setup_script
+from mogs.requirements import gradescope_requirements
+from mogs.runner import FailureReason, Outcome
+from mogs.source import Notebook, parse_notebook, prompt_previews, question_id, validate
+from mogs.transform import (
     TESTS_FOLDER,
     pinned_requirement,
     public_test_files,
@@ -57,11 +58,11 @@ from marimogs.transform import (
 )
 
 if TYPE_CHECKING:
-    from marimogs.grader.sandbox import Graded
+    from mogs.grader.sandbox import Graded
 
 DIST = "dist"
 # A header table is the old config, which `read_config` names in its error.
-TOOL_TABLE_RE = re.compile(rf"^#\s*\[tool\.{re.escape(TOOL)}[\].]", re.MULTILINE)
+TOOL_TABLE_RE = re.compile(rf"^#\s*\[tool\.{re.escape(OLD_TOOL)}[\].]", re.MULTILINE)
 # What an `assignment(...)` call looks like in a file that is not valid Python.
 ASSIGNMENT_RE = re.compile(r"\bassignment\s*\(")
 SCRIPTS = ("setup.sh", "run_autograder")
@@ -203,7 +204,7 @@ def find_notebook(assignment_dir: Path) -> Path:
         case []:
             raise BuildError(
                 f"No notebook in {assignment_dir} calls `mogs.assignment(...)`. Add a cell with "
-                "that call, or start a new assignment with `marimogs init`."
+                "that call, or start a new assignment with `mogs init`."
             )
         case _:
             names = "\n".join(f"  {path.name}" for path in candidates)
@@ -259,7 +260,7 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
 
     Args:
         assignment_dir: Folder with the source notebook and its data files.
-        tool_requirement: marimo-gradescope requirement for Gradescope's `requirements.txt`.
+        tool_requirement: mogs requirement for Gradescope's `requirements.txt`.
             Defaults to this exact version. Student notebooks always pin this version.
 
     Returns:
@@ -436,7 +437,7 @@ def grade_locally(
     """
 
     # Imported here: the sandbox needs POSIX, and the CLI must start on any platform.
-    from marimogs.grader.sandbox import grade
+    from mogs.grader.sandbox import grade
 
     workdir.mkdir()
 

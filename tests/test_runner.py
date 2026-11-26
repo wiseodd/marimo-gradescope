@@ -7,8 +7,8 @@ from collections.abc import Callable
 
 import pytest
 
-from marimogs._assertrewrite import compile_tests
-from marimogs.runner import (
+from mogs._assertrewrite import compile_tests
+from mogs.runner import (
     MAX_BYTES,
     MAX_LINES,
     FailureReason,
@@ -79,8 +79,8 @@ def test_rewritten_assert_shows_values():
 def test_rewritten_assert_outside_pytest():
     script = textwrap.dedent(
         """
-        from marimogs._assertrewrite import compile_tests
-        from marimogs.runner import run_test
+        from mogs._assertrewrite import compile_tests
+        from mogs.runner import run_test
 
         ns = {}
         exec(compile_tests("def test_sum():\\n    assert sum([1, 2, 3]) == 7\\n", "<t>"), ns)

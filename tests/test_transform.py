@@ -8,15 +8,15 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from marimogs import __version__
-from marimogs.config import (
+from mogs import __version__
+from mogs.config import (
     AssignmentConfig,
     Question,
     read_config,
     read_header,
 )
-from marimogs.source import SourceError, parse_notebook
-from marimogs.transform import (
+from mogs.source import SourceError, parse_notebook
+from mogs.transform import (
     export_cells,
     pinned_requirement,
     public_test_files,
@@ -28,7 +28,7 @@ from marimogs.transform import (
 FIXTURES = Path(__file__).parent / "fixtures"
 SOLUTION = FIXTURES / "solution.py"
 PURE = FIXTURES / "pure_test_cells.py"
-REQUIREMENT = "marimo-gradescope==9.9.9"
+REQUIREMENT = "mogs==9.9.9"
 ANSWER = "Because the order of the terms does not change the sum."
 
 HEADER = """\
@@ -47,7 +47,7 @@ import marimo
 app = marimo.App()
 
 with app.setup:
-    import marimogs as mogs
+    import mogs
 
 """
 
@@ -599,7 +599,7 @@ def _():
 
 @app.cell
 def _():
-    from marimogs import grade as c
+    from mogs import grade as c
     panel = c(
         "q1",
     )  # comment
@@ -796,8 +796,8 @@ def test_pinned_requirement():
         name="nb", notebook="nb.py", questions={"q1": Question("q1", "Q1", 1, manual=True)}
     )
 
-    assert pinned_requirement(CONFIG) == f"marimo-gradescope=={__version__}"
-    assert pinned_requirement(manual) == f"marimo-gradescope[pdf]=={__version__}"
+    assert pinned_requirement(CONFIG) == f"mogs=={__version__}"
+    assert pinned_requirement(manual) == f"mogs[pdf]=={__version__}"
 
 
 # Export cells
@@ -810,7 +810,7 @@ def test_export_cells_appended_before_main_guard():
     assert tail.index("## Submit") < tail.index("export_button = mogs.export_button()")
     assert tail.index("export_button = mogs.export_button()") < tail.index("mogs.export(")
     assert tail.index("mogs.export(") < tail.index('if __name__ == "__main__":')
-    assert "import marimogs" not in tail
+    assert "import mogs" not in tail
     assert "    export_button\n" in tail
     assert (
         'mogs.export(export_button, name="solution", manual=["q3"], titles={"q1": "Question 1", '
@@ -844,7 +844,10 @@ def _():
 
 
 def test_export_cells_use_the_setup_alias():
-    src = HEADER.replace("as mogs", "as grading") + "\n@app.cell\ndef _():\n    x = 1\n    return\n"
+    src = (
+        HEADER.replace("import mogs", "import mogs as grading")
+        + "\n@app.cell\ndef _():\n    x = 1\n    return\n"
+    )
     out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT)
 
     assert "export_button = grading.export_button()" in out
@@ -857,7 +860,8 @@ def test_export_cells_import_the_package_when_setup_does_not():
 
     assert "mogs.export(export_button" in out
     assert "mogs" in nb.student_names()
-    assert out.count("import marimogs as mogs") == 1
+    assert out.count("import mogs") == 1
+    assert "    import mogs\n" in out
 
 
 def test_export_cells_refuse_a_taken_mgs_name():
@@ -865,7 +869,7 @@ def test_export_cells_refuse_a_taken_mgs_name():
         "    import marimo as mo\n", "    import marimo as mo\n    mogs = 1\n"
     )
 
-    with pytest.raises(SourceError, match="marimogs"):
+    with pytest.raises(SourceError, match="mogs"):
         student_notebook(src, parse_notebook(src), PURE_CONFIG, REQUIREMENT)
 
 
@@ -1323,7 +1327,7 @@ def test_solution_leaks_none_in_student_copy():
 
 def test_student_notebook_refuses_leaked_solution(monkeypatch):
     # A transform bug that keeps the regions as written must not reach students.
-    monkeypatch.setattr("marimogs.transform._solution_regions", lambda *args: set())
+    monkeypatch.setattr("mogs.transform._solution_regions", lambda *args: set())
 
     with pytest.raises(SourceError, match=r"y = math\.sqrt\("):
         student_of(LEAKY)

@@ -1,6 +1,6 @@
 """Run the public tests of a saved notebook and print a summary as JSON.
 
-Usage: `python -m marimogs.selfcheck NOTEBOOK [FOLDER]`. The export button runs this
+Usage: `python -m mogs.selfcheck NOTEBOOK [FOLDER]`. The export button runs this
 in a subprocess on the saved file, so the tests see the file on disk, not the kernel. It runs
 from FOLDER, by default the notebook's folder, as marimo does, so relative paths in the
 notebook work.
@@ -26,17 +26,17 @@ import sys
 from pathlib import Path
 from typing import TypedDict
 
-from marimogs.config import AssignmentConfig
-from marimogs.grader.bundle import Phase, TestCell, bundle_from_notebook
-from marimogs.loader import bind, unavailable
-from marimogs.runner import (
+from mogs.config import AssignmentConfig
+from mogs.grader.bundle import Phase, TestCell, bundle_from_notebook
+from mogs.loader import bind, unavailable
+from mogs.runner import (
     FailureReason,
     Outcome,
     cap,
     exception_summary,
     run_test_source,
 )
-from marimogs.source import (
+from mogs.source import (
     Notebook,
     SourceError,
     cell_names,
@@ -170,4 +170,4 @@ if __name__ == "__main__":
         case [path, folder]:
             sys.exit(main(path, folder))
         case _:
-            sys.exit("Usage: python -m marimogs.selfcheck NOTEBOOK [FOLDER]")
+            sys.exit("Usage: python -m mogs.selfcheck NOTEBOOK [FOLDER]")
