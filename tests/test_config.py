@@ -402,3 +402,22 @@ def test_strip_tool_table_crlf():
     out = strip_tool_table(BASIC.replace("\n", "\r\n"))
 
     assert "tool" not in read_header(out)
+
+
+# Question ids become file names
+
+
+@pytest.mark.parametrize(
+    ("questions", "message"),
+    [
+        ("{ q1 = 1, Q1 = 2 }", "`Q1`.*`q1`"),
+        ("{ CON = 1 }", "`CON`"),
+        ("{ nul = 1 }", "`nul`"),
+        ("{ com1 = 1 }", "`com1`"),
+    ],
+)
+def test_question_ids_must_make_portable_file_names(questions, message):
+    src = notebook(f"[tool.marimo-gradescope]\nquestions = {questions}")
+
+    with pytest.raises(ConfigError, match=message):
+        read_config(src, Path("hw.py"))

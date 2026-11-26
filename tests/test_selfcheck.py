@@ -176,3 +176,15 @@ def test_folder_argument_sets_the_working_directory(tmp_path):
     )
 
     assert json.loads(result.stdout)["q2"]["passed"] == 2, result.stderr
+
+
+def test_test_file_with_a_scope_error_fails_only_its_question(tmp_path):
+    notebook = write_student(tmp_path)
+    (tmp_path / "tests" / "q2.py").write_text(
+        "def test_q2_bad():\n    nonlocal missing\n", encoding="utf-8"
+    )
+
+    results = selfcheck.public_results(notebook)
+
+    assert results["q1"]["total"] == 2
+    assert results["q2"] == {"passed": 0, "total": 1, "failed": ["tests/q2.py"]}

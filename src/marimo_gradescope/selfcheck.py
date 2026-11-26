@@ -59,7 +59,8 @@ def public_results(path: Path) -> Summary:
     # The bundle keeps the config but does not read it; a student copy has none.
     cfg = AssignmentConfig(name=path.stem, notebook=path.name, questions={})
     bundle = bundle_from_notebook(nb, cfg).for_phase(Phase.PUBLIC)
-    cells = list(bundle.cells)
+    # Each cell with the name it reports a load failure under.
+    cells = [(cell, f"{cell.qid}-tests") for cell in bundle.cells]
     outcomes: dict[str, list[Outcome]] = {}
     students = nb.student_names()
 
@@ -67,14 +68,14 @@ def public_results(path: Path) -> Summary:
         try:
             source = (path.parent / relative).read_text(encoding="utf-8")
             names = module_tests(source)
+            uses = tuple(sorted(cell_names(source)[1] & students))
         except (OSError, UnicodeDecodeError, SyntaxError) as exc:
             message = cap(f"cannot read {relative} ({exception_summary(exc)})")
             outcome = Outcome(relative, False, message, FailureReason.LOAD_FAILED)
             outcomes.setdefault(qid, []).append(outcome)
             continue
 
-        uses = tuple(sorted(cell_names(source)[1] & students))
-        cells.append(TestCell(qid, False, source, names, uses))
+        cells.append((TestCell(qid, False, source, names, uses), relative))
 
     base: dict[str, object] = {"__name__": "__mgs_selfcheck__"}
     setup_error = None
@@ -85,10 +86,10 @@ def public_results(path: Path) -> Summary:
         setup_error = cap(f"the setup cell failed ({exception_summary(exc)})")
 
     if setup_error is None:
-        uses = sorted({name for cell in cells for name in cell.uses})
+        uses = sorted({name for cell, _ in cells for name in cell.uses})
         base.update(bind(path, uses))
 
-    for cell in cells:
+    for cell, label in cells:
         results = outcomes.setdefault(cell.qid, [])
 
         if setup_error is not None:
@@ -96,7 +97,7 @@ def public_results(path: Path) -> Summary:
             results += [Outcome(name, False, setup_error, reason) for name in cell.tests]
             continue
 
-        results += run_test_source(cell.source, f"{cell.qid}-tests", cell.tests, dict(base))
+        results += run_test_source(cell.source, label, cell.tests, dict(base))
 
     return {
         qid: {

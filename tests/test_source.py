@@ -1,4 +1,5 @@
 import ast
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -826,3 +827,42 @@ def test_check_test_file_is_none_without_a_literal(arguments):
     )
 
     assert nb.check_test_file(cell) is None
+
+
+# Public tests go to students as written
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "    expected = 3  # SOLUTION\n",
+        "    # BEGIN SOLUTION\n    expected = 3\n    # END SOLUTION\n",
+    ],
+)
+def test_public_test_cell_cannot_hold_solution_markers(body):
+    cell = f"""
+@app.cell
+def _():
+    def test_q1_a():
+{textwrap.indent(body, "    ")}        assert True
+    return
+"""
+
+    error = one_error(cell + CHECK)
+
+    assert "public test" in error
+    assert "# HIDDEN" in error
+
+
+def test_hidden_test_cell_may_hold_solution_markers():
+    cell = """
+@app.cell
+def _():
+    # HIDDEN
+    def test_q1_b():
+        expected = 3  # SOLUTION
+        assert expected == 3
+    return
+"""
+
+    assert errors(PUBLIC + cell + CHECK) == []

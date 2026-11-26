@@ -304,11 +304,12 @@ def data_files(assignment_dir: Path, cfg: AssignmentConfig) -> dict[PurePosixPat
             or the grader's copy of the submission.
     """
 
-    reserved = {*ZIP_FILES, cfg.notebook, TESTS_FOLDER}
+    # Case-insensitive, as the file systems of macOS and Windows are.
+    reserved = {name.casefold() for name in (*ZIP_FILES, cfg.notebook, TESTS_FOLDER)}
 
     for name in cfg.files:
         first = PurePosixPath(name).parts[:1]
-        if first and first[0] in reserved:
+        if first and first[0].casefold() in reserved:
             raise ConfigError(
                 f"[tool.{TOOL}] `files` entry {name!r} would replace `{first[0]}` in the build "
                 "output."

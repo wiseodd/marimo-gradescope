@@ -568,6 +568,7 @@ def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
 
     errors = _runtime_errors(nb) + _test_name_errors(nb, cfg) + _question_errors(nb, cfg)
     errors += _hidden_check_errors(nb) + _public_cell_errors(nb) + _marker_errors(nb)
+    errors += _public_marker_errors(nb)
     errors += _near_marker_errors(nb) + _hidden_name_errors(nb)
 
     return errors
@@ -783,6 +784,34 @@ def _helper_cycle_errors(names: dict[Cell, tuple[set[str], set[str]]]) -> list[s
         visit(cell, [])
 
     return errors
+
+
+def _public_marker_errors(nb: Notebook) -> list[str]:
+    """Solution markers in public test cells, which go to students as written.
+
+    One error per cell, at its first marker.
+    """
+
+    markers = (SOLUTION, BEGIN, END)
+    public = [cell for cell in nb.cells if cell.tests and not cell.hidden]
+    found: dict[Cell, tuple[int, str]] = {}
+
+    for token in tokenize.generate_tokens(io.StringIO(nb.src).readline):
+        number = token.start[0]
+        comment = token.string.rstrip()
+
+        if token.type != tokenize.COMMENT or comment not in markers:
+            continue
+
+        for cell in public:
+            if cell.start <= number <= cell.end:
+                found.setdefault(cell, (number, comment))
+
+    return [
+        f"line {number}: `{comment}` is in a public test cell. Students get the public tests "
+        f"as written, so move the solution to a `{HIDDEN}` cell."
+        for number, comment in found.values()
+    ]
 
 
 def _marker_errors(nb: Notebook) -> list[str]:

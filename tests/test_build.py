@@ -329,6 +329,17 @@ def test_bad_data_files(tmp_path, files, message):
     assert not (folder / "dist").exists()
 
 
+@pytest.mark.parametrize("name", ["Tests/x.txt", "HW.py", "Setup.sh"])
+def test_data_files_cannot_take_reserved_names_in_any_case(tmp_path, name):
+    folder = demo_copy(tmp_path / "demo")
+    (folder / name).parent.mkdir(exist_ok=True)
+    (folder / name).write_text("", encoding="utf-8")
+    edit(folder / "hw.py", '# files = ["data/scores.csv"]', f'# files = ["{name}"]')
+
+    with pytest.raises(ConfigError, match="would replace"):
+        build(folder)
+
+
 def test_help_is_short(capsys):
     with pytest.raises(SystemExit) as exit_info:
         main(["--help"])

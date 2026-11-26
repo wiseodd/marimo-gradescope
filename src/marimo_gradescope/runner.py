@@ -241,11 +241,12 @@ def run_test_source(
     """Run test source as a module in `namespace`, then each test it defines in `names`.
 
     The source is compiled with assertion rewriting, so failed asserts show their values. When
-    it raises while loading, every test fails with `LOAD_FAILED`.
+    it raises while loading, `SystemExit` included, every test fails with `LOAD_FAILED`. With
+    no tests named, one outcome named `filename` reports the failure.
 
     Args:
         source: Module source with the test functions.
-        filename: Name for tracebacks.
+        filename: Name for tracebacks and for a load failure without tests.
         names: The tests to run, in order.
         namespace: Globals for the source. It gets the source's names.
 
@@ -257,9 +258,10 @@ def run_test_source(
 
     try:
         exec(compile_tests(source, filename), namespace)
-    except Exception as exc:
+    except BaseException as exc:
         message = cap(f"the tests failed to load ({exception_summary(exc)})")
-        return [Outcome(name, False, message, FailureReason.LOAD_FAILED) for name in names]
+        failed = names or (filename,)
+        return [Outcome(name, False, message, FailureReason.LOAD_FAILED) for name in failed]
 
     outcomes = []
 

@@ -447,3 +447,18 @@ def test_run_test_source_reports_a_name_the_source_does_not_define():
 
     assert outcome.reason is FailureReason.ERROR
     assert outcome.message == "`test_q1_a` is not defined by its tests"
+
+
+def test_run_test_source_reports_a_load_failure_before_any_test():
+    [outcome] = run_test_source("raise ValueError('boom')\n", "tests/q1.py", (), {})
+
+    assert outcome.name == "tests/q1.py"
+    assert outcome.reason is FailureReason.LOAD_FAILED
+    assert outcome.message == "the tests failed to load (ValueError: boom)"
+
+
+def test_run_test_source_catches_system_exit_while_loading():
+    outcomes = run_test_source("raise SystemExit(3)\n", "<tests>", ("test_q1_a",), {})
+
+    assert [outcome.reason for outcome in outcomes] == [FailureReason.LOAD_FAILED]
+    assert outcomes[0].message == "the tests failed to load (SystemExit: 3)"

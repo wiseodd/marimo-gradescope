@@ -537,6 +537,16 @@ def test_test_file_that_fails_to_load_fails_each_test(tmp_path):
     assert text.count("the tests failed to load (ValueError: boom)") == 2
 
 
+def test_test_file_that_fails_before_any_test_says_so(tmp_path):
+    write_tests(tmp_path, "raise ValueError('boom')\n")
+
+    text = text_of(check_in(tmp_path, 'check("q1", test_file="tests/q1.py")'))
+
+    assert "No tests found" not in text
+    assert "✗ tests/q1.py" in text
+    assert "the tests failed to load (ValueError: boom)" in text
+
+
 def test_test_file_without_a_notebook_file_says_so():
     namespace: dict[str, Any] = {"check": check}
     exec('panel = check("q1", test_file="tests/q1.py")', namespace)

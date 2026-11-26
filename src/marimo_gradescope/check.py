@@ -138,7 +138,7 @@ def file_outcomes(
     except SyntaxError as exc:
         return [], f"{test_file} is not valid Python (line {exc.lineno})."
 
-    return run_test_source(source, str(path), names, dict(namespace)), None
+    return run_test_source(source, test_file, names, dict(namespace)), None
 
 
 def locate(namespace: Mapping[str, object]) -> Path | None:
