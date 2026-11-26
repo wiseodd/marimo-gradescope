@@ -341,7 +341,7 @@ examples/demo/
   Upload `<name>-autograder-<timestamp>.zip` to Gradescope as the autograder.
   The directory also contains the solved notebook, i.e., the student notebook with the solutions, together with its public tests, the data files and `requirements.txt`.
 
-Each build replaces both directories.
+Each build replaces both directories, and a failed build removes them.
 
 Before writing them, the build checks the assignment by grading two notebooks with the real grader: the solved notebook and the blank student notebook.
 It does this in a fresh environment with the same pinned requirements that Gradescope gets.

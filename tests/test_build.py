@@ -414,11 +414,12 @@ def test_help_is_short(capsys):
 
 
 @pytest.mark.network
-def test_failed_write_keeps_the_old_dist(tmp_path, monkeypatch, capsys):
+def test_failed_write_removes_the_old_dist(tmp_path, monkeypatch, capsys):
     folder = demo_copy(tmp_path / "demo")
     old = folder / "dist" / "student" / "old.txt"
     old.parent.mkdir(parents=True)
     old.write_text("old", encoding="utf-8")
+    (folder / "dist" / "notes.txt").write_text("mine", encoding="utf-8")
 
     def broken(path, entries):
         raise OSError("disk full")
@@ -428,7 +429,20 @@ def test_failed_write_keeps_the_old_dist(tmp_path, monkeypatch, capsys):
 
     assert code == 1
     assert "disk full" in capsys.readouterr().err
-    assert tree(folder / "dist") == ["student/old.txt"]
+    assert tree(folder / "dist") == ["notes.txt"]
+
+
+def test_invalid_notebook_removes_the_old_dist(tmp_path, capsys):
+    folder = demo_copy(tmp_path / "demo")
+    old = folder / "dist" / "autograder" / "old.zip"
+    old.parent.mkdir(parents=True)
+    old.write_text("old", encoding="utf-8")
+    edit(folder / "hw.py", "def test_q1_single", "def test_q9_single")
+
+    code = main(["build", str(folder)])
+
+    assert code == 1
+    assert not old.parent.exists()
 
 
 def test_name_cannot_escape_dist(tmp_path):

@@ -254,7 +254,8 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
     """Build and self-check the assignment in `assignment_dir`.
 
     The output is written in full to a temporary folder first. Only when every step succeeds
-    does it replace `dist/student/` and `dist/autograder/`, so only the newest zip is kept.
+    does it replace `dist/student/` and `dist/autograder/`, so only the newest zip is kept. A
+    failed build removes them.
 
     Args:
         assignment_dir: Folder with the source notebook and its data files.
@@ -272,6 +273,18 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
         SourceError: If the notebook cannot be parsed or transformed.
         RequirementsError: If the dependencies cannot be pinned or installed.
     """
+
+    try:
+        return _build(assignment_dir, tool_requirement)
+    except Exception:
+        for part in ("student", "autograder"):
+            shutil.rmtree(assignment_dir / DIST / part, ignore_errors=True)
+
+        raise
+
+
+def _build(assignment_dir: Path, tool_requirement: str | None) -> BuildResult:
+    """`build` without the cleanup of a failed build."""
 
     require_posix()
     assignment = read_assignment(assignment_dir)
