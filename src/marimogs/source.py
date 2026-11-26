@@ -56,9 +56,12 @@ HTML_PROMPT_RE = re.compile(r"<!-- PROMPT:(?: (.*?))? -->")
 
 # Comments that look like a marker but are not spelled exactly like one.
 NEAR_HTML_RE = re.compile(r"<!--\s*(?:(?:begin|end)\s*)?(?:solu\w*|pro?m\w*)", re.IGNORECASE)
-NEAR_SOLUTION_RE = re.compile(r"#\s*((begin|end)\s*)?solutions?\b", re.IGNORECASE)
 NEAR_PROMPT_RE = re.compile(r"#\s*prompt\b", re.IGNORECASE)
 NEAR_HIDDEN_RE = re.compile(r"#\s*hidden\b", re.IGNORECASE)
+# The first two words of a comment, for `near_solution_marker`.
+LEADING_WORDS_RE = re.compile(r"(?:#|<!--)\s*([A-Za-z]+)(?:\s+([A-Za-z]+))?")
+SOLUTION_WORD = "solution"
+REGION_WORDS = ("begin", "end")
 
 
 class SourceError(Exception):
@@ -640,11 +643,13 @@ def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
         One message per problem. Empty when the notebook is valid.
     """
 
-    errors = _test_name_errors(nb, cfg) + _question_errors(nb, cfg)
+    # Misspelled markers first: they also cause the region errors below.
+    errors = _near_marker_errors(nb) + _near_html_marker_errors(nb)
+    errors += _test_name_errors(nb, cfg) + _question_errors(nb, cfg)
     errors += _hidden_grade_errors(nb) + _public_cell_errors(nb) + _marker_errors(nb)
     errors += _assignment_errors(nb) + _instructor_errors(nb)
     errors += _public_marker_errors(nb)
-    errors += _near_marker_errors(nb) + _hidden_name_errors(nb)
+    errors += _hidden_name_errors(nb)
 
     return errors
 
@@ -1016,7 +1021,7 @@ def _marker_errors(nb: Notebook) -> list[str]:
 
 
 def _markdown_line_errors(number: int, stripped: str) -> list[str]:
-    """A `#` marker in a Markdown cell, or an HTML comment that looks like a marker."""
+    """A `#` marker in a Markdown cell, where it is a heading."""
 
     html = {
         BEGIN: HtmlMarker.BEGIN,
@@ -1035,14 +1040,6 @@ def _markdown_line_errors(number: int, stripped: str) -> list[str]:
         return [
             f"line {number}: `{PROMPT}` in a Markdown cell is a heading. Write "
             f"`{HtmlMarker.PROMPT}` instead."
-        ]
-
-    exact = stripped in (HtmlMarker.BEGIN, HtmlMarker.END) or HTML_PROMPT_RE.fullmatch(stripped)
-
-    if NEAR_HTML_RE.match(stripped) and not exact:
-        return [
-            f"line {number}: `{stripped}` looks like a solution marker. Write it exactly as "
-            f"`{HtmlMarker.BEGIN}`, `{HtmlMarker.END}` or `{HtmlMarker.PROMPT}`."
         ]
 
     return []
@@ -1068,7 +1065,7 @@ def _near_marker_errors(nb: Notebook) -> list[str]:
         comment = token.string.rstrip()
         number = token.start[0]
 
-        if NEAR_SOLUTION_RE.match(comment) and comment not in markers:
+        if near_solution_marker(comment) and comment not in markers:
             errors.append(
                 f"line {number}: `{comment}` looks like a solution marker. Write it exactly as "
                 f"`{SOLUTION}`, `{BEGIN}` or `{END}`."
@@ -1087,6 +1084,85 @@ def _near_marker_errors(nb: Notebook) -> list[str]:
             )
 
     return errors
+
+
+def _near_html_marker_errors(nb: Notebook) -> list[str]:
+    """HTML comments in Markdown cells that look like a marker but are misspelled."""
+
+    errors = []
+    lines = split_lines(nb.src)
+    exact = (HtmlMarker.BEGIN, HtmlMarker.END)
+
+    for number in sorted(nb.markdown_lines()):
+        stripped = lines[number - 1].strip()
+
+        if stripped in exact or HTML_PROMPT_RE.fullmatch(stripped):
+            continue
+
+        if NEAR_HTML_RE.match(stripped) or near_solution_marker(stripped):
+            errors.append(
+                f"line {number}: `{stripped}` looks like a solution marker. Write it exactly as "
+                f"`{HtmlMarker.BEGIN}`, `{HtmlMarker.END}` or `{HtmlMarker.PROMPT}`."
+            )
+
+    return errors
+
+
+def near_solution_marker(comment: str) -> bool:
+    """Whether `comment` starts like a solution marker, misspelled or not.
+
+    `comment` is a `#` or `<!--` comment. Its first word, or its first two words after
+    `BEGIN` or `END`, are compared with `SOLUTION`, `BEGIN SOLUTION` and `END SOLUTION`,
+    ignoring case and spaces. One typo (a wrong, missing, extra or swapped letter) counts.
+    Two count only in an all-caps word that keeps the first letter, as in `# SLOUTOIN`;
+    lowercase words two typos away are ordinary English, such as `resolution`.
+    The caller checks that the comment is not the exact marker.
+    """
+
+    match = LEADING_WORDS_RE.match(comment)
+    if match is None:
+        return False
+
+    first, second = match.group(1), match.group(2)
+
+    if _near_word(first, SOLUTION_WORD):
+        return True
+
+    if any(_near_word(first, region + SOLUTION_WORD) for region in REGION_WORDS):
+        return True
+
+    region = any(_typos(first.lower(), word) <= 1 for word in REGION_WORDS)
+    return region and second is not None and _near_word(second, SOLUTION_WORD)
+
+
+def _near_word(word: str, target: str) -> bool:
+    """`word` is at most one typo from `target`, or two in all caps with the same first letter."""
+
+    lower = word.lower()
+    typos = _typos(lower, target)
+
+    return typos <= 1 or (typos == 2 and word.isupper() and lower[0] == target[0])
+
+
+def _typos(a: str, b: str) -> int:
+    """Edits between `a` and `b`: letters inserted, deleted, replaced or swapped with the next.
+
+    This is the optimal string alignment distance.
+    """
+
+    previous: list[int] = []
+    row = list(range(len(b) + 1))
+
+    for i, char in enumerate(a, start=1):
+        before, previous, row = previous, row, [i] + [0] * len(b)
+
+        for j, other in enumerate(b, start=1):
+            row[j] = min(previous[j] + 1, row[j - 1] + 1, previous[j - 1] + (char != other))
+
+            if i > 1 and j > 1 and char == b[j - 2] and a[i - 2] == other:
+                row[j] = min(row[j], before[j - 2] + 1)
+
+    return row[-1]
 
 
 def _region_lines(lines: list[str], markdown: frozenset[int]) -> set[int]:

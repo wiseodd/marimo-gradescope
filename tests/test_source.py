@@ -1103,3 +1103,118 @@ def test_written_answer_is_found_by_its_html_marker():
 
     assert len(prompts) == 1
     assert len(answers) == 1
+
+
+def line_of(cells: str, text: str) -> int:
+    return nb(cells).splitlines().index(text) + 1
+
+
+@pytest.mark.parametrize(
+    "comment",
+    [
+        "# SOULTION",
+        "# SOLUTON",
+        "# SOLUTIONN",
+        "# SLOUTOIN",
+        "#SOULTION",
+        "# soultion",
+        "# Solutoin",
+        "# solutions below",
+    ],
+)
+def test_validate_inline_marker_typo(comment):
+    cell = f"\n@app.cell\ndef _():\n    n = 3  {comment}\n    return (n,)\n"
+
+    error = one_error(PUBLIC + CHECK + cell)
+
+    assert f"line {line_of(PUBLIC + CHECK + cell, f'    n = 3  {comment}')}:" in error
+    assert "looks like a solution marker" in error
+
+
+@pytest.mark.parametrize(
+    "comment",
+    [
+        "# BEGIN SOULTION",
+        "# BEGN SOLUTION",
+        "# BEIGN SOLUTION",
+        "# BEGINSOLUTION",
+        "#BEGIN SOLUTON",
+        "# begin soultion",
+    ],
+)
+def test_validate_begin_marker_typo(comment):
+    cell = f"\n@app.cell\ndef _():\n    {comment}\n    x = 42\n    # END SOLUTION\n    return\n"
+
+    error = errors(PUBLIC + CHECK + cell)[0]
+
+    assert f"line {line_of(PUBLIC + CHECK + cell, f'    {comment}')}:" in error
+    assert "looks like a solution marker" in error
+
+
+@pytest.mark.parametrize(
+    "comment",
+    ["# END SOULTION", "# EDN SOLUTION", "# ENDSOLUTION", "# end solutoin", "#END SOLUTON"],
+)
+def test_validate_end_marker_typo_is_named_first(comment):
+    cells = (
+        PUBLIC
+        + CHECK
+        + f"\n@app.cell\ndef _():\n    # BEGIN SOLUTION\n    x = 42\n    {comment}\n    return\n"
+        + "\n@app.cell\ndef _():\n    # BEGIN SOLUTION\n    y = 1\n    # END SOLUTION\n    return\n"
+    )
+
+    error = errors(cells)[0]
+
+    assert f"line {line_of(cells, f'    {comment}')}:" in error
+    assert "looks like a solution marker" in error
+
+
+@pytest.mark.parametrize(
+    "comment",
+    [
+        "# solve for x",
+        "# resolution of the grid",
+        "# Evolution of the state",
+        "# POLLUTION data",
+        "# SECTION 2",
+        "# POSITION of the robot",
+        "# end of the loop",
+        "# begin training",
+        "# END RESOLUTION",
+        "# and then the solver",
+    ],
+)
+def test_validate_solution_like_comment_ok(comment):
+    cell = f"\n@app.cell\ndef _():\n    x = 42  {comment}\n    return\n"
+
+    assert errors(PUBLIC + CHECK + cell) == []
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "<!-- BEGIN SOULTION -->",
+        "<!-- BEGN SOLUTION -->",
+        "<!--SOULTION-->",
+        "<!-- END SLOUTION -->",
+    ],
+)
+def test_html_marker_typo_in_markdown(line):
+    found = [error for error in errors(md(line)) if "looks like" in error]
+
+    assert len(found) == 1, found
+    assert line in found[0]
+
+
+def test_html_end_marker_typo_is_named_first():
+    cells = md("<!-- BEGIN SOLUTION -->\n    Yes.\n    <!-- END SOULTION -->") + ANSWER_MD
+
+    error = errors(cells)[0]
+
+    assert f"line {line_of(cells, '    <!-- END SOULTION -->')}:" in error
+    assert "looks like a solution marker" in error
+
+
+@pytest.mark.parametrize("line", ["<!-- resolution notes -->", "<!-- evolution -->"])
+def test_html_solution_like_comment_ok(line):
+    assert errors(md(line)) == errors("")
