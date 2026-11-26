@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://marimo-gradescope.kristia.de/mogs-dark.svg">
-    <img alt="mogs" src="https://marimo-gradescope.kristia.de/mogs-light.svg" height="64">
+    <source media="(prefers-color-scheme: dark)" srcset="https://marimo-gradescope.kristia.de/marimogs-dark.svg">
+    <img alt="marimogs" src="https://marimo-gradescope.kristia.de/marimogs-light.svg" height="80">
   </picture>
 </p>
 
