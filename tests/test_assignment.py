@@ -90,7 +90,7 @@ def test_summary_of_a_missing_file(tmp_path):
 
 
 def test_assignment_is_a_no_op_while_grading(monkeypatch, tmp_path):
-    monkeypatch.setenv("MGS_GRADING", "1")
+    monkeypatch.setenv("MOGS_GRADING", "1")
 
     assert summary(FIXTURE) == ""
 

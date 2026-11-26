@@ -549,17 +549,17 @@ def test_limits_on_macos_have_no_memory_cap(monkeypatch):
 
 def test_child_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "x")
-    monkeypatch.setenv("MGS_KEPT", "1")
+    monkeypatch.setenv("MOGS_KEPT", "1")
 
     env = _process.child_env(tmp_path)
 
     assert "PYTEST_CURRENT_TEST" not in env
-    assert env["MGS_KEPT"] == "1"
+    assert env["MOGS_KEPT"] == "1"
     assert env["MPLBACKEND"] == "Agg"
     assert env["OMP_NUM_THREADS"] == "4"
     assert env["HOME"] == env["MPLCONFIGDIR"] == str(tmp_path)
     assert env["PYTHONDONTWRITEBYTECODE"] == "1"
-    assert env["MGS_GRADING"] == "1"
+    assert env["MOGS_GRADING"] == "1"
 
 
 def test_launch_without_user(tmp_path):

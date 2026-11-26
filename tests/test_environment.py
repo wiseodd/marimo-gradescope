@@ -10,27 +10,27 @@ from mogs.requirements import RequirementsError
 
 
 def direct_url(**fields: object) -> str:
-    return json.dumps({"url": "file:///src/mgs"} | fields)
+    return json.dumps({"url": "file:///src/mogs"} | fields)
 
 
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
         (None, [f"mogs=={__version__}"]),
-        (direct_url(dir_info={"editable": True}), ["--editable", "/src/mgs"]),
-        (direct_url(dir_info={}), ["/src/mgs"]),
+        (direct_url(dir_info={"editable": True}), ["--editable", "/src/mogs"]),
+        (direct_url(dir_info={}), ["/src/mogs"]),
         (
-            json.dumps({"url": "file:///w/mgs.whl", "archive_info": {}}),
-            ["mogs @ file:///w/mgs.whl"],
+            json.dumps({"url": "file:///w/mogs.whl", "archive_info": {}}),
+            ["mogs @ file:///w/mogs.whl"],
         ),
         (
             json.dumps(
                 {
-                    "url": "https://github.com/o/mgs",
+                    "url": "https://github.com/o/mogs",
                     "vcs_info": {"vcs": "git", "commit_id": "abc123"},
                 }
             ),
-            ["mogs @ git+https://github.com/o/mgs@abc123"],
+            ["mogs @ git+https://github.com/o/mogs@abc123"],
         ),
     ],
 )
@@ -82,8 +82,8 @@ def test_uv_missing_is_an_error(tmp_path, monkeypatch):
 
 @pytest.mark.network
 def test_failed_install_names_the_requirements(tmp_path):
-    with pytest.raises(RequirementsError, match="no-such-package-mgs-test"):
-        grading_python("no-such-package-mgs-test==0.0.1\n", tmp_path / "env", "3.13")
+    with pytest.raises(RequirementsError, match="no-such-package-mogs-test"):
+        grading_python("no-such-package-mogs-test==0.0.1\n", tmp_path / "env", "3.13")
 
 
 @pytest.mark.network

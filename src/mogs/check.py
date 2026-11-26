@@ -78,7 +78,7 @@ def grade(
     hand. The student copy says so with `manual=True`; in the source notebook, a question
     without tests in the caller's globals is looked up in the saved notebook.
 
-    While grading (`MGS_GRADING=1`), it runs nothing and returns an empty panel, so a whole
+    While grading (`MOGS_GRADING=1`), it runs nothing and returns an empty panel, so a whole
     notebook run on the grader does not run the public tests a second time.
 
     Args:

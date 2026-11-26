@@ -15,7 +15,7 @@ from _pytest.assertion.rewrite import rewrite_asserts
 def compile_tests(source: str, filename: str) -> CodeType:
     """Compile test source so failing asserts explain their values.
 
-    The source is registered in `linecache` under `<mgs-tests-H:filename>`, where `H` is a hash
+    The source is registered in `linecache` under `<mogs-tests-H:filename>`, where `H` is a hash
     of the source, and that name is the code's file name, so tracebacks and failure messages
     show its lines. Different sources get different names, so no other source, and no real
     file, can replace these lines. The same source gets the same name, so compiling it again,
@@ -34,7 +34,7 @@ def compile_tests(source: str, filename: str) -> CodeType:
     """
 
     digest = hashlib.sha1(source.encode(errors="surrogatepass")).hexdigest()[:12]
-    name = f"<mgs-tests-{digest}:{filename}>"
+    name = f"<mogs-tests-{digest}:{filename}>"
     tree = ast.parse(source, name)
     rewrite_asserts(tree, source.encode())
 

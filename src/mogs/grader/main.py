@@ -26,7 +26,7 @@ from mogs.grader.sandbox import grade
 from mogs.runner import FailureReason, Outcome
 
 AUTOGRADER = Path("/autograder")
-WORKDIR = Path("/tmp/mgs")
+WORKDIR = Path("/tmp/mogs")
 
 logger = logging.getLogger(__name__)
 

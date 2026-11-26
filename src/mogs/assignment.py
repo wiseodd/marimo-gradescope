@@ -53,7 +53,7 @@ def assignment(
 
     The summary reads the saved notebook file, not the arguments: its questions, their
     points and tests, and any problem the build would report. It is as fresh as the last run
-    of the cell. While grading (`MGS_GRADING=1`), it returns an empty panel.
+    of the cell. While grading (`MOGS_GRADING=1`), it returns an empty panel.
 
     Args:
         name: Names the student zip and the autograder zip; defaults to the notebook's name.

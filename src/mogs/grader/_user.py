@@ -4,4 +4,4 @@ Kept apart from the sandbox, so build-time code can read it without importing Li
 modules.
 """
 
-STUDENT_USER = "mgs-student"
+STUDENT_USER = "mogs-student"

@@ -8,11 +8,10 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - Design, plans and progress notes live outside this repo, in the author's
   private planning directory. Never put design notes, plans or local paths in
   the repo.
-- `src/mogs/`: the package, imported as `mogs`, published as
-  `mogs`, and run as the `mogs` command. `config.py` reads
-  the config from the notebook's `mogs.assignment(...)` and `mogs.grade(...)`
-  calls (statically, from the AST) and edits the PEP 723 header as text.
-  `scaffold.py` is `mogs init`.
+- `src/mogs/`: the package, imported, published on PyPI and run as `mogs`.
+  `config.py` reads the config from the notebook's `mogs.assignment(...)` and
+  `mogs.grade(...)` calls (statically, from the AST) and edits the PEP 723
+  header as text. `scaffold.py` is `mogs init`.
 - `src/mogs/_typst/`: the Typst packages cmarker and mitex,
   vendored for the PDF of written answers (`pdf.py`). They need the Typst
   version the `pdf` extra pins (`typst>=0.15,<0.16`): bump the pin and the
@@ -21,8 +20,8 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - `tests/e2e/`: end-to-end tests. The `docker` ones build the demo autograder
   into Gradescope's base image (`tests/e2e/Dockerfile`) and grade submissions
   through the real `/autograder/run_autograder`. They need docker or podman
-  (`MGS_CONTAINER=docker|podman` picks one) and network, and take several
-  minutes. Without a runtime they skip; `MGS_REQUIRE_CONTAINER=1` (set in CI)
+  (`MOGS_CONTAINER=docker|podman` picks one) and network, and take several
+  minutes. Without a runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI)
   makes that a failure. The base image is amd64 only: on an arm64 host it runs
   under emulation, which is slow enough that grading timeouts may trip.
 - `docs/`: the docs site (Astro Starlight, built with Bun), deployed to

@@ -51,7 +51,7 @@ def message(placeholder: object) -> str:
 @pytest.fixture
 def side_effect(tmp_path, monkeypatch) -> Path:
     path = tmp_path / "side_effect.txt"
-    monkeypatch.setenv("MGS_SIDE_EFFECT", str(path))
+    monkeypatch.setenv("MOGS_SIDE_EFFECT", str(path))
     return path
 
 
@@ -270,7 +270,7 @@ def test_failed_run_is_cached(tmp_path, side_effect):
 
         @app.cell
         def _():
-            with Path(os.environ["MGS_SIDE_EFFECT"]).open("a") as file:
+            with Path(os.environ["MOGS_SIDE_EFFECT"]).open("a") as file:
                 file.write("ran\\n")
             raise RuntimeError("boom")
             return

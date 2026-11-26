@@ -159,7 +159,7 @@ def export(
 
     The notebook file is the caller's `__file__`, or else the file of marimo's running
     notebook. When neither is known, the panel says so. An unexpected error shows as a failed
-    panel; `KeyboardInterrupt` stops the export. While grading (`MGS_GRADING=1`) it does
+    panel; `KeyboardInterrupt` stops the export. While grading (`MOGS_GRADING=1`) it does
     nothing and returns an empty panel.
 
     Args:
@@ -277,7 +277,7 @@ def package(
     lines = []
     entries = {notebook.name: data}
 
-    with tempfile.TemporaryDirectory(prefix="mgs-export-", ignore_cleanup_errors=True) as folder:
+    with tempfile.TemporaryDirectory(prefix="mogs-export-", ignore_cleanup_errors=True) as folder:
         snapshot = Path(folder) / notebook.name
         snapshot.write_bytes(data)
 

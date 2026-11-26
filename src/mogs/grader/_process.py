@@ -65,7 +65,7 @@ def child_command(event_fd: int, python: str) -> list[str]:
 def child_env(workdir: Path) -> dict[str, str]:
     """The current environment, made fit for student code that runs in `workdir`.
 
-    It sets `MGS_GRADING=1`, so `check` and `export` cells do nothing when the notebook runs.
+    It sets `MOGS_GRADING=1`, so `check` and `export` cells do nothing when the notebook runs.
     """
 
     env = grading_env() | {

@@ -297,7 +297,7 @@ def build(assignment_dir: Path, tool_requirement: str | None = None) -> BuildRes
     dist = assignment_dir / DIST
     zip_name = f"{cfg.name}-autograder-{datetime.now().strftime(STAMP)}.zip"
 
-    with tempfile.TemporaryDirectory(prefix="mgs-build-") as folder:
+    with tempfile.TemporaryDirectory(prefix="mogs-build-") as folder:
         stage = Path(folder)
 
         # Self-check, in an environment with what Gradescope installs.

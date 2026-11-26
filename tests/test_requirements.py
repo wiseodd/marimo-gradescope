@@ -368,15 +368,15 @@ def test_setup_script(tmp_path):
     )
     assert f"https://astral.sh/uv/{UV_VERSION}/install.sh" in script
     assert "UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1" in script
-    assert "UV_PYTHON_INSTALL_DIR=/opt/mgs-python" in script
-    assert "uv venv --managed-python --python 3.12 /opt/mgs-venv" in script
+    assert "UV_PYTHON_INSTALL_DIR=/opt/mogs-python" in script
+    assert "uv venv --managed-python --python 3.12 /opt/mogs-venv" in script
     assert "--index-strategy unsafe-best-match" in script
     assert "--compile-bytecode" in script
     assert f"useradd --system --no-create-home --shell /usr/sbin/nologin {STUDENT_USER}" in script
-    assert "chmod -R a+rX /opt/mgs-python /opt/mgs-venv" in script
+    assert "chmod -R a+rX /opt/mogs-python /opt/mogs-venv" in script
     assert "chmod -R go-rwx /autograder/source" in script
     sanity = 'python -c "import mogs, marimo"'
-    assert script.rstrip().endswith(f"runuser -u {STUDENT_USER} -- /opt/mgs-venv/bin/{sanity}")
+    assert script.rstrip().endswith(f"runuser -u {STUDENT_USER} -- /opt/mogs-venv/bin/{sanity}")
     assert "${" not in script
     bash_check(script, tmp_path)
 
@@ -417,7 +417,7 @@ def test_run_autograder_script(tmp_path):
     assert script == (
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        "exec /opt/mgs-venv/bin/python -m mogs.grader.main\n"
+        "exec /opt/mogs-venv/bin/python -m mogs.grader.main\n"
     )
     bash_check(script, tmp_path)
 

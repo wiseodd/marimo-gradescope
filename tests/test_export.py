@@ -695,7 +695,7 @@ def test_export_html_shows_the_located_file(tmp_path):
 
 
 def test_export_is_a_no_op_while_grading(monkeypatch):
-    monkeypatch.setenv("MGS_GRADING", "1")
+    monkeypatch.setenv("MOGS_GRADING", "1")
     monkeypatch.setattr(export_module, "locate", lambda namespace: pytest.fail("located"))
 
     result = export(export_button(), name="hw", manual=[], titles={})
@@ -704,7 +704,7 @@ def test_export_is_a_no_op_while_grading(monkeypatch):
 
 
 def test_run_capped_marks_the_child_as_grading(tmp_path):
-    code = "import os; print(os.environ.get('MGS_GRADING'), os.environ.get('PYTEST_CURRENT_TEST'))"
+    code = "import os; print(os.environ.get('MOGS_GRADING'), os.environ.get('PYTEST_CURRENT_TEST'))"
     result = run_capped([sys.executable, "-c", code], cwd=tmp_path, timeout=30)
 
     assert result is not None

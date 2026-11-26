@@ -2,7 +2,7 @@
 
 import os
 
-GRADING = "MGS_GRADING"
+GRADING = "MOGS_GRADING"
 
 
 def clean_env() -> dict[str, str]:

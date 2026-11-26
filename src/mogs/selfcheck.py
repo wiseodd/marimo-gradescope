@@ -85,12 +85,12 @@ def public_results(path: Path) -> Summary:
 
         cells.append((TestCell(qid, False, source, names, uses), relative))
 
-    base: dict[str, object] = {"__name__": "__mgs_selfcheck__"}
+    base: dict[str, object] = {"__name__": "__mogs_selfcheck__"}
     setup_error = None
     missing: dict[str, str] = {}
 
     try:
-        exec(compile(bundle.setup_code, "<mgs-setup>", "exec", dont_inherit=True), base)
+        exec(compile(bundle.setup_code, "<mogs-setup>", "exec", dont_inherit=True), base)
     except Exception as exc:
         setup_error = cap(f"the setup cell failed ({exception_summary(exc)})")
 

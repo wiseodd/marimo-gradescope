@@ -23,7 +23,7 @@ def run_capped(
     block the wait. On a timeout or any exception, `KeyboardInterrupt` included, the process
     is killed before the exception propagates: with its whole process group on Linux and
     macOS, with its process tree (`taskkill /T`) on Windows. The command runs with
-    `MGS_GRADING=1`, so `check` and `export` cells do nothing if it runs the notebook.
+    `MOGS_GRADING=1`, so `check` and `export` cells do nothing if it runs the notebook.
 
     Args:
         command: The command and its arguments.

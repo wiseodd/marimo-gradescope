@@ -78,7 +78,7 @@ def grade_submission(assignment_dir: Path, submission: Path) -> GradeResult:
     require_posix()
     assignment = read_assignment(assignment_dir)
 
-    with tempfile.TemporaryDirectory(prefix="mgs-grade-") as folder:
+    with tempfile.TemporaryDirectory(prefix="mogs-grade-") as folder:
         stage = Path(folder)
         notebook, shown = _find_notebook(submission, assignment.cfg.notebook, stage / "upload")
         data_files(assignment_dir, assignment.cfg)

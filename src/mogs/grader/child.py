@@ -95,10 +95,10 @@ def run(job: Job, emit: Emit) -> None:
 
     bundle = job.bundle
     timeout = bundle.config.timeout
-    base: Namespace = {"__name__": "__mgs_tests__"}
+    base: Namespace = {"__name__": "__mogs_tests__"}
 
     try:
-        exec(compile(bundle.setup_code, "<mgs-setup>", "exec", dont_inherit=True), base)
+        exec(compile(bundle.setup_code, "<mogs-setup>", "exec", dont_inherit=True), base)
     except BaseException as exc:
         error = cap(f"the grader's setup code failed ({exception_summary(exc)})")
         emit(Loaded(error))

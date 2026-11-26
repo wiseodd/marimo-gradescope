@@ -2,7 +2,7 @@
 # and one cell has a side effect. `double` sits in a cell named `double`, so the module
 # attribute is a marimo cell object, not the function.
 #
-# The side-effect cell appends a line to the file named by `MGS_SIDE_EFFECT`, so tests can
+# The side-effect cell appends a line to the file named by `MOGS_SIDE_EFFECT`, so tests can
 # tell whether the whole notebook ran.
 
 import marimo
@@ -37,8 +37,8 @@ def double(factor):
 
 @app.cell
 def _():
-    if "MGS_SIDE_EFFECT" in os.environ:
-        with Path(os.environ["MGS_SIDE_EFFECT"]).open("a", encoding="utf-8") as file:
+    if "MOGS_SIDE_EFFECT" in os.environ:
+        with Path(os.environ["MOGS_SIDE_EFFECT"]).open("a", encoding="utf-8") as file:
             file.write("ran\n")
     return
 

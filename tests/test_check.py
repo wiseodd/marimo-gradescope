@@ -558,7 +558,7 @@ def test_tests_and_test_file_together_raise(tmp_path):
 
 
 def test_check_is_a_no_op_while_grading(monkeypatch):
-    monkeypatch.setenv("MGS_GRADING", "1")
+    monkeypatch.setenv("MOGS_GRADING", "1")
     calls = []
 
     def test_q1_a():
@@ -600,7 +600,7 @@ def test_written_panel_for_zero_points_says_it_is_not_graded():
 
 
 def test_written_is_a_no_op_while_grading(monkeypatch):
-    monkeypatch.setenv("MGS_GRADING", "1")
+    monkeypatch.setenv("MOGS_GRADING", "1")
 
     assert grade("q3", points=5, manual=True).text == ""
 

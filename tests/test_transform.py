@@ -864,7 +864,7 @@ def test_export_cells_import_the_package_when_setup_does_not():
     assert "    import mogs\n" in out
 
 
-def test_export_cells_refuse_a_taken_mgs_name():
+def test_export_cells_refuse_a_taken_mogs_name():
     src = PURE.read_text(encoding="utf-8").replace(
         "    import marimo as mo\n", "    import marimo as mo\n    mogs = 1\n"
     )

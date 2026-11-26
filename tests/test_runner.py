@@ -127,7 +127,7 @@ def test_compile_tests_same_source_reuses_entry():
     second = compile_tests(source, "<reuse>")
 
     assert first.co_filename == second.co_filename
-    assert first.co_filename.startswith("<mgs-tests-")
+    assert first.co_filename.startswith("<mogs-tests-")
     assert len(linecache.cache) == before + 1
 
 
