@@ -22,11 +22,11 @@ def test_binary_version_matches_package():
 def test_binary_forwards_to_python_cli(tmp_path):
     missing = tmp_path / "missing-dir"
 
-    result = run(["build", str(missing)])
+    result = run(["edit", str(missing)])
 
     assert result.returncode == 1
     assert result.stdout == ""
-    assert result.stderr == f"Build failed.\n{missing} does not exist.\n"
+    assert result.stderr == f"Edit failed.\n{missing} does not exist.\n"
 
 
 def test_binary_found_through_symlink(tmp_path):
