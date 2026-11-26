@@ -1,8 +1,8 @@
 """Find the uploaded files and turn test outcomes into Gradescope's `results.json`.
 
-Students see everything this module renders. Hidden tests show up only as a count, and text a
-student controls (failure messages, file names) is capped and quoted so it cannot change the
-layout around it.
+Students see the score summary, the public test results and the notices. Each question's row,
+which also lists its hidden tests, is hidden from them. Text a student controls (failure
+messages, file names) is capped and quoted so it cannot change the layout around it.
 """
 
 import os
@@ -18,6 +18,8 @@ from mogs.runner import Outcome, cap
 
 SKIPPED_DIRS = {"__MACOSX", "__pycache__"}
 NOTICE_ROW = "Submission"
+PUBLIC_ROW = "Public tests"
+ALL_PASSED = "All tests passed"
 
 
 class Row(TypedDict):
@@ -37,11 +39,14 @@ class Results(TypedDict):
     """The content of `results.json`.
 
     `score` is set only when `tests` is empty, since Gradescope then has no rows to add up.
+    `output` is the score summary for students: Gradescope hides the total when a row is hidden.
     """
 
     tests: list[Row]
     stdout_visibility: str
     score: NotRequired[float]
+    output: NotRequired[str]
+    output_format: NotRequired[str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,8 +127,10 @@ def build_results(
 ) -> Results:
     """Gradescope's `results.json` content.
 
-    Each auto-graded question gets a row worth `points × passed / total`. Its output lists the
-    public tests with their failure messages and gives only a count for the hidden tests.
+    Each auto-graded question gets a row worth `points × passed / total`, hidden from students,
+    that lists all its tests with their failure messages. A visible 0-point "Public tests" row,
+    marked failed when one of them fails, lists the public tests. The top-level output gives the
+    total and each question's score.
     Notices go first, in a 0-point "Submission" row marked failed, so Gradescope does not show
     it as passed. Manual questions get no row; with no rows at all, the results carry a
     top-level score of 0.
@@ -141,7 +148,9 @@ def build_results(
         ValueError: If an auto-graded question has no tests.
     """
 
-    rows = [notice_row(notices)] if notices else []
+    public_parts = []
+    public_failed = False
+    question_rows = []
 
     for question in bundle.config.questions.values():
         if question.manual:
@@ -155,16 +164,50 @@ def build_results(
         if total == 0:
             raise ValueError(f"question {question.id} has no tests")
 
+        if public:
+            public_parts.append(f"**{question.title}**\n\n{_output(public, [])}")
+            public_failed |= not all(outcome.passed for outcome in public)
+
         passed = sum(outcome.passed for outcome in public + hidden)
         score = round(question.points * passed / total, 4)
-        rows.append(
-            row(question.title, score, question.points, _output(public, hidden), question.id)
+        output = _output(public, hidden)
+        question_rows.append(
+            row(question.title, score, question.points, output, question.id, hidden=True)
         )
 
-    if not rows:
+    rows = [notice_row(notices)] if notices else []
+
+    if public_parts:
+        rows.append(row(PUBLIC_ROW, 0, 0, "\n\n".join(public_parts), failed=public_failed))
+
+    rows += question_rows
+
+    if not question_rows:
         return {"tests": rows, "stdout_visibility": "hidden", "score": 0.0}
 
-    return {"tests": rows, "stdout_visibility": "hidden"}
+    return {
+        "tests": rows,
+        "stdout_visibility": "hidden",
+        "output": _summary(question_rows),
+        "output_format": "md",
+    }
+
+
+def _summary(rows: Sequence[Row]) -> str:
+    """The total and each question's score, in Markdown."""
+
+    score = sum(row["score"] for row in rows)
+    max_score = sum(row["max_score"] for row in rows)
+    lines = [f"Total: {_fraction(score, max_score)}", ""]
+    lines += [f"- {row['name']}: {_fraction(row['score'], row['max_score'])}" for row in rows]
+
+    return "\n".join(lines)
+
+
+def _fraction(score: float, max_score: float) -> str:
+    """`18.75 / 25`."""
+
+    return f"{round(score, 4):g} / {max_score:g}"
 
 
 def failure_results(bundle: GradingBundle | None, error: BaseException) -> Results:
@@ -205,8 +248,12 @@ def row(
     number: str | None = None,
     *,
     failed: bool = False,
+    hidden: bool = False,
 ) -> Row:
-    """One entry of `tests` in `results.json`; `failed` sets its status to `failed`."""
+    """One entry of `tests` in `results.json`.
+
+    `failed` sets its status to `failed`, and `hidden` hides the row from students.
+    """
 
     entry = Row(
         name=name,
@@ -214,7 +261,7 @@ def row(
         max_score=max_score,
         output=output,
         output_format="md",
-        visibility="visible",
+        visibility="hidden" if hidden else "visible",
     )
 
     if number is not None:
@@ -227,20 +274,20 @@ def row(
 
 
 def _output(public: list[Outcome], hidden: list[Outcome]) -> str:
-    """Markdown for one question: each public test, then the hidden count."""
+    """Markdown for tests: `All tests passed`, or each test with its failure message."""
+
+    if all(outcome.passed for outcome in public + hidden):
+        return ALL_PASSED
 
     parts = []
+    labeled = [(outcome, "") for outcome in public] + [(o, " (hidden)") for o in hidden]
 
-    for outcome in public:
+    for outcome, label in labeled:
         mark = "✓" if outcome.passed else "✗"
-        parts.append(f"{mark} {inline_code(outcome.name)}")
+        parts.append(f"{mark} {inline_code(outcome.name)}{label}")
 
         if not outcome.passed and outcome.message:
             parts.append(code_block(cap(outcome.message)))
-
-    if hidden:
-        passed = sum(outcome.passed for outcome in hidden)
-        parts.append(f"Hidden tests: {passed}/{len(hidden)} passed")
 
     return "\n\n".join(parts)
 

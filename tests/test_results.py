@@ -30,19 +30,32 @@ def outcomes(failing: str = "test_q1_secret_y", message: str = "SECRET hidden de
     return result
 
 
+def question_row(results, qid: str):
+    [row] = [row for row in results["tests"] if row.get("number") == qid]
+    return row
+
+
+def public_row(results):
+    [row] = [row for row in results["tests"] if row["name"] == "Public tests"]
+    return row
+
+
+def shown_to_students(results) -> list:
+    rows = [row for row in results["tests"] if row["visibility"] != "hidden"]
+    return [results.get("output", ""), rows]
+
+
 # build_results
 
 
 def test_three_of_four_tests_give_three_quarters_of_the_points():
     results = build_results(bundle(), outcomes(), [])
 
-    [row] = results["tests"]
+    row = question_row(results, "q1")
     assert row["name"] == "Addition"
-    assert row["number"] == "q1"
     assert row["score"] == 18.75
     assert row["max_score"] == 25
     assert row["output_format"] == "md"
-    assert row["visibility"] == "visible"
     assert results["stdout_visibility"] == "hidden"
 
 
@@ -53,7 +66,7 @@ def test_score_is_rounded():
     )
     result = {name: Outcome(name, name == "test_q1_a") for name in cells[0].tests}
 
-    [row] = build_results(grading, result, [])["tests"]
+    row = question_row(build_results(grading, result, []), "q1")
 
     assert row["score"] == 0.3333
 
@@ -61,32 +74,112 @@ def test_score_is_rounded():
 def test_manual_questions_get_no_row():
     results = build_results(bundle(), outcomes(), [])
 
-    assert [row["number"] for row in results["tests"]] == ["q1"]
+    assert [row.get("number") for row in results["tests"]] == [None, "q1"]
 
 
-def test_hidden_names_and_messages_never_reach_the_output():
+def test_question_rows_are_hidden_from_students():
     results = build_results(bundle(), outcomes(), [])
 
-    text = json.dumps(results)
+    assert question_row(results, "q1")["visibility"] == "hidden"
+
+
+def test_hidden_names_and_messages_reach_only_hidden_rows():
+    results = build_results(bundle(), outcomes(), [])
+
+    text = json.dumps(shown_to_students(results))
     assert "SECRET" not in text
     assert "secret" not in text
-    assert "Hidden tests: 1/2 passed" in results["tests"][0]["output"]
+    assert "Hidden" not in text
+
+    output = question_row(results, "q1")["output"]
+    assert "✗ `test_q1_secret_y`" in output
+    assert "SECRET hidden detail" in output
 
 
-def test_public_tests_are_listed_with_their_message():
-    output = build_results(bundle(), outcomes("test_q1_b", "AssertionError: nope"), [])["tests"][0][
-        "output"
-    ]
+def test_public_row_is_visible_and_worth_nothing():
+    results = build_results(bundle(), outcomes("test_q1_b", "AssertionError: nope"), [])
 
-    assert "✓ `test_q1_a`" in output
-    assert "✗ `test_q1_b`" in output
-    assert "AssertionError: nope" in output
-    assert "Hidden tests: 2/2 passed" in output
+    row = public_row(results)
+    assert row["visibility"] == "visible"
+    assert row["score"] == 0
+    assert row["max_score"] == 0
+    assert "number" not in row
+    assert "Addition" in row["output"]
+    assert "✓ `test_q1_a`" in row["output"]
+    assert "✗ `test_q1_b`" in row["output"]
+    assert "AssertionError: nope" in row["output"]
+
+
+def test_public_row_shows_as_failed_when_a_public_test_fails():
+    results = build_results(bundle(), outcomes("test_q1_b"), [])
+
+    assert public_row(results)["status"] == "failed"
+
+
+def test_public_row_carries_no_status_when_only_hidden_tests_fail():
+    results = build_results(bundle(), outcomes("test_q1_secret_y"), [])
+
+    assert "status" not in public_row(results)
+
+
+def test_question_row_lists_public_and_hidden_tests():
+    output = question_row(build_results(bundle(), outcomes(), []), "q1")["output"]
+
+    for name in PUBLIC + HIDDEN:
+        assert f"`{name}`" in output
+
+
+def test_all_passing_tests_are_summed_up():
+    passing = {name: Outcome(name, True) for name in PUBLIC + HIDDEN}
+    results = build_results(bundle(), passing, [])
+
+    assert "All tests passed" in public_row(results)["output"]
+    assert "All tests passed" in question_row(results, "q1")["output"]
+    assert "test_q1_a" not in public_row(results)["output"]
+
+
+def test_summary_shows_the_total_and_each_question_score():
+    results = build_results(bundle(), outcomes(), [])
+
+    assert results["output_format"] == "md"
+    assert "Total: 18.75 / 25" in results["output"]
+    assert "Addition: 18.75 / 25" in results["output"]
+    assert "Essay" not in results["output"]
+
+
+def test_question_with_only_hidden_tests_is_left_out_of_the_public_row():
+    questions = {
+        "q1": Question("q1", "Addition", 25),
+        "q2": Question("q2", "Secret", 5),
+    }
+    cells = (
+        TestCell("q1", False, "", PUBLIC, ()),
+        TestCell("q2", True, "", ("test_q2_x",), ()),
+    )
+    grading = GradingBundle(AssignmentConfig("A", "hw.py", questions), "", cells)
+    result = {name: Outcome(name, True) for name in (*PUBLIC, "test_q2_x")}
+
+    results = build_results(grading, result, [])
+
+    assert "Secret" not in public_row(results)["output"]
+    assert question_row(results, "q2")["score"] == 5
+
+
+def test_no_public_tests_means_no_public_row():
+    cells = (TestCell("q1", True, "", HIDDEN, ()),)
+    grading = GradingBundle(
+        AssignmentConfig("A", "hw.py", {"q1": Question("q1", "Q", 1)}), "", cells
+    )
+    result = {name: Outcome(name, True) for name in HIDDEN}
+
+    results = build_results(grading, result, [])
+
+    assert [row.get("number") for row in results["tests"]] == ["q1"]
 
 
 def test_message_cannot_close_its_code_fence():
     message = "x\n````\n# Injected heading\n````"
-    output = build_results(bundle(), outcomes("test_q1_b", message), [])["tests"][0]["output"]
+    output = public_row(build_results(bundle(), outcomes("test_q1_b", message), []))["output"]
 
     fence = "`````"
     assert f"{fence}\n{message}\n{fence}" in output
@@ -94,7 +187,7 @@ def test_message_cannot_close_its_code_fence():
 
 def test_huge_messages_are_capped():
     message = "y" * 1_000_000
-    output = build_results(bundle(), outcomes("test_q1_b", message), [])["tests"][0]["output"]
+    output = public_row(build_results(bundle(), outcomes("test_q1_b", message), []))["output"]
 
     assert len(output.encode()) < 2 * MAX_BYTES
 
@@ -108,11 +201,11 @@ def test_notices_come_first_in_a_zero_point_row():
     assert first["max_score"] == 0
     assert "No PDF found." in first["output"]
     assert len(first["output"].encode()) < 3 * MAX_BYTES
-    assert results["tests"][1]["number"] == "q1"
+    assert results["tests"][1]["name"] == "Public tests"
 
 
 def test_notice_row_shows_as_failed_and_question_rows_carry_no_status():
-    [notice, question] = build_results(bundle(), outcomes(), ["No PDF found."])["tests"]
+    [notice, _, question] = build_results(bundle(), outcomes(), ["No PDF found."])["tests"]
 
     assert notice["status"] == "failed"
     assert "status" not in question
@@ -126,6 +219,7 @@ def test_all_manual_assignment_gets_a_top_level_score():
 
     assert results["tests"] == []
     assert results["score"] == 0.0
+    assert "output" not in results
 
 
 def test_graded_assignment_has_no_top_level_score():
@@ -138,6 +232,7 @@ def test_failure_rows_show_as_failed(grading):
 
     assert rows
     assert all(row["status"] == "failed" for row in rows)
+    assert all(row["visibility"] == "visible" for row in rows)
 
 
 # find_submission
