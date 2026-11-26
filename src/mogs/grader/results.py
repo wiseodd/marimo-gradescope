@@ -128,8 +128,9 @@ def build_results(
     """Gradescope's `results.json` content.
 
     Each auto-graded question gets a row worth `points × passed / total`, hidden from students,
-    that lists all its tests with their failure messages. A visible 0-point "Public tests" row
-    lists the public tests, and the top-level output gives the total and each question's score.
+    that lists all its tests with their failure messages. A visible 0-point "Public tests" row,
+    marked failed when one of them fails, lists the public tests. The top-level output gives the
+    total and each question's score.
     Notices go first, in a 0-point "Submission" row marked failed, so Gradescope does not show
     it as passed. Manual questions get no row; with no rows at all, the results carry a
     top-level score of 0.
@@ -148,6 +149,7 @@ def build_results(
     """
 
     public_parts = []
+    public_failed = False
     question_rows = []
 
     for question in bundle.config.questions.values():
@@ -164,6 +166,7 @@ def build_results(
 
         if public:
             public_parts.append(f"**{question.title}**\n\n{_output(public, [])}")
+            public_failed |= not all(outcome.passed for outcome in public)
 
         passed = sum(outcome.passed for outcome in public + hidden)
         score = round(question.points * passed / total, 4)
@@ -175,7 +178,7 @@ def build_results(
     rows = [notice_row(notices)] if notices else []
 
     if public_parts:
-        rows.append(row(PUBLIC_ROW, 0, 0, "\n\n".join(public_parts)))
+        rows.append(row(PUBLIC_ROW, 0, 0, "\n\n".join(public_parts), failed=public_failed))
 
     rows += question_rows
 

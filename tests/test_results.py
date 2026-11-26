@@ -104,11 +104,22 @@ def test_public_row_is_visible_and_worth_nothing():
     assert row["score"] == 0
     assert row["max_score"] == 0
     assert "number" not in row
-    assert "status" not in row
     assert "Addition" in row["output"]
     assert "✓ `test_q1_a`" in row["output"]
     assert "✗ `test_q1_b`" in row["output"]
     assert "AssertionError: nope" in row["output"]
+
+
+def test_public_row_shows_as_failed_when_a_public_test_fails():
+    results = build_results(bundle(), outcomes("test_q1_b"), [])
+
+    assert public_row(results)["status"] == "failed"
+
+
+def test_public_row_carries_no_status_when_only_hidden_tests_fail():
+    results = build_results(bundle(), outcomes("test_q1_secret_y"), [])
+
+    assert "status" not in public_row(results)
 
 
 def test_question_row_lists_public_and_hidden_tests():
