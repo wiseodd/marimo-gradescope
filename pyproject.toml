@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-marimo-gradescope = "marimogs.cli:main"
+marimogs = "marimogs.cli:main"
 
 [project.optional-dependencies]
 # The vendored Typst packages in `_typst` need Typst 0.15.

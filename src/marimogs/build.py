@@ -192,7 +192,7 @@ def find_notebook(assignment_dir: Path) -> Path:
         case []:
             raise BuildError(
                 f"No notebook in {assignment_dir} calls `mogs.assignment(...)`. Add a cell with "
-                "that call, or start a new assignment with `marimo-gradescope init`."
+                "that call, or start a new assignment with `marimogs init`."
             )
         case _:
             names = "\n".join(f"  {path.name}" for path in candidates)

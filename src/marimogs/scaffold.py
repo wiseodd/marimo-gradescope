@@ -1,4 +1,4 @@
-"""`marimo-gradescope init`: a new assignment folder with a notebook to start from."""
+"""`marimogs init`: a new assignment folder with a notebook to start from."""
 
 from importlib.metadata import version
 from pathlib import Path

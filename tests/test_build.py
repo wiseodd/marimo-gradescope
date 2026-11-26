@@ -304,7 +304,7 @@ def test_two_candidates_listed(tmp_path, capsys):
 def test_no_candidate(tmp_path):
     (tmp_path / "plain.py").write_text("print('hi')\n", encoding="utf-8")
 
-    with pytest.raises(BuildError, match="No notebook"):
+    with pytest.raises(BuildError, match=r"No notebook.*`marimogs init`"):
         find_notebook(tmp_path)
 
 

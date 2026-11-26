@@ -146,7 +146,7 @@ def _data_problems(path: Path, cfg: AssignmentConfig) -> list[str]:
 def _footer(path: Path) -> str:
     note = (
         f"Read from {path.name} when this cell ran; run it again after you save changes. "
-        f"Build with: marimo-gradescope build {shlex.quote(str(path.parent))}"
+        f"Build with: marimogs build {shlex.quote(str(path.parent))}"
     )
     return f'<div style="{NOTE_STYLE}">{html.escape(note)}</div>'
 

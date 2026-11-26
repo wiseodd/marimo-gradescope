@@ -1,4 +1,4 @@
-"""The `marimo-gradescope` command."""
+"""The `marimogs` command."""
 
 import argparse
 import shlex
@@ -47,7 +47,7 @@ def _init(folder: Path) -> int:
 
     print(f"Created {path}")
     print(f"Edit it  : marimo edit --sandbox {shlex.quote(str(path))}")
-    print(f"Build it : marimo-gradescope build {shlex.quote(str(folder))}")
+    print(f"Build it : marimogs build {shlex.quote(str(folder))}")
     return 0
 
 
@@ -166,7 +166,7 @@ def _fraction(score: float, points: float) -> str:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="marimo-gradescope",
+        prog="marimogs",
         description="Build Gradescope autograders from marimo notebooks.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
