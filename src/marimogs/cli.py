@@ -97,6 +97,14 @@ def _grade(folder: Path, submission: Path) -> int:
         return 1
 
     print(grade_report(result))
+
+    if result.failed_to_load:
+        print(
+            f"Grading failed.\n{result.submission} failed to load, so no test ran.",
+            file=sys.stderr,
+        )
+        return 1
+
     return 0
 
 

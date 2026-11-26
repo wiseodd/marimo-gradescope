@@ -113,9 +113,11 @@ def test_load_failures_keep_test_names_and_hidden_marks(demo, tmp_path, capsys):
     )
 
     code = main(["grade", str(demo), str(submission)])
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
+    out = captured.out
 
-    assert code == 0
+    assert code == 1
+    assert "failed to load" in captured.err
     assert "while loading your notebook" in out
     assert "test_q1_whole_numbers" in out
     assert "test_q1_negative (hidden)" in out
@@ -154,6 +156,19 @@ def test_zip_submission_is_unpacked_and_graded(demo, tmp_path, capsys):
     assert code == 0
     assert f"Graded:  {upload / 'hw.py'}" in out
     assert f"{TOTAL}/{TOTAL}" in out
+
+
+@pytest.mark.network
+def test_notebook_that_fails_to_import_exits_nonzero(demo, tmp_path, capsys):
+    submission = tmp_path / "hw.py"
+    submission.write_text("def broken(:\n", encoding="utf-8")
+
+    code = main(["grade", str(demo), str(submission)])
+    captured = capsys.readouterr()
+
+    assert code == 1
+    assert "failed to load" in captured.err
+    assert "test_q1_whole_numbers" in captured.out
 
 
 def test_zip_with_path_outside_is_refused(tmp_path, capsys):

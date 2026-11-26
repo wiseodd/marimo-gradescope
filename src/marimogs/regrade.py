@@ -22,7 +22,7 @@ from marimogs.environment import grading_python
 from marimogs.grader.bundle import GradingBundle, bundle_from_notebook
 from marimogs.grader.results import Results, build_results, find_submission
 from marimogs.requirements import gradescope_requirements
-from marimogs.runner import Outcome
+from marimogs.runner import FailureReason, Outcome
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +43,14 @@ class GradeResult:
     outcomes: dict[str, Outcome]
     results: Results
     score: tuple[float, float]
+
+    @property
+    def failed_to_load(self) -> bool:
+        """Whether every test failed because the notebook did not load."""
+
+        reasons = {outcome.reason for outcome in self.outcomes.values()}
+
+        return reasons == {FailureReason.LOAD_FAILED}
 
 
 def grade_submission(assignment_dir: Path, submission: Path) -> GradeResult:
