@@ -80,6 +80,8 @@ class Missing:
     __add__ = __radd__ = __sub__ = __rsub__ = __mul__ = __rmul__ = _unavailable
     __truediv__ = __rtruediv__ = __floordiv__ = __rfloordiv__ = _unavailable
     __mod__ = __rmod__ = __pow__ = __rpow__ = __matmul__ = __rmatmul__ = _unavailable
+    __divmod__ = __rdivmod__ = __lshift__ = __rlshift__ = __rshift__ = __rrshift__ = _unavailable
+    __and__ = __rand__ = __or__ = __ror__ = __xor__ = __rxor__ = _unavailable
     __neg__ = __pos__ = __abs__ = __invert__ = _unavailable
     __int__ = __float__ = __complex__ = __index__ = __round__ = _unavailable
     __str__ = __format__ = __array__ = _unavailable
