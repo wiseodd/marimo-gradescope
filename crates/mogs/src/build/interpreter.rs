@@ -50,7 +50,6 @@ fn question(item: PyResult<Bound<'_, PyAny>>) -> PyResult<Question> {
         id: item.get_item("id")?.extract()?,
         title: item.get_item("title")?.extract()?,
         points: item.get_item("points")?.extract()?,
-        manual: item.get_item("manual")?.extract()?,
         public: item.get_item("public")?.extract()?,
         hidden: item.get_item("hidden")?.extract()?,
         prompts: item.get_item("prompts")?.extract()?,
@@ -91,12 +90,14 @@ impl Interpreter for PyBuild {
         })
     }
 
-    fn read(&self, folder: &Path) -> PyResult<(Py<PyAny>, String)> {
-        Python::attach(|py| {
-            let assignment = Self::analysis(py, "read_assignment", (folder,))?;
-            let notebook = assignment.getattr("cfg")?.getattr("notebook")?.extract()?;
+    fn read(&self, folder: &Path) -> PyResult<Py<PyAny>> {
+        Python::attach(|py| Ok(Self::analysis(py, "read_assignment", (folder,))?.unbind()))
+    }
 
-            Ok((assignment.unbind(), notebook))
+    fn notebook(&self, assignment: &Py<PyAny>) -> PyResult<String> {
+        Python::attach(|py| {
+            let config = assignment.bind(py).getattr("cfg")?;
+            config.getattr("notebook")?.extract()
         })
     }
 

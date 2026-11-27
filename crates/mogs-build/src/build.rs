@@ -76,36 +76,32 @@ pub struct Score {
 /// solved copy, or the solved copy does not get full marks; `ConfigError`, `SourceError` and
 /// `RequirementsError` from Python; `OSError` if a file cannot be read or written.
 pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
-    let (assignment, _) = i.read(folder)?;
+    let assignment = i.read(folder)?;
     let inputs = i.build_inputs(&assignment)?;
     let bundle = &inputs.grading.bundle;
     let config = &bundle.config;
     let os = |error: io::Error, path: &Path| i.grade_error(GradeError::os(error, path));
 
-    let mut data = BTreeMap::new();
+    let setup = setup_script(i, &config.python)?;
+    let mut data = Vec::new();
 
     for (rel, source) in &inputs.data {
-        data.insert(rel.clone(), fs::read(source).map_err(|e| os(e, source))?);
+        data.push((rel, fs::read(source).map_err(|e| os(e, source))?));
     }
 
-    let mut entries = BTreeMap::from([
-        (
-            "setup.sh".into(),
-            setup_script(i, &config.python)?.into_bytes(),
-        ),
-        ("run_autograder".into(), RUN_AUTOGRADER.into()),
-        (
-            "bundle.json".into(),
-            inputs.bundle_json.clone().into_bytes(),
-        ),
-        (
-            "requirements.txt".into(),
-            inputs.requirements.clone().into_bytes(),
-        ),
+    let mut entries: BTreeMap<String, &[u8]> = BTreeMap::from([
+        ("setup.sh".into(), setup.as_bytes()),
+        ("run_autograder".into(), RUN_AUTOGRADER.as_bytes()),
+        ("bundle.json".into(), inputs.bundle_json.as_bytes()),
+        ("requirements.txt".into(), inputs.requirements.as_bytes()),
     ]);
-    entries.extend(data.clone());
+    entries.extend(
+        data.iter()
+            .map(|(rel, bytes)| (rel.to_string(), &bytes[..])),
+    );
 
-    let dist = folder.join(DIST);
+    // As pathlib shows it, so `mogs build .` names `dist`, not `./dist`.
+    let dist = i.path(&folder.join(DIST))?;
     let zip_name = format!("{}-autograder-{}.zip", config.name, i.now(STAMP)?);
     let stage = tempfile::Builder::new()
         .prefix("mogs-build-")
@@ -178,23 +174,26 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     let student_zip = out.join("student").join(format!("{}.zip", config.name));
     fs::create_dir_all(out.join("student")).map_err(|e| os(e, &out))?;
 
-    let mut files = data;
+    let mut files: BTreeMap<&str, &[u8]> = data
+        .iter()
+        .map(|(rel, bytes)| (rel.as_str(), &bytes[..]))
+        .collect();
     files.extend(
         inputs
             .tests
             .iter()
-            .map(|(rel, text)| (rel.clone(), text.clone().into_bytes())),
+            .map(|(rel, text)| (rel.as_str(), text.as_bytes())),
     );
-    let mut student = files.clone();
-    student.insert(config.notebook.clone(), inputs.student.clone().into_bytes());
-    let named = student
-        .into_iter()
-        .map(|(rel, content)| (format!("{}/{rel}", config.name), content))
+    let mut student: BTreeMap<String, &[u8]> = files
+        .iter()
+        .map(|(rel, content)| (format!("{}/{rel}", config.name), *content))
         .collect();
-    write_zip(i, &student_zip, &named)?;
+    let notebook = format!("{}/{}", config.name, config.notebook);
+    student.insert(notebook, inputs.student.as_bytes());
+    write_zip(i, &student_zip, &student)?;
 
     let autograder = out.join("autograder");
-    files.insert(config.notebook.clone(), inputs.solved.clone().into_bytes());
+    files.insert(&config.notebook, inputs.solved.as_bytes());
 
     for (rel, content) in &files {
         let path = autograder.join(rel);

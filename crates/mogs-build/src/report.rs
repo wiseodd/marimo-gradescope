@@ -277,7 +277,6 @@ mod tests {
             id: id.into(),
             title: title.into(),
             points,
-            manual: false,
             public: 0,
             hidden: 0,
             prompts: Vec::new(),
@@ -296,7 +295,6 @@ mod tests {
     fn by_hand(question: Question, prompts: &[&str]) -> Score {
         Score {
             question: Question {
-                manual: true,
                 prompts: prompts.iter().map(|line| (*line).into()).collect(),
                 ..question
             },

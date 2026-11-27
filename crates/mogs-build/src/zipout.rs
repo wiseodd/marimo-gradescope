@@ -5,7 +5,8 @@
 //! no data descriptor and no extra fields, as `zipfile` writes to a seekable file.
 
 use std::collections::BTreeMap;
-use std::fs;
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use mogs_grader::GradeError;
@@ -39,19 +40,17 @@ const ZIP_FILECOUNT_LIMIT: usize = 0xFFFF;
 pub fn write_zip<I: Interpreter>(
     i: &I,
     path: &Path,
-    entries: &BTreeMap<String, Vec<u8>>,
+    entries: &BTreeMap<String, &[u8]>,
 ) -> Result<(), I::Error> {
-    let mut out = Vec::new();
+    let os = |error| i.grade_error(GradeError::os(error, path));
+    let mut out = BufWriter::new(File::create(path).map_err(os)?);
+    let mut offset = 0;
     let mut central = Vec::new();
 
     for (name, data) in entries {
         let compressed = i.deflate(data)?;
-        let offset = out.len();
 
-        if [data.len(), compressed.len(), offset]
-            .iter()
-            .any(|&n| n > ZIP64_LIMIT)
-        {
+        if needs_zip64(data.len(), compressed.len(), offset) {
             return Err(too_large(i, path));
         }
 
@@ -68,11 +67,12 @@ pub fn write_zip<I: Interpreter>(
             name: u16::try_from(name.len()).map_err(|_| too_large(i, path))?,
         };
 
-        out.extend(b"PK\x03\x04");
-        push16(&mut out, VERSION);
-        sizes.push(&mut out, flags);
-        out.extend(name.as_bytes());
-        out.extend(&compressed);
+        let mut local = Vec::from(*b"PK\x03\x04");
+        push16(&mut local, VERSION);
+        sizes.push(&mut local, flags);
+        local.extend(name.as_bytes());
+        out.write_all(&local).map_err(os)?;
+        out.write_all(&compressed).map_err(os)?;
 
         central.extend(b"PK\x01\x02");
         central.extend([VERSION as u8, UNIX]);
@@ -83,27 +83,27 @@ pub fn write_zip<I: Interpreter>(
         push32(&mut central, (S_IFREG | mode) << 16);
         push32(&mut central, as_u32(offset));
         central.extend(name.as_bytes());
+        offset += local.len() + compressed.len();
     }
 
-    if entries.len() > ZIP_FILECOUNT_LIMIT || out.len() + central.len() > ZIP64_LIMIT {
+    if entries.len() > ZIP_FILECOUNT_LIMIT || offset + central.len() > ZIP64_LIMIT {
         return Err(too_large(i, path));
     }
 
     let count = entries.len() as u16;
-    let start = as_u32(out.len());
-    let size = as_u32(central.len());
-    out.extend(central);
-    out.extend(b"PK\x05\x06");
+    let mut end = Vec::from(*b"PK\x05\x06");
     // This disk and the disk where the central directory starts.
-    out.extend([0; 4]);
-    push16(&mut out, count);
-    push16(&mut out, count);
-    push32(&mut out, size);
-    push32(&mut out, start);
+    end.extend([0; 4]);
+    push16(&mut end, count);
+    push16(&mut end, count);
+    push32(&mut end, as_u32(central.len()));
+    push32(&mut end, as_u32(offset));
     // Comment length.
-    push16(&mut out, 0);
+    push16(&mut end, 0);
+    out.write_all(&central).map_err(os)?;
+    out.write_all(&end).map_err(os)?;
 
-    fs::write(path, out).map_err(|error| i.grade_error(GradeError::os(error, path)))
+    out.flush().map_err(os)
 }
 
 /// The fields after the version, which the local and the central header share.
@@ -142,6 +142,13 @@ fn as_u32(n: usize) -> u32 {
     u32::try_from(n).expect("checked against ZIP64_LIMIT")
 }
 
+/// Whether `zipfile` would write zip64 fields for an entry of `size` bytes, `compressed` to
+/// that, at `offset`. Its local header gets them once the data could pass the limit, at 1.05
+/// times the size.
+fn needs_zip64(size: usize, compressed: usize, offset: usize) -> bool {
+    size as f64 * 1.05 > ZIP64_LIMIT as f64 || compressed > ZIP64_LIMIT || offset > ZIP64_LIMIT
+}
+
 fn too_large<I: Interpreter>(i: &I, path: &Path) -> I::Error {
     let mut message = path.as_os_str().to_owned();
     message.push(" would need zip64, which mogs does not write.");
@@ -150,13 +157,15 @@ fn too_large<I: Interpreter>(i: &I, path: &Path) -> I::Error {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
     use crate::fake::Fake;
 
-    fn entries(pairs: &[(&str, &[u8])]) -> BTreeMap<String, Vec<u8>> {
+    fn entries<'a>(pairs: &[(&str, &'a [u8])]) -> BTreeMap<String, &'a [u8]> {
         pairs
             .iter()
-            .map(|(name, data)| ((*name).to_string(), data.to_vec()))
+            .map(|(name, data)| ((*name).to_string(), *data))
             .collect()
     }
 
@@ -216,6 +225,16 @@ mod tests {
                 ("é.txt".to_string(), S_IFREG | 0o644, 0x800),
             ]
         );
+    }
+
+    #[test]
+    fn zip64_starts_where_zipfile_starts_it() {
+        let below = (ZIP64_LIMIT as f64 / 1.05) as usize;
+
+        assert!(!needs_zip64(below, 0, 0));
+        assert!(needs_zip64(below + 1, 0, 0));
+        assert!(needs_zip64(0, ZIP64_LIMIT + 1, 0));
+        assert!(needs_zip64(0, 0, ZIP64_LIMIT + 1));
     }
 
     #[test]

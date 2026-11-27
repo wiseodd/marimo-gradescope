@@ -45,13 +45,14 @@ pub fn grade<I: Interpreter>(
     folder: &Path,
     submission: &Path,
 ) -> Result<Regraded, I::Error> {
-    let (assignment, notebook) = i.read(folder)?;
+    let assignment = i.read(folder)?;
     let stage = tempfile::Builder::new()
         .prefix("mogs-grade-")
         .tempdir()
         .map_err(|error| i.grade_error(GradeError::from(error)))?;
     let stage = stage.path();
 
+    let notebook = i.notebook(&assignment)?;
     let (path, submission) = find_notebook(i, submission, &notebook, &stage.join("upload"))?;
     let inputs = i.grade_inputs(&assignment)?;
     let config = &inputs.bundle.config;

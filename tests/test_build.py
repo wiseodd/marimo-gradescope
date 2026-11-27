@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import os
 import re
 import shutil
 import stat
@@ -753,13 +754,45 @@ def test_tool_requirement_comes_from_the_environment(tmp_path, monkeypatch):
     assert inputs["grading_requirements"] == "numpy==2.0\n"
 
 
-def test_tool_requirement_defaults_to_this_version(tmp_path, monkeypatch):
+@pytest.mark.parametrize("value", [None, ""])
+def test_tool_requirement_defaults_to_this_version(tmp_path, monkeypatch, value):
     folder = requirements_file_copy(tmp_path / "demo", "numpy==2.0\n")
-    monkeypatch.delenv("MOGS_TOOL_REQUIREMENT", raising=False)
+    if value is None:
+        monkeypatch.delenv("MOGS_TOOL_REQUIREMENT", raising=False)
+    else:
+        monkeypatch.setenv("MOGS_TOOL_REQUIREMENT", value)
 
     inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
 
     assert inputs["requirements"] == f"numpy==2.0\nmogs=={__version__}\n"
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads any file")
+def test_bad_python_version_comes_before_an_unreadable_data_file(tmp_path):
+    folder = requirements_file_copy(tmp_path / "demo", "")
+    edit(folder / "hw.py", "mogs.assignment(", 'mogs.assignment(python="latest", ')
+    (folder / "data" / "scores.csv").chmod(0)
+
+    result = build(folder)
+
+    assert result.code == 1
+    assert result.err == (
+        'Build failed.\nmogs.assignment() `python` must be a version such as "3.13", got '
+        "'latest'.\n"
+    )
+
+
+@pytest.mark.network
+def test_os_error_names_dist_as_python_shows_it(tmp_path, monkeypatch):
+    # `dist` is a file, so it cannot be made: v0.7 named it `dist`, not `./dist`.
+    folder = demo_copy(tmp_path / "demo")
+    (folder / "dist").write_text("", encoding="utf-8")
+    monkeypatch.chdir(folder)
+
+    result = build(Path("."))
+
+    assert result.code == 1
+    assert result.err == "Build failed.\n[Errno 17] File exists: 'dist'\n"
 
 
 def test_build_inputs_describe_the_questions(tmp_path):
@@ -772,7 +805,6 @@ def test_build_inputs_describe_the_questions(tmp_path):
             "id": "q1",
             "title": "Average",
             "points": 4,
-            "manual": False,
             "public": 2,
             "hidden": 2,
             "prompts": [],
@@ -781,7 +813,6 @@ def test_build_inputs_describe_the_questions(tmp_path):
             "id": "q2",
             "title": "Reading scores",
             "points": 6,
-            "manual": False,
             "public": 2,
             "hidden": 2,
             "prompts": [],
@@ -790,7 +821,6 @@ def test_build_inputs_describe_the_questions(tmp_path):
             "id": "q3",
             "title": "Empty lists",
             "points": 5,
-            "manual": True,
             "public": 0,
             "hidden": 0,
             "prompts": ["## Question 3: Empty lists"],

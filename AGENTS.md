@@ -51,8 +51,9 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   through the real `/autograder/run_autograder`. They need docker or podman
   (`MOGS_CONTAINER=docker|podman` picks one) and network, and take several
   minutes. The wheel for the image comes from `maturin build --zig` for
-  manylinux_2_17 x86_64, so it builds on any host. Without a runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI)
-  makes that a failure. The base image is amd64 only: on an arm64 host it runs
+  manylinux_2_17 x86_64, so it builds on any host. `MOGS_TOOL_REQUIREMENT` makes
+  `mogs build` put that wheel in the autograder's `requirements.txt`. Without a
+  runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI) makes that a failure. The base image is amd64 only: on an arm64 host it runs
   under emulation, which is slow enough that grading timeouts may trip.
 - `.github/workflows/release.yml`: on a published GitHub release (tags like
   `0.7`, no `v`), checks the tag against the `Cargo.toml` version, builds the

@@ -55,12 +55,18 @@ pub trait Interpreter {
     /// `class(message)`.
     fn raise(&self, class: Class, message: OsString) -> Self::Error;
 
-    /// `mogs._analysis.read_assignment(folder)`, and the file name of its student notebook.
+    /// `mogs._analysis.read_assignment(folder)`.
     ///
     /// # Errors
     ///
     /// The `BuildError`, `ConfigError` or `SourceError` of a missing or invalid notebook.
-    fn read(&self, folder: &Path) -> Result<(Self::Assignment, String), Self::Error>;
+    fn read(&self, folder: &Path) -> Result<Self::Assignment, Self::Error>;
+    /// `assignment.cfg.notebook`: the file name of the student notebook.
+    ///
+    /// # Errors
+    ///
+    /// Any Python exception.
+    fn notebook(&self, assignment: &Self::Assignment) -> Result<String, Self::Error>;
     /// `mogs._analysis.build_inputs(assignment)`.
     ///
     /// # Errors
@@ -175,8 +181,6 @@ pub struct Question {
     pub title: String,
     /// Maximum score.
     pub points: f64,
-    /// Whether the question is graded by hand.
-    pub manual: bool,
     /// Number of public tests.
     pub public: usize,
     /// Number of hidden tests.
@@ -347,7 +351,11 @@ pub(crate) mod fake {
             format!("{class:?}: {}", message.to_string_lossy())
         }
 
-        fn read(&self, _folder: &Path) -> Result<((), String), String> {
+        fn read(&self, _folder: &Path) -> Result<(), String> {
+            unimplemented!()
+        }
+
+        fn notebook(&self, _assignment: &()) -> Result<String, String> {
             unimplemented!()
         }
 

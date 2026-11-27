@@ -96,7 +96,6 @@ class QuestionTests(TypedDict):
     id: str
     title: str
     points: float
-    manual: bool
     public: int
     hidden: int
     prompts: list[str]
@@ -150,7 +149,8 @@ def read_assignment(assignment_dir: Path) -> Assignment:
 def build_inputs(assignment: Assignment) -> BuildInputs:
     """What a build writes and checks, from the notebook.
 
-    The mogs line of `requirements` is `MOGS_TOOL_REQUIREMENT` when set, else this version.
+    The mogs line of `requirements` is `MOGS_TOOL_REQUIREMENT` when set and not empty, else
+    this version.
     Student notebooks always pin this version.
 
     Raises:
@@ -166,7 +166,7 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
     solved = student_notebook(src, nb, cfg, pinned_requirement(), solutions=True)
     bundle = bundle_from_notebook(nb, cfg)
     tests = public_test_files(nb)
-    requirement = os.environ.get(TOOL_REQUIREMENT, f"{TOOL}=={__version__}")
+    requirement = os.environ.get(TOOL_REQUIREMENT) or f"{TOOL}=={__version__}"
     requirements, warnings = gradescope_requirements(src, cfg, requirement)
     by_question = nb.tests_by_question()
 
@@ -179,7 +179,6 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
                 "id": q.id,
                 "title": q.title,
                 "points": q.points,
-                "manual": q.manual,
                 "public": len(public),
                 "hidden": len(hidden),
                 "prompts": prompts,
