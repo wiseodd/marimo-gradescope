@@ -2,7 +2,7 @@
 # requires-python = ">=3.13"
 # dependencies = [
 #     "marimo",
-#     "mogs[pdf]==0.7.0",
+#     "mogs[pdf]==<version>",
 # ]
 # ///
 
@@ -27,7 +27,7 @@ def _():
 
 @app.function
 def mean(xs):
-    return sum(xs) / len(xs)
+    ...
 
 
 @app.cell
@@ -47,7 +47,7 @@ def prompt_q2():
 @app.cell
 def answer_q2():
     mo.md(r"""
-    It divides by zero and raises `ZeroDivisionError`.
+    *Write your answer here.*
     """)
 
 

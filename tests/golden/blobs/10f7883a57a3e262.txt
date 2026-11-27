@@ -2,8 +2,7 @@
 # requires-python = ">=3.13"
 # dependencies = [
 #     "marimo",
-#     "mogs[pdf]==0.7.0",
-#     "tabulate",
+#     "mogs[pdf]==<version>",
 # ]
 # ///
 
@@ -18,7 +17,6 @@ with app.setup:
     import marimo as mo
 
     import mogs
-    import tabulate
 
     SCORES = mo.notebook_dir() / "data" / "scores.csv"
 
@@ -40,8 +38,7 @@ def _():
 
 @app.function
 def mean(xs):
-    """Average of the numbers in `xs`."""
-    return sum(xs) / len(xs)
+    return ...
 
 
 @app.cell
@@ -78,8 +75,7 @@ def _():
 @app.function
 def read_scores(path):
     """Scores by name from a CSV file with columns `name` and `score`."""
-    with open(path, encoding="utf-8", newline="") as file:
-        return {row["name"]: float(row["score"]) for row in csv.DictReader(file)}
+    ...
 
 
 @app.cell
@@ -102,8 +98,7 @@ def prompt_q3():
 @app.cell
 def answer_q3():
     mo.md(r"""
-    It divides by zero and raises `ZeroDivisionError`. That is a fair answer: an empty list
-    has no average, and returning 0 would hide the mistake.
+    *Write your answer here.*
     """)
     return
 

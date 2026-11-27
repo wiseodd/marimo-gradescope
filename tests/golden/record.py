@@ -25,6 +25,7 @@ from types import FunctionType, ModuleType
 
 import pytest
 
+import mogs
 from mogs import config, pdf, requirements, source, transform
 from mogs.config import AssignmentConfig, Question
 from mogs.grader import bundle, results
@@ -42,6 +43,7 @@ TMP = "<tmp>"
 REPO = "<repo>"
 SUBMISSION = "_mogs_submission_<digest>"
 SUBMISSION_RE = re.compile(r"_mogs_submission_[0-9a-f]{16}")
+VERSION = "<version>"
 TAGS = frozenset({"blob", "float", "str_utf16", "tuple"})
 PYTHON = (3, 13)
 # A pytest temporary folder: the base temp folder and one test's folder in it.
@@ -235,13 +237,27 @@ def scrub(text: str) -> str:
 
     A path in the repo becomes relative to it, the repo itself `<repo>`, and a pytest
     temporary folder `<tmp>`. The module name of a loaded submission, which hashes its
-    absolute path, becomes `_mogs_submission_<digest>`.
+    absolute path, becomes `_mogs_submission_<digest>`. The running version of this package,
+    `mogs.__version__`, becomes `<version>`, so the corpus outlives a version bump.
     """
 
     root = ROOT.as_posix()
     text = PYTEST_TMP_RE.sub(TMP, text).replace(f"{root}/", "").replace(root, REPO)
+    text = SUBMISSION_RE.sub(SUBMISSION, text)
 
-    return SUBMISSION_RE.sub(SUBMISSION, text)
+    return _version_re().sub(VERSION, text)
+
+
+def _version_re() -> re.Pattern[str]:
+    """The running version, read on each call so that a test can patch it."""
+
+    return re.compile(rf"(?<![\w.]){re.escape(mogs.__version__)}(?![\w])")
+
+
+def unscrub(text: str) -> str:
+    """`text` with `<version>` back to the running version; the other replacements stay."""
+
+    return text.replace(VERSION, mogs.__version__)
 
 
 # Decoding
@@ -250,7 +266,8 @@ def scrub(text: str) -> str:
 def decode(value: object, blobs: Mapping[str, str] | None = None) -> object:
     """Inverse of `encode` for the tags and blobs; objects stay their JSON shape.
 
-    Blobs come from `blobs`, or from the files in `BLOBS` when it is `None`.
+    Blobs come from `blobs`, or from the files in `BLOBS` when it is `None`. Strings get the
+    running version back in place of `<version>` (`unscrub`).
     """
 
     def again(item: object) -> object:
@@ -258,18 +275,20 @@ def decode(value: object, blobs: Mapping[str, str] | None = None) -> object:
 
     match value:
         case {"blob": str() as name} if len(value) == 1 and blobs is not None:
-            return blobs[name]
+            return unscrub(blobs[name])
         case {"blob": str() as name} if len(value) == 1:
-            return (BLOBS / f"{name}.txt").read_bytes().decode("utf-8")
+            return unscrub((BLOBS / f"{name}.txt").read_bytes().decode("utf-8"))
         case {"float": str() as text} if len(value) == 1:
             return float(text)
         case {"str_utf16": list() as units} if len(value) == 1:
             raw = b"".join(unit.to_bytes(2, "little") for unit in units)
-            return raw.decode("utf-16-le", "surrogatepass")
+            return unscrub(raw.decode("utf-16-le", "surrogatepass"))
         case {"tuple": list() as items} if len(value) == 1:
             return tuple(again(item) for item in items)
         case dict():
-            return {key: again(item) for key, item in value.items()}
+            return {unscrub(key): again(item) for key, item in value.items()}
+        case str():
+            return unscrub(value)
         case list():
             return [again(item) for item in value]
 

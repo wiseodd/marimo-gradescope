@@ -25,7 +25,9 @@ Each line of `cases/<module>.jsonl` is
 - Absolute paths are rewritten in every string: a path in the repo becomes relative to
   it, the repo itself `<repo>`, and a pytest temporary folder `<tmp>`.
   `_mogs_submission_<digest>` stands for a loaded submission's module name, which hashes
-  its path.
+  its path. The running version of mogs (`mogs.__version__`) is `<version>`, also inside
+  blobs, whose names hash the rewritten text. The replay puts the running version back
+  into the arguments and rewrites the live output the same way before comparing.
 - `Notebook` is `{"cells": [<Cell>, ...], "src": ...}`, and `Cell` has every field:
   `kind`, `name`, `start`, `end`, `tests`, `hidden`, `grade_qid`, `assignment`,
   `late_hidden`.

@@ -4,7 +4,10 @@ import hashlib
 import json
 
 import pytest
-from golden.record import BLOBS, FUNCTIONS, PYFMT, read_cases, replay
+from golden.record import BLOBS, CASES, FUNCTIONS, PYFMT, VERSION, read_cases, replay
+
+import mogs
+from mogs import transform
 
 MODULES = sorted([*FUNCTIONS, PYFMT])
 
@@ -42,3 +45,42 @@ def test_blobs_are_named_by_their_hash() -> None:
 
     for blob in blobs:
         assert hashlib.sha256(blob.read_bytes()).hexdigest()[:16] == blob.stem
+
+
+def test_corpus_holds_no_copy_of_the_running_version() -> None:
+    files = [*CASES.glob("*.jsonl"), *BLOBS.glob("*.txt")]
+    assert files, "no corpus; run `make golden`"
+
+    holding = [path.name for path in files if mogs.__version__ in path.read_text("utf-8")]
+
+    assert holding == []
+
+
+# A version no recorded test uses; the suite itself pins `mogs==9.9.9` in places.
+OTHER_VERSION = "42.0.1"
+
+
+def _pins_this_package(case: dict) -> bool:
+    match case:
+        case {"function": "pinned_requirement"}:
+            return True
+        case {"function": "student_notebook", "args": {"tool_requirement": str() as pin}}:
+            return pin == f"mogs=={VERSION}"
+
+    return False
+
+
+@pytest.mark.parametrize("function", ["pinned_requirement", "student_notebook"])
+def test_replay_follows_the_running_version(function: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    case = next(
+        case
+        for case in read_cases("transform")
+        if case["function"] == function and _pins_this_package(case)
+    )
+    expected = {key: value for key, value in case.items() if key in ("ok", "error")}
+    assert OTHER_VERSION not in json.dumps(case)
+
+    monkeypatch.setattr(mogs, "__version__", OTHER_VERSION)
+    monkeypatch.setattr(transform, "__version__", OTHER_VERSION)
+
+    assert json.dumps(replay("transform", case)) == json.dumps(expected)

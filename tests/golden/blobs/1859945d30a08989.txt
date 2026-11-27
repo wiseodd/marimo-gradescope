@@ -2,7 +2,7 @@
 # requires-python = ">=3.13"
 # dependencies = [
 #     "marimo",
-#     "mogs[pdf]==0.7.0",
+#     "mogs[pdf]==<version>",
 # ]
 # ///
 
@@ -39,7 +39,7 @@ def _():
 @app.function
 def mean(xs):
     """Average of the numbers in `xs`."""
-    return sum(xs) / len(xs)
+    return sum(xs) / (len(xs) + 1)
 
 
 @app.cell
@@ -108,7 +108,7 @@ def answer_q3():
 
 @app.cell
 def _():
-    mogs.grade("q3", points=0, title="Empty lists", manual=True)
+    mogs.grade("q3", points=5, title="Empty lists", manual=True)
     return
 
 

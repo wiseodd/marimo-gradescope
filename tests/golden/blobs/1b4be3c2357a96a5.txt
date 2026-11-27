@@ -2,8 +2,7 @@
 # requires-python = ">=3.13"
 # dependencies = [
 #     "marimo",
-#     "mogs[pdf]==0.7.0",
-#     "tabulate",
+#     "mogs[pdf]==<version>",
 # ]
 # ///
 
@@ -18,7 +17,6 @@ with app.setup:
     import marimo as mo
 
     import mogs
-    import tabulate
 
     SCORES = mo.notebook_dir() / "data" / "scores.csv"
 

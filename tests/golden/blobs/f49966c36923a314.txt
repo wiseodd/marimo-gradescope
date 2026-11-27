@@ -2,7 +2,7 @@
 # requires-python = ">=3.13"
 # dependencies = [
 #     "marimo",
-#     "mogs[pdf]==0.7.0",
+#     "mogs[pdf]==<version>",
 # ]
 # ///
 
@@ -39,7 +39,7 @@ def _():
 @app.function
 def mean(xs):
     """Average of the numbers in `xs`."""
-    return sum(xs) / len(xs)
+    ...
 
 
 @app.cell
@@ -76,8 +76,7 @@ def _():
 @app.function
 def read_scores(path):
     """Scores by name from a CSV file with columns `name` and `score`."""
-    with open(path, encoding="utf-8", newline="") as file:
-        return {row["name"]: float(row["score"]) for row in csv.DictReader(file)}
+    ...
 
 
 @app.cell
@@ -100,15 +99,41 @@ def prompt_q3():
 @app.cell
 def answer_q3():
     mo.md(r"""
-    It divides by zero and raises `ZeroDivisionError`. That is a fair answer: an empty list
-    has no average, and returning 0 would hide the mistake.
+    *Write your answer here.*
     """)
     return
 
 
 @app.cell
 def _():
-    mogs.grade("q3", points=5, title="Empty lists", manual=True)
+    mogs.grade("q3", points=0, title="Empty lists", manual=True)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ## Submit
+
+    Save the notebook, then click **Export submission** below. It runs the public tests on
+    the saved file and makes a zip of your notebook and your written answers. Upload that zip to Gradescope.
+
+    No button below? Run the notebook first: **Run all stale cells**, or Ctrl+Shift+R
+    (Cmd+Shift+R on a Mac).
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    export_button = mogs.export_button()
+    export_button
+    return (export_button,)
+
+
+@app.cell(hide_code=True)
+def _(export_button):
+    mogs.export(export_button, name="hw", manual=["q3"], titles={"q1": "Average", "q2": "Reading scores", "q3": "Empty lists"}, placeholders={"answer_q3": "*Write your answer here.*"})
     return
 
 

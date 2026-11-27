@@ -90,4 +90,4 @@
 {"function": "_version_warnings", "args": {"tool_requirement": "mogs==0.1.0+local"}, "ok": ["mogs 0.1.0+local is a development version, not on PyPI; Gradescope can't install it."]}
 {"function": "_version_warnings", "args": {"tool_requirement": "mogs==0.1.0.dev3"}, "ok": ["mogs 0.1.0.dev3 is a development version, not on PyPI; Gradescope can't install it."]}
 {"function": "_version_warnings", "args": {"tool_requirement": "mogs==0.1.dev0+g1234"}, "ok": ["mogs 0.1.dev0+g1234 is a development version, not on PyPI; Gradescope can't install it."]}
-{"function": "_version_warnings", "args": {"tool_requirement": "mogs==0.7.0"}, "ok": []}
+{"function": "_version_warnings", "args": {"tool_requirement": "mogs==<version>"}, "ok": []}

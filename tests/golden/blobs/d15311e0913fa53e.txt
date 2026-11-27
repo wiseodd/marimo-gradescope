@@ -2,7 +2,7 @@
 # requires-python = ">=3.13"
 # dependencies = [
 #     "marimo",
-#     "mogs==0.7.0",
+#     "mogs==<version>",
 # ]
 # ///
 
@@ -16,7 +16,7 @@ with app.setup:
 
 @app.function
 def double(x):
-    return 2 * x
+    ...
 
 
 @app.cell
