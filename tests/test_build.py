@@ -11,6 +11,7 @@ import pytest
 
 from mogs import __version__
 from mogs import build as build_module
+from mogs._native import main
 from mogs.build import (
     BuildError,
     BuildResult,
@@ -22,7 +23,7 @@ from mogs.build import (
     free_points_warnings,
     source_notebook,
 )
-from mogs.cli import main, report
+from mogs.cli import report
 from mogs.config import AssignmentConfig, ConfigError, Question, read_config
 from mogs.runner import FailureReason, Outcome
 
@@ -507,10 +508,7 @@ def test_data_files_cannot_take_reserved_names_in_any_case(tmp_path, name):
 
 
 def test_help_is_short(capsys):
-    with pytest.raises(SystemExit) as exit_info:
-        main(["--help"])
-
-    assert exit_info.value.code == 0
+    assert main(["--help"]) == 0
     assert "build" in capsys.readouterr().out
 
 

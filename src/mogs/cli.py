@@ -1,85 +1,24 @@
-"""The `mogs` command."""
+"""The `build` and `grade` commands, which `mogs._native.main` runs."""
 
-import argparse
-import shlex
-import subprocess
 import sys
 from copy import replace
 from pathlib import Path
 
-from mogs import __version__
-from mogs.build import BuildError, BuildResult, build, failure_report, source_notebook
+from mogs.build import BuildError, BuildResult, build, failure_report
 from mogs.check import format_points
 from mogs.config import ConfigError
 from mogs.regrade import GradeResult, grade_submission
 from mogs.requirements import RequirementsError
-from mogs.scaffold import InitError, init
 from mogs.source import NO_TEXT, SourceError
 
 
-def main(argv: list[str] | None = None) -> int:
-    """Run the command line.
-
-    Args:
-        argv: Arguments; `sys.argv[1:]` when `None`.
+def build_command(folder: Path) -> int:
+    """Run `mogs build folder`: build, then print the report.
 
     Returns:
-        Exit code: 0 on success, 1 when the command fails.
+        Exit code: 0 on success, 1 when the build fails.
     """
 
-    args = _parser().parse_args(argv)
-
-    match args.command:
-        case "init":
-            return _init(args.dir)
-        case "edit":
-            return _edit(args.path)
-        case "build":
-            return _build(args.dir)
-        case "grade":
-            return _grade(args.dir, args.submission)
-        case _:
-            raise AssertionError(f"unhandled command {args.command!r}")
-
-
-def _init(folder: Path) -> int:
-    try:
-        path = init(folder)
-    except (InitError, ConfigError, OSError) as error:
-        print(f"Init failed.\n{error}", file=sys.stderr)
-        return 1
-
-    print(f"Created {path}")
-    print(f"Edit it  : mogs edit {shlex.quote(str(folder))}")
-    print(f"Build it : mogs build {shlex.quote(str(folder))}")
-    return 0
-
-
-def _edit(path: Path) -> int:
-    """Open the source notebook at `path`, a file or its folder, with `marimo edit --sandbox`.
-
-    marimo runs on this package's Python, which has pytest. The editor server compiles the
-    test cells there, and without pytest it logs a warning for each of them.
-    """
-
-    try:
-        notebook = source_notebook(path)
-        marimo = subprocess.Popen(
-            [sys.executable, "-m", "marimo", "edit", "--sandbox", str(notebook)]
-        )
-    except (BuildError, OSError) as error:
-        print(f"Edit failed.\n{error}", file=sys.stderr)
-        return 1
-
-    # Ctrl+C reaches marimo too, and marimo asks whether to quit. Wait until it exits.
-    while True:
-        try:
-            return marimo.wait()
-        except KeyboardInterrupt:
-            continue
-
-
-def _build(folder: Path) -> int:
     try:
         result = build(folder)
     except (BuildError, ConfigError, SourceError, RequirementsError, OSError) as error:
@@ -90,7 +29,13 @@ def _build(folder: Path) -> int:
     return 0
 
 
-def _grade(folder: Path, submission: Path) -> int:
+def grade_command(folder: Path, submission: Path) -> int:
+    """Run `mogs grade folder submission`: grade, then print the scores.
+
+    Returns:
+        Exit code: 0 on success, 1 when grading fails or the submission does not load.
+    """
+
     try:
         result = grade_submission(folder, submission)
     except (BuildError, ConfigError, SourceError, RequirementsError, OSError) as error:
@@ -203,74 +148,3 @@ def _shown(path: Path) -> Path:
 
 def _fraction(score: float, points: float) -> str:
     return f"{score:g}/{points:g}"
-
-
-def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="mogs",
-        description="Build Gradescope autograders from marimo notebooks.",
-    )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    commands = parser.add_subparsers(dest="command", required=True)
-
-    init_parser = commands.add_parser(
-        "init",
-        help="start a new assignment",
-        description=(
-            "Create DIR with one notebook, DIR/<name of DIR>.py, holding the assignment cell, "
-            "a guide and two example questions."
-        ),
-    )
-    init_parser.add_argument("dir", type=Path, metavar="DIR", help="new assignment folder")
-
-    edit_parser = commands.add_parser(
-        "edit",
-        help="open the source notebook in marimo's editor",
-        description=(
-            "Run `marimo edit --sandbox` on the source notebook PATH, or the one in the "
-            "assignment folder PATH, with the marimo installed next to mogs."
-        ),
-    )
-    edit_parser.add_argument(
-        "path",
-        type=Path,
-        metavar="PATH",
-        help="source notebook, or the assignment folder with it",
-    )
-
-    build_parser = commands.add_parser(
-        "build",
-        help="build the student notebook and the autograder zip",
-        description=(
-            "Build DIR/dist/student/ and DIR/dist/autograder/ (the autograder zip and the "
-            "solved student notebook) from the notebook in DIR, then grade the solved and the "
-            "blank student copy."
-        ),
-    )
-    build_parser.add_argument(
-        "dir", type=Path, metavar="DIR", help="assignment folder with the source notebook"
-    )
-
-    grade_parser = commands.add_parser(
-        "grade",
-        help="grade one submission locally",
-        description=(
-            "Grade SUBMISSION against the source notebook in DIR with the real grader, as "
-            "Gradescope would, and list every failing test, hidden ones included."
-        ),
-    )
-    grade_parser.add_argument(
-        "dir", type=Path, metavar="DIR", help="assignment folder with the source notebook"
-    )
-    grade_parser.add_argument(
-        "submission",
-        type=Path,
-        metavar="SUBMISSION",
-        help="student notebook (.py), the zip a student exported, or a folder with one",
-    )
-
-    return parser
-
-
-if __name__ == "__main__":
-    sys.exit(main())

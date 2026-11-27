@@ -1,24 +1,35 @@
+import os
 from importlib.metadata import version
 from pathlib import Path
 
 import pytest
 
+from mogs._native import main
 from mogs.build import build, read_assignment
-from mogs.cli import main
-from mogs.config import ConfigError
-from mogs.scaffold import InitError, init
 from mogs.source import CellKind
 
 
-def test_init_writes_one_notebook_named_after_the_folder(tmp_path):
-    path = init(tmp_path / "A12")
+def init(folder: Path, capsys: pytest.CaptureFixture[str]) -> Path:
+    """Run `mogs init folder` and return the notebook it created."""
+
+    code = main(["init", str(folder)])
+    out = capsys.readouterr().out
+
+    assert code == 0, out
+    assert out.startswith("Created ")
+
+    return Path(out.splitlines()[0].removeprefix("Created "))
+
+
+def test_init_writes_one_notebook_named_after_the_folder(tmp_path, capsys):
+    path = init(tmp_path / "A12", capsys)
 
     assert path == tmp_path / "A12" / "A12.py"
     assert [p.name for p in (tmp_path / "A12").iterdir()] == ["A12.py"]
 
 
-def test_init_notebook_is_a_valid_assignment(tmp_path):
-    init(tmp_path / "A12")
+def test_init_notebook_is_a_valid_assignment(tmp_path, capsys):
+    init(tmp_path / "A12", capsys)
 
     assignment = read_assignment(tmp_path / "A12")
 
@@ -29,32 +40,32 @@ def test_init_notebook_is_a_valid_assignment(tmp_path):
     ]
 
 
-def test_init_notebook_has_a_guide_for_the_instructor(tmp_path):
-    text = init(tmp_path / "A12").read_text(encoding="utf-8")
+def test_init_notebook_has_a_guide_for_the_instructor(tmp_path, capsys):
+    text = init(tmp_path / "A12", capsys).read_text(encoding="utf-8")
 
     assert "def instructor_guide():" in text
     assert "examples" in text
     assert "https://mogs.kristia.de/instructors" in text
 
 
-def test_init_notebook_imports_the_package_as_mogs(tmp_path):
-    text = init(tmp_path / "A12").read_text(encoding="utf-8")
+def test_init_notebook_imports_the_package_as_mogs(tmp_path, capsys):
+    text = init(tmp_path / "A12", capsys).read_text(encoding="utf-8")
 
     assert "    import mogs\n" in text
     assert "mgs." not in text.replace("mogs.", "")
     assert 'mogs.assignment(name="A12")' in text
 
 
-def test_init_notebook_leaves_titles_to_their_default(tmp_path):
-    text = init(tmp_path / "A12").read_text(encoding="utf-8")
+def test_init_notebook_leaves_titles_to_their_default(tmp_path, capsys):
+    text = init(tmp_path / "A12", capsys).read_text(encoding="utf-8")
 
     assert "title" not in text
     assert 'mogs.grade("q1", points=4)' in text
     assert 'mogs.grade("q2", points=5)' in text
 
 
-def test_init_notebook_names_only_the_guide(tmp_path):
-    init(tmp_path / "A12")
+def test_init_notebook_names_only_the_guide(tmp_path, capsys):
+    init(tmp_path / "A12", capsys)
 
     cells = read_assignment(tmp_path / "A12").nb.cells
     named = [cell.name for cell in cells if cell.name not in ("_", "setup")]
@@ -62,8 +73,8 @@ def test_init_notebook_names_only_the_guide(tmp_path):
     assert named == ["instructor_guide", "mean"]
 
 
-def test_init_notebook_tests_are_cells_as_in_the_docs(tmp_path):
-    init(tmp_path / "A12")
+def test_init_notebook_tests_are_cells_as_in_the_docs(tmp_path, capsys):
+    init(tmp_path / "A12", capsys)
 
     cells = read_assignment(tmp_path / "A12").nb.cells
     tests = [(cell.kind, cell.tests, cell.hidden) for cell in cells if cell.tests]
@@ -74,62 +85,106 @@ def test_init_notebook_tests_are_cells_as_in_the_docs(tmp_path):
     ]
 
 
-def test_init_notebook_hidden_marker_opens_its_cell(tmp_path):
-    text = init(tmp_path / "A12").read_text(encoding="utf-8")
+def test_init_notebook_hidden_marker_opens_its_cell(tmp_path, capsys):
+    text = init(tmp_path / "A12", capsys).read_text(encoding="utf-8")
 
     assert "@app.cell\ndef _():\n    # HIDDEN\n    def test_q1_single():\n" in text
 
 
-def test_init_notebook_names_the_installed_marimo(tmp_path):
-    text = init(tmp_path / "A12").read_text(encoding="utf-8")
+def test_init_notebook_names_the_installed_marimo(tmp_path, capsys):
+    text = init(tmp_path / "A12", capsys).read_text(encoding="utf-8")
 
     assert f'__generated_with = "{version("marimo")}"\n' in text
 
 
-def test_init_quotes_the_name(tmp_path):
-    init(tmp_path / "Bob's HW")
+def test_init_notebook_has_the_line_endings_of_text_files(tmp_path, capsys):
+    data = init(tmp_path / "A12", capsys).read_bytes()
+
+    assert (b"\r\n" in data) == (os.linesep == "\r\n")
+    assert data.endswith(b"    app.run()" + os.linesep.encode())
+
+
+def test_init_quotes_the_name(tmp_path, capsys):
+    init(tmp_path / "Bob's HW", capsys)
 
     assert read_assignment(tmp_path / "Bob's HW").cfg.name == "Bob's HW"
 
 
-def test_init_dot_takes_the_name_of_the_current_folder(tmp_path, monkeypatch):
+def test_init_dot_takes_the_name_of_the_current_folder(tmp_path, monkeypatch, capsys):
     (tmp_path / "hw").mkdir()
     monkeypatch.chdir(tmp_path / "hw")
 
-    path = init(Path("."))
+    path = init(Path("."), capsys)
 
     assert path == Path("hw.py")
     assert read_assignment(tmp_path / "hw").cfg.name == "hw"
 
 
-def test_init_into_an_empty_folder(tmp_path):
+def test_init_names_the_folder_after_its_resolved_path(tmp_path, monkeypatch, capsys):
+    (tmp_path / "hw").mkdir()
+    monkeypatch.chdir(tmp_path / "hw")
+
+    path = init(Path("new") / "..", capsys)
+
+    assert path == Path("new") / ".." / "hw.py"
+    assert read_assignment(tmp_path / "hw").cfg.name == "hw"
+
+
+def test_init_into_an_empty_folder(tmp_path, capsys):
     (tmp_path / "A12").mkdir()
 
-    assert init(tmp_path / "A12").exists()
+    assert init(tmp_path / "A12", capsys).exists()
 
 
-def test_init_refuses_a_folder_with_files(tmp_path):
+def test_init_makes_the_missing_parents(tmp_path, capsys):
+    assert init(tmp_path / "course" / "A12", capsys) == tmp_path / "course" / "A12" / "A12.py"
+
+
+def test_init_refuses_a_folder_with_files(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
     (tmp_path / "A12").mkdir()
     (tmp_path / "A12" / "notes.txt").write_text("mine", encoding="utf-8")
 
-    with pytest.raises(InitError, match="not empty"):
-        init(tmp_path / "A12")
+    code = main(["init", "A12"])
 
+    assert code == 1
+    assert capsys.readouterr().err == (
+        "Init failed.\nA12 is not empty. Pick a new folder for the assignment.\n"
+    )
     assert (tmp_path / "A12" / "notes.txt").read_text(encoding="utf-8") == "mine"
 
 
-def test_init_refuses_a_file(tmp_path):
+def test_init_refuses_a_file(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
     (tmp_path / "A12").write_text("", encoding="utf-8")
 
-    with pytest.raises(InitError, match="not a folder"):
-        init(tmp_path / "A12")
+    code = main(["init", "A12"])
+
+    assert code == 1
+    assert capsys.readouterr().err == "Init failed.\nA12 is not a folder.\n"
 
 
-def test_init_refuses_a_name_unfit_for_windows(tmp_path):
-    with pytest.raises(ConfigError, match="Windows"):
-        init(tmp_path / "con")
+def test_init_refuses_a_name_unfit_for_windows(tmp_path, capsys):
+    code = main(["init", str(tmp_path / "con")])
 
+    assert code == 1
+    assert capsys.readouterr().err.startswith(
+        "Init failed.\nAssignment name: `name` 'con' is not a valid file name on Windows."
+    )
     assert not (tmp_path / "con").exists()
+
+
+def test_init_reports_a_folder_it_cannot_make(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "f").write_text("", encoding="utf-8")
+
+    with pytest.raises(OSError) as python:
+        Path("f", "sub").mkdir(parents=True, exist_ok=True)
+
+    code = main(["init", str(Path("f", "sub"))])
+
+    assert code == 1
+    assert capsys.readouterr().err == f"Init failed.\n{python.value}\n"
 
 
 def test_cli_init_says_what_to_do_next(tmp_path, monkeypatch, capsys):
@@ -140,26 +195,29 @@ def test_cli_init_says_what_to_do_next(tmp_path, monkeypatch, capsys):
 
     assert code == 0
     assert out.splitlines() == [
-        "Created A12/A12.py",
+        f"Created {Path('A12', 'A12.py')}",
         "Edit it  : mogs edit A12",
         "Build it : mogs build A12",
     ]
 
 
-def test_cli_init_failure(tmp_path, monkeypatch, capsys):
+def test_cli_init_shows_paths_as_python_does(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "A12").mkdir()
-    (tmp_path / "A12" / "x.py").write_text("", encoding="utf-8")
 
-    code = main(["init", "A12"])
+    code = main(["init", "./Bob's HW/"])
+    out = capsys.readouterr().out
 
-    assert code == 1
-    assert "not empty" in capsys.readouterr().err
+    assert code == 0
+    assert out.splitlines() == [
+        f"Created {Path("Bob's HW", "Bob's HW.py")}",
+        "Edit it  : mogs edit 'Bob'\"'\"'s HW'",
+        "Build it : mogs build 'Bob'\"'\"'s HW'",
+    ]
 
 
 @pytest.mark.network
-def test_init_notebook_builds(tmp_path):
-    init(tmp_path / "A12")
+def test_init_notebook_builds(tmp_path, capsys):
+    init(tmp_path / "A12", capsys)
 
     result = build(tmp_path / "A12")
 

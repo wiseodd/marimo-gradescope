@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/mogs", "crates/mogs-grader", "crates/mogs-pdf", "crates/mogs-schema"]
+members = ["crates/mogs", "crates/mogs-cli", "crates/mogs-grader", "crates/mogs-pdf", "crates/mogs-schema"]
 resolver = "3"
 
 [workspace.package]
