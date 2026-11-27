@@ -152,8 +152,9 @@ pre,
 	white-space: nowrap;
 }
 
-/* Key and default columns stay on one line; the description column wraps. */
-.sl-markdown-content td:nth-child(-n + 2) {
+/* In the argument tables (four columns), the argument and default columns stay on one line
+   and the description column wraps. Two-column tables wrap both columns. */
+.sl-markdown-content table:has(th:nth-child(3)) td:nth-child(-n + 2) {
 	white-space: nowrap;
 }
 
