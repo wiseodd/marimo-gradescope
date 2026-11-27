@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EventLine",
+  "description": "One event line: the format version and the event.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "description": "Format version, `SCHEMA`.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0,
+      "const": 1
+    }
+  },
+  "required": [
+    "schema"
+  ],
+  "oneOf": [
+    {
+      "description": "Once, after setup and binding: the child is ready, or failed to set up.",
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "loaded"
+        },
+        "error": {
+          "description": "Why setup failed, `None` when it worked.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "unavailable": {
+          "description": "Each name the tests use that the submission could not provide, with why.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "event",
+        "error",
+        "unavailable"
+      ]
+    },
+    {
+      "description": "Before loading a test cell and the hidden helpers it needs.",
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "loading"
+        },
+        "tests": {
+          "description": "The cell's tests that will run.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "event",
+        "tests"
+      ]
+    },
+    {
+      "description": "Before each test.",
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "start"
+        },
+        "test": {
+          "description": "The test.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "test"
+      ]
+    },
+    {
+      "description": "After each test, with the outcome's fields next to `event`.",
+      "type": "object",
+      "properties": {
+        "event": {
+          "type": "string",
+          "const": "result"
+        }
+      },
+      "$ref": "#/$defs/Outcome",
+      "required": [
+        "event"
+      ]
+    }
+  ],
+  "$defs": {
+    "FailureReason": {
+      "description": "Why a test did not pass. The values are `mogs.runner.FailureReason`'s.",
+      "oneOf": [
+        {
+          "description": "An `assert` failed.",
+          "type": "string",
+          "const": "assertion"
+        },
+        {
+          "description": "The test raised another exception.",
+          "type": "string",
+          "const": "error"
+        },
+        {
+          "description": "The test ran past its time limit.",
+          "type": "string",
+          "const": "timeout"
+        },
+        {
+          "description": "The process running the test died.",
+          "type": "string",
+          "const": "killed"
+        },
+        {
+          "description": "The test ran out of memory.",
+          "type": "string",
+          "const": "out_of_memory"
+        },
+        {
+          "description": "The grading run's time budget ran out.",
+          "type": "string",
+          "const": "budget"
+        },
+        {
+          "description": "The test's cell, or what it needs, failed to load.",
+          "type": "string",
+          "const": "load_failed"
+        },
+        {
+          "description": "The test never ran.",
+          "type": "string",
+          "const": "not_run"
+        }
+      ]
+    },
+    "Outcome": {
+      "description": "The result of one test.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Test name.",
+          "type": "string"
+        },
+        "passed": {
+          "description": "Whether the test passed.",
+          "type": "boolean"
+        },
+        "message": {
+          "description": "Failure message, empty when passed.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why the test failed, `None` when passed.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FailureReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seconds": {
+          "description": "Wall time spent in the test.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "name",
+        "passed",
+        "message",
+        "reason",
+        "seconds"
+      ]
+    }
+  }
+}

@@ -1,0 +1,13 @@
+[package]
+name = "mogs-schema"
+description = "The JSON messages between the mogs executable and its Python processes."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+schemars = { version = "1", features = ["preserve_order"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

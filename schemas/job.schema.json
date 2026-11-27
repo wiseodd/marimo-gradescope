@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Job",
+  "description": "What one grading child runs. The parent writes it as JSON to the child's stdin.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "description": "Format version, `SCHEMA`.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0,
+      "const": 1
+    },
+    "bundle": {
+      "description": "The bundle of one phase.",
+      "$ref": "#/$defs/Bundle"
+    },
+    "submission": {
+      "description": "The student's notebook.",
+      "type": "string"
+    },
+    "skip": {
+      "description": "Tests already done, e.g. by an earlier child that died.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "run_failed": {
+      "description": "Why an earlier child died while running the whole notebook. When set, the child does\nnot run it again.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "alarm": {
+      "description": "Whether the child times each test itself with an alarm.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema",
+    "bundle",
+    "submission",
+    "skip",
+    "run_failed",
+    "alarm"
+  ],
+  "$defs": {
+    "Bundle": {
+      "description": "Everything a grading child needs besides the submission.",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "description": "Format version, `SCHEMA`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "const": 1
+        },
+        "config": {
+          "description": "The assignment config the grader needs.",
+          "$ref": "#/$defs/BundleConfig"
+        },
+        "setup_code": {
+          "description": "Body of the notebook's setup cell, run before the test cells.",
+          "type": "string"
+        },
+        "cells": {
+          "description": "Test cells in file order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TestCell"
+          }
+        },
+        "helpers": {
+          "description": "Hidden cells without tests, in file order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HiddenHelper"
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "config",
+        "setup_code",
+        "cells",
+        "helpers"
+      ]
+    },
+    "BundleConfig": {
+      "description": "The assignment config, without the host path of `requirements`.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Assignment name.",
+          "type": "string"
+        },
+        "notebook": {
+          "description": "File name of the source notebook.",
+          "type": "string"
+        },
+        "questions": {
+          "description": "Questions in notebook order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BundleQuestion"
+          }
+        },
+        "files": {
+          "description": "Data files and folders shipped with the notebook, relative to it.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "description": "Seconds per test.",
+          "type": "number",
+          "format": "double"
+        },
+        "budget": {
+          "description": "Seconds for the whole grading run.",
+          "type": "number",
+          "format": "double"
+        },
+        "memory_mb": {
+          "description": "MB per grading process.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "python": {
+          "description": "Python version on Gradescope.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "notebook",
+        "questions",
+        "files",
+        "timeout",
+        "budget",
+        "memory_mb",
+        "python"
+      ]
+    },
+    "BundleQuestion": {
+      "description": "One question of the config.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Question id, e.g. `q1`.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Question title.",
+          "type": "string"
+        },
+        "points": {
+          "description": "Points for the question.",
+          "type": "number",
+          "format": "double"
+        },
+        "manual": {
+          "description": "Whether the question is graded by hand.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "points",
+        "manual"
+      ]
+    },
+    "TestCell": {
+      "description": "One test cell of the source notebook.",
+      "type": "object",
+      "properties": {
+        "qid": {
+          "description": "Question id of the cell's tests.",
+          "type": "string"
+        },
+        "hidden": {
+          "description": "Whether the cell is marked `# HIDDEN`.",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "Cell body, run as a module.",
+          "type": "string"
+        },
+        "tests": {
+          "description": "Test function names, in file order.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "uses": {
+          "description": "Student names the cell refers to, bound from the submission.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "needs": {
+          "description": "Names the cell reads from hidden helpers. Empty for public cells.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "qid",
+        "hidden",
+        "source",
+        "tests",
+        "uses",
+        "needs"
+      ]
+    },
+    "HiddenHelper": {
+      "description": "A `# HIDDEN` cell without tests, such as data or helpers for hidden tests.",
+      "type": "object",
+      "properties": {
+        "source": {
+          "description": "Cell body, run as a module.",
+          "type": "string"
+        },
+        "defines": {
+          "description": "Names the cell binds at top level.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "uses": {
+          "description": "Student names the cell refers to, bound from the submission.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "needs": {
+          "description": "Names the cell reads from other hidden helpers.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "source",
+        "defines",
+        "uses",
+        "needs"
+      ]
+    }
+  }
+}

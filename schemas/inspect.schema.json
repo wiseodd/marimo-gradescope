@@ -1,0 +1,436 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Inspect",
+  "description": "A saved notebook, source or student copy, as the Python notebook functions see it.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "description": "Format version, `SCHEMA`.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0,
+      "const": 1
+    },
+    "source_error": {
+      "description": "Why the notebook does not parse (`SourceError`). `assignment.assignment` lists it as\nthe problem; `export.package` warns that no answer could be read; `selfcheck.main`\nexits with it.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "config_error": {
+      "description": "Why the config calls are invalid (`ConfigError`). `assignment.assignment` lists it as\nthe problem; `check._written_in_source` raises it.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "config": {
+      "description": "The config, `None` when `config_error` is set. `assignment.summary` titles the panel\nwith it.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InspectConfig"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "problems": {
+      "description": "What the build would refuse: `source.validate` and the data-file check\n(`assignment._data_problems`). `assignment.assignment` lists them.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "questions": {
+      "description": "The config's questions in notebook order, empty without a config. `assignment.summary`\nhas a row per question; `check._written_in_source` reads `manual` by id.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/InspectQuestion"
+      }
+    },
+    "answers": {
+      "description": "The answer cells of each question a grade call names, in file order\n(`Notebook.answer_cells`). `export.unanswered_lines` and `export.answers_markdown`\nread them.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Answer"
+      }
+    },
+    "test_files": {
+      "description": "The public test files that grade calls name (`selfcheck.test_files`).\n`check.file_outcomes` and `selfcheck.public_results` run them; `selfcheck` fails the\nunreadable ones.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TestFile"
+      }
+    },
+    "public_job": {
+      "description": "What `selfcheck.public_results` runs: the public phase of the notebook's bundle, then a\npublic cell for each readable test file, in `test_files` order. `None` when\n`source_error` is set.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Bundle"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "source_error",
+    "config_error",
+    "config",
+    "problems",
+    "questions",
+    "answers",
+    "test_files",
+    "public_job"
+  ],
+  "$defs": {
+    "InspectConfig": {
+      "description": "The config fields the notebook functions use.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Assignment name. `assignment.summary` and `assignment._problems` title the panel.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "InspectQuestion": {
+      "description": "One question of the config, with its tests and prompts.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Question id, e.g. `q1`.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Question title, shown by `assignment.summary`.",
+          "type": "string"
+        },
+        "points": {
+          "description": "Points, shown and added up by `assignment.summary`.",
+          "type": "number",
+          "format": "double"
+        },
+        "manual": {
+          "description": "Whether it is graded by hand. `assignment.summary` shows it as written;\n`check._written_in_source` reads it.",
+          "type": "boolean"
+        },
+        "public": {
+          "description": "Public test names in file order (`Notebook.tests_by_question`), counted by\n`assignment.summary`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hidden": {
+          "description": "Hidden test names in file order, counted by `assignment.summary`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "prompts": {
+          "description": "The first line of each prompt cell of a written question (`source.prompt_previews`),\nlisted by `assignment.summary`.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "points",
+        "manual",
+        "public",
+        "hidden",
+        "prompts"
+      ]
+    },
+    "Answer": {
+      "description": "One answer cell of a written question.",
+      "type": "object",
+      "properties": {
+        "qid": {
+          "description": "Question id.",
+          "type": "string"
+        },
+        "cell": {
+          "description": "Cell name, e.g. `answer_q3` or `answer_q3_2`, which `export` looks its placeholder up\nby.",
+          "type": "string"
+        },
+        "text": {
+          "description": "The Markdown of a cell that is just `mo.md(\"...\")`, `None` for other code\n(`source.answer_text`). `export` checks it against the placeholder and writes it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "description": "The cell's lines as written (`source.cell_source`). `export.answers_markdown` shows a\ncode answer, one whose `text` is `None`, as this source.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "qid",
+        "cell",
+        "text",
+        "source"
+      ]
+    },
+    "TestFile": {
+      "description": "A file of public tests that a grade call names as `test_file`.",
+      "type": "object",
+      "properties": {
+        "qid": {
+          "description": "Question id of the grade call.",
+          "type": "string"
+        },
+        "path": {
+          "description": "The path as the grade call gives it, relative to the notebook's folder.",
+          "type": "string"
+        },
+        "tests": {
+          "description": "Test function names in file order (`source.module_tests`), which `check.file_outcomes`\nruns.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "error": {
+          "description": "Why the file cannot be read or parsed, `None` when it can. `check.file_outcomes` shows\nit; `selfcheck.public_results` fails the file with it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "qid",
+        "path",
+        "tests",
+        "error"
+      ]
+    },
+    "Bundle": {
+      "description": "Everything a grading child needs besides the submission.",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "description": "Format version, `SCHEMA`.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "const": 1
+        },
+        "config": {
+          "description": "The assignment config the grader needs.",
+          "$ref": "#/$defs/BundleConfig"
+        },
+        "setup_code": {
+          "description": "Body of the notebook's setup cell, run before the test cells.",
+          "type": "string"
+        },
+        "cells": {
+          "description": "Test cells in file order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TestCell"
+          }
+        },
+        "helpers": {
+          "description": "Hidden cells without tests, in file order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HiddenHelper"
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "config",
+        "setup_code",
+        "cells",
+        "helpers"
+      ]
+    },
+    "BundleConfig": {
+      "description": "The assignment config, without the host path of `requirements`.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Assignment name.",
+          "type": "string"
+        },
+        "notebook": {
+          "description": "File name of the source notebook.",
+          "type": "string"
+        },
+        "questions": {
+          "description": "Questions in notebook order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BundleQuestion"
+          }
+        },
+        "files": {
+          "description": "Data files and folders shipped with the notebook, relative to it.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "description": "Seconds per test.",
+          "type": "number",
+          "format": "double"
+        },
+        "budget": {
+          "description": "Seconds for the whole grading run.",
+          "type": "number",
+          "format": "double"
+        },
+        "memory_mb": {
+          "description": "MB per grading process.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "python": {
+          "description": "Python version on Gradescope.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "notebook",
+        "questions",
+        "files",
+        "timeout",
+        "budget",
+        "memory_mb",
+        "python"
+      ]
+    },
+    "BundleQuestion": {
+      "description": "One question of the config.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Question id, e.g. `q1`.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Question title.",
+          "type": "string"
+        },
+        "points": {
+          "description": "Points for the question.",
+          "type": "number",
+          "format": "double"
+        },
+        "manual": {
+          "description": "Whether the question is graded by hand.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "points",
+        "manual"
+      ]
+    },
+    "TestCell": {
+      "description": "One test cell of the source notebook.",
+      "type": "object",
+      "properties": {
+        "qid": {
+          "description": "Question id of the cell's tests.",
+          "type": "string"
+        },
+        "hidden": {
+          "description": "Whether the cell is marked `# HIDDEN`.",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "Cell body, run as a module.",
+          "type": "string"
+        },
+        "tests": {
+          "description": "Test function names, in file order.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "uses": {
+          "description": "Student names the cell refers to, bound from the submission.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "needs": {
+          "description": "Names the cell reads from hidden helpers. Empty for public cells.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "qid",
+        "hidden",
+        "source",
+        "tests",
+        "uses",
+        "needs"
+      ]
+    },
+    "HiddenHelper": {
+      "description": "A `# HIDDEN` cell without tests, such as data or helpers for hidden tests.",
+      "type": "object",
+      "properties": {
+        "source": {
+          "description": "Cell body, run as a module.",
+          "type": "string"
+        },
+        "defines": {
+          "description": "Names the cell binds at top level.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "uses": {
+          "description": "Student names the cell refers to, bound from the submission.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "needs": {
+          "description": "Names the cell reads from other hidden helpers.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "source",
+        "defines",
+        "uses",
+        "needs"
+      ]
+    }
+  }
+}
