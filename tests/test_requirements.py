@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from mogs._native import STUDENT_USER
 from mogs.config import ConfigError, read_config
-from mogs.grader._user import STUDENT_USER
 from mogs.grader.templates import UV_VERSION, run_autograder_script, setup_script
 from mogs.requirements import RequirementsError, gradescope_requirements
 
@@ -392,11 +392,11 @@ def test_uv_installer_url_exists():
     assert result.stdout == "200"
 
 
-def test_templates_do_not_import_the_sandbox():
+def test_templates_do_not_import_the_grader():
     code = (
         "import sys, mogs.grader.templates\n"
         "assert 'resource' not in sys.modules, 'resource'\n"
-        "assert 'mogs.grader.sandbox' not in sys.modules, 'sandbox'\n"
+        "assert 'mogs.grader.main' not in sys.modules, 'grader'\n"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
 

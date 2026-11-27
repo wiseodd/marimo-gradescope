@@ -1,0 +1,22 @@
+[package]
+name = "mogs-grader"
+description = "The grading supervisor of mogs: starts, watches and kills the Python grading children."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+indexmap = "2"
+mogs-schema = { path = "../mogs-schema" }
+serde_json = "1"
+
+# Grading needs Linux or macOS.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+rustix = { version = "1", features = ["event", "fs", "process", "std"] }
+tempfile = "3"
+
+[dev-dependencies]
+tempfile = "3"

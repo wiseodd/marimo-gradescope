@@ -24,7 +24,6 @@ from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mogs.grader.results import code_block
 from mogs.runner import exception_summary
 from mogs.source import (
     Cell,
@@ -379,7 +378,7 @@ def cell_markdown(nb: Notebook, cell: Cell) -> str:
 
     match answer_text(nb, cell):
         case None:
-            return code_block(cell_source(nb, cell).rstrip())
+            return _code_block(cell_source(nb, cell).rstrip())
         case text:
             return text
 
@@ -569,7 +568,7 @@ def _as_code(text: str, formula: Formula) -> str:
     source = text[formula.start : formula.end]
 
     if formula.display:
-        return f"\n\n{code_block(source)}\n\n"
+        return f"\n\n{_code_block(source)}\n\n"
 
     longest = max((len(run) for run in re.findall(r"`+", source)), default=0)
     fence = "`" * (longest + 1)
@@ -674,3 +673,12 @@ def _plain(cells: tuple[Cell, ...]) -> list[Cell]:
 
 def quiet(message: str) -> None:
     """Status callback that shows nothing."""
+
+
+def _code_block(text: str) -> str:
+    """A fenced code block holding `text` verbatim; the fence outgrows every backtick run."""
+
+    longest = max((len(run) for run in re.findall("`+", text)), default=0)
+    fence = "`" * max(3, longest + 1)
+
+    return f"{fence}\n{text}\n{fence}"

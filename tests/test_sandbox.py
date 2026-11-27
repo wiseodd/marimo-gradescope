@@ -4,32 +4,26 @@ import json
 import logging
 import os
 import pwd
-import resource
 import signal
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from copy import replace
 from pathlib import Path
 
 import pytest
 
+from mogs._native import grade
 from mogs.config import AssignmentConfig, Question
-from mogs.grader import _process, sandbox
-from mogs.grader.bundle import GradingBundle, HiddenHelper, Phase, TestCell
-from mogs.grader.sandbox import grade, run_phase
+from mogs.grader.bundle import GradingBundle, HiddenHelper, TestCell
 from mogs.runner import FailureReason, Outcome
 
-# The sandbox also runs on macOS, but these tests rely on Linux-only limits: the memory bomb
-# fixture needs RLIMIT_AS, and the process cap and `resource` checks are Linux values.
-pytestmark = pytest.mark.skipif(
-    sys.platform != "linux",
-    reason="Linux only: the memory-bomb fixture and the process limits need Linux rlimits",
-)
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="grading needs Linux or macOS")
 
 FIXTURES = Path(__file__).parent / "fixtures"
-OOM = "killed, probably out of memory: raise the Gradescope container memory"
+OUTPUT_LIMIT = 64 * 1024
 
 GOOD = ["test_q1_before", "test_q1_after", "test_q2_other"]
 ALL = ["test_q1_before", "test_q1_bad", "test_q1_after", "test_q2_other"]
@@ -70,14 +64,13 @@ def bundle(*cells: TestCell, **kwargs) -> GradingBundle:
     return GradingBundle(config(**kwargs), "", cells or (cell("q1", Q1), cell("q2", Q2)))
 
 
-def run(
-    tmp_path: Path, submission: Path, grading: GradingBundle, phase: Phase = Phase.PUBLIC
-) -> dict[str, Outcome]:
-    workdir = tmp_path / "work"
-    workdir.mkdir(exist_ok=True)
-    deadline = time.monotonic() + grading.config.budget
+def run(tmp_path: Path, submission: Path, grading: GradingBundle) -> dict[str, Outcome]:
+    """Grade with the public cells of `grading`, as `tmp_path/work/public`."""
 
-    return run_phase(grading, phase, submission, workdir, user=None, deadline=deadline)
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+
+    return grade(grading, submission, workdir, user=None).outcomes
 
 
 def fixture(name: str) -> Path:
@@ -111,7 +104,13 @@ def notebook(tmp_path: Path, body: str, name: str = "submission.py") -> Path:
         ("c_loop", FailureReason.TIMEOUT, "longer than 1 s"),
         ("segfault", FailureReason.KILLED, "SIGSEGV"),
         ("exits", FailureReason.KILLED, "exited with code 3"),
-        ("memory_bomb", FailureReason.OUT_OF_MEMORY, "MemoryError"),
+        pytest.param(
+            "memory_bomb",
+            FailureReason.OUT_OF_MEMORY,
+            "MemoryError",
+            # macOS rejects RLIMIT_AS, so there the bomb would take the machine's memory.
+            marks=pytest.mark.skipif(sys.platform != "linux", reason="needs RLIMIT_AS"),
+        ),
     ],
 )
 def test_misbehaving_test_fails_alone(tmp_path, name, reason, detail):
@@ -135,7 +134,7 @@ def test_stdout_flood_finishes_and_keeps_only_the_tail(tmp_path, caplog):
     [record] = caplog.records
     output = record.args[-1]
     assert output.endswith("x" * 1000 + "\n")
-    assert len(output) == _process.OUTPUT_LIMIT
+    assert len(output) == OUTPUT_LIMIT
 
 
 def test_daemonizer_does_not_hang(tmp_path):
@@ -144,7 +143,7 @@ def test_daemonizer_does_not_hang(tmp_path):
     try:
         results = run(tmp_path, fixture("daemonizer"), bundle())
     finally:
-        pid_file = tmp_path / "work" / "grandchild.pid"
+        pid_file = tmp_path / "work" / "public" / "grandchild.pid"
         if pid_file.exists():
             with contextlib.suppress(ProcessLookupError):
                 os.kill(int(pid_file.read_text(encoding="utf-8")), signal.SIGKILL)
@@ -341,15 +340,27 @@ def test_slow_check_cell_does_not_stall_the_notebook_run(tmp_path):
     assert results["test_q1_double"].passed, results["test_q1_double"]
 
 
-def test_failed_notebook_run_is_not_retried_in_the_hidden_phase(tmp_path, monkeypatch):
-    jobs = []
-    real = sandbox.Child
+def recording_python(tmp_path: Path) -> tuple[Path, Path]:
+    """An interpreter that keeps each job it reads in `jobs/`, then runs as `sys.executable`."""
 
-    def recording(job, options):
-        jobs.append(json.loads(job))
-        return real(job, options)
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+    script = tmp_path / "python"
+    script.write_text(
+        "#!/bin/sh\n"
+        # BSD `wc` pads its count with spaces; `$((...))` drops them.
+        f'job="{jobs}/$(($(ls {jobs} | wc -l))).json"\n'
+        'cat > "$job"\n'
+        f'exec {sys.executable} "$@" < "$job"\n',
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
 
-    monkeypatch.setattr(sandbox, "Child", recording)
+    return script, jobs
+
+
+def test_failed_notebook_run_is_not_retried_in_the_hidden_phase(tmp_path):
+    python, jobs = recording_python(tmp_path)
     path = notebook(tmp_path, "@app.cell\ndef _():\n    import os\n\n    os._exit(3)\n")
     grading = bundle(
         cell("q1", Q1, uses=("add", "nothing_here")),
@@ -358,11 +369,16 @@ def test_failed_notebook_run_is_not_retried_in_the_hidden_phase(tmp_path, monkey
     root = tmp_path / "root"
     root.mkdir()
 
-    results = grade(grading, path, root, user=None).outcomes
+    results = grade(grading, path, root, user=None, python=str(python)).outcomes
 
     assert results["test_q1_before"].passed
     assert "exited with code 3" in results["test_q2_other"].message
-    assert [job["run_failed"] for job in jobs] == [None, "exited with code 3", "exited with code 3"]
+    found = [json.loads((jobs / f"{i}.json").read_text()) for i in range(len(list(jobs.iterdir())))]
+    assert [job["run_failed"] for job in found] == [
+        None,
+        "exited with code 3",
+        "exited with code 3",
+    ]
 
 
 def test_respawns_are_capped(tmp_path):
@@ -500,6 +516,29 @@ def test_grade_rejects_a_symlinked_submission(tmp_path):
         grade(bundle(), link, root, user=None)
 
 
+def test_infinite_budget_means_no_overall_deadline(tmp_path):
+    # `mogs.assignment(budget=1e999)` reads as infinity, which the bundle JSON writes as
+    # `Infinity`.
+    grading = GradingBundle.from_json(bundle(budget=float("inf")).to_json())
+
+    results = run(tmp_path, notebook(tmp_path, "def misbehave():\n    return True\n"), grading)
+
+    assert all(outcome.passed for outcome in results.values()), results
+
+
+def test_infinite_timeout_reaches_the_child(tmp_path):
+    # As in v0.7, the child cannot arm an infinite timer, so each cell fails to load.
+    grading = GradingBundle.from_json(bundle(timeout=float("inf")).to_json())
+
+    results = run(tmp_path, notebook(tmp_path, ""), grading)
+
+    assert list(results) == ALL
+
+    for outcome in results.values():
+        assert outcome.reason is FailureReason.LOAD_FAILED, outcome
+        assert "the test cell failed to load (OverflowError" in outcome.message
+
+
 def test_grade_shares_the_budget(tmp_path):
     slow = "import time\n\ndef test_{qid}_slow():\n    time.sleep({seconds})\n"
     grading = GradingBundle(
@@ -522,62 +561,6 @@ def test_grade_shares_the_budget(tmp_path):
 # Process setup
 
 
-def test_exit_status_messages():
-    assert _process.describe_exit(-signal.SIGKILL) == OOM
-    assert _process.describe_exit(-signal.SIGSEGV) == "killed by signal SIGSEGV"
-    assert _process.describe_exit(3) == "exited with code 3"
-    assert _process.describe_exit(0) == "exited with code 0"
-
-
-def test_limits():
-    memory = 512 * 1024 * 1024
-
-    assert _process.limits(512, None) == [(resource.RLIMIT_AS, memory)]
-    assert _process.limits(512, "grader") == [
-        (resource.RLIMIT_AS, memory),
-        (resource.RLIMIT_NPROC, 512),
-    ]
-
-
-def test_limits_on_macos_have_no_memory_cap(monkeypatch):
-    # macOS rejects RLIMIT_AS in setrlimit.
-    monkeypatch.setattr(_process.sys, "platform", "darwin")
-
-    assert _process.limits(512, None) == []
-    assert _process.limits(512, "grader") == [(resource.RLIMIT_NPROC, 512)]
-
-
-def test_child_environment(tmp_path, monkeypatch):
-    monkeypatch.setenv("PYTEST_CURRENT_TEST", "x")
-    monkeypatch.setenv("MOGS_KEPT", "1")
-
-    env = _process.child_env(tmp_path)
-
-    assert "PYTEST_CURRENT_TEST" not in env
-    assert env["MOGS_KEPT"] == "1"
-    assert env["MPLBACKEND"] == "Agg"
-    assert env["OMP_NUM_THREADS"] == "4"
-    assert env["HOME"] == env["MPLCONFIGDIR"] == str(tmp_path)
-    assert env["PYTHONDONTWRITEBYTECODE"] == "1"
-    assert env["MOGS_GRADING"] == "1"
-
-
-def test_launch_without_user(tmp_path):
-    options = _process.launch_options(tmp_path, None, 1024, "/env/bin/python")
-
-    assert options.cwd == tmp_path
-    assert options.python == "/env/bin/python"
-    assert options.env == _process.child_env(tmp_path)
-    assert options.user is options.group is options.extra_groups is None
-    assert options.limits == _process.limits(1024, None)
-    assert _process.child_command(7, "/env/bin/python") == [
-        "/env/bin/python",
-        "-m",
-        "mogs.grader.child",
-        "7",
-    ]
-
-
 def other_user() -> str:
     """An existing user that is neither root nor the current user."""
 
@@ -588,16 +571,6 @@ def other_user() -> str:
     pytest.skip("no other user on this machine")
 
 
-def test_launch_with_user(tmp_path):
-    user = other_user()
-    options = _process.launch_options(tmp_path, user, 1024, sys.executable)
-
-    assert options.user == user
-    assert options.group == pwd.getpwnam(user).pw_gid
-    assert options.extra_groups == []
-    assert options.limits == _process.limits(1024, user)
-
-
 @pytest.mark.parametrize(
     ("user", "match"),
     [(pwd.getpwuid(0).pw_name, "root"), (getpass.getuser(), "user running the grader")],
@@ -606,51 +579,12 @@ def test_root_and_own_user_are_refused(tmp_path, user, match):
     if os.getuid() == 0 and match != "root":
         pytest.skip("running as root")
 
-    with pytest.raises(ValueError, match=match):
-        _process.launch_options(tmp_path, user, 1024, sys.executable)
-
     root = tmp_path / "root"
     root.mkdir()
     with pytest.raises(ValueError, match=match):
         grade(bundle(), notebook(tmp_path, ""), root, user=user)
 
     assert list(root.iterdir()) == []
-
-
-def test_kill_user_repeats_until_no_process_is_left(monkeypatch):
-    calls = []
-    left = iter([0, 0, 1])
-
-    def run(argv, **kw):
-        calls.append(argv)
-        return subprocess.CompletedProcess(argv, next(left) if argv[0] == "pgrep" else 0)
-
-    monkeypatch.setattr(_process.subprocess, "run", run)
-
-    _process.kill_user("grader")
-
-    assert calls == [["pkill", "-KILL", "-u", "grader"], ["pgrep", "-u", "grader"]] * 3
-
-
-def test_kill_user_gives_up_after_a_few_passes(monkeypatch):
-    calls = []
-
-    def run(argv, **kw):
-        calls.append(argv)
-        return subprocess.CompletedProcess(argv, 0)
-
-    monkeypatch.setattr(_process.subprocess, "run", run)
-
-    _process.kill_user("grader")
-
-    assert len(calls) == 2 * _process.KILL_PASSES
-
-
-def test_limits_never_exceed_the_hard_limit():
-    _, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-
-    assert _process.clamped(resource.RLIMIT_NOFILE, hard + 1) == (hard, hard)
-    assert _process.clamped(resource.RLIMIT_NOFILE, 16) == (16, 16)
 
 
 # Hostile event lines
@@ -681,9 +615,17 @@ def test_q1_after():
 
 
 @pytest.mark.parametrize(
-    "line", ["not json", "[" * 200_000 + "]" * 200_000], ids=["malformed", "nested"]
+    "data",
+    [
+        'b"not json\\n"',
+        'b"[" * 200_000 + b"]" * 200_000 + b"\\n"',
+        'b"\\xff\\xfe not utf-8\\n"',
+        'b"x" * (2 * 1024 * 1024) + b"\\n"',
+        'b"x" * (2 * 1024 * 1024)',
+    ],
+    ids=["malformed", "nested", "not-utf-8", "2-mib-line", "2-mib-unended"],
 )
-def test_bad_event_line_fails_only_the_writer(tmp_path, line):
+def test_bad_event_line_fails_only_the_writer(tmp_path, data):
     source = f"""\
 import os, sys
 
@@ -691,7 +633,7 @@ def test_q1_before():
     assert add(1, 2) == 3
 
 def test_q1_bad():
-    os.write(int(sys.argv[1]), ({line!r} + "\\n").encode())
+    os.write(int(sys.argv[1]), {data})
     import time
     time.sleep(5)
 
@@ -704,44 +646,236 @@ def test_q1_after():
     assert "malformed event" in bad.message
 
 
-# Killing the process group
+# Hostile children
 
 
-def child_of(process: subprocess.Popen[bytes]) -> _process.Child:
-    """A `Child` around `process`, without the grading setup."""
+def hostile(body: str) -> TestCell:
+    """Q1 with `body` as the test `test_q1_bad`."""
 
-    child = object.__new__(_process.Child)
-    child._process = process
-    return child
-
-
-def refuse(pid: int, sig: int) -> None:
-    raise PermissionError(1, "Operation not permitted")
+    source = Q1.replace("    assert misbehave() is True\n", textwrap.indent(body, "    "))
+    return cell("q1", source)
 
 
-def test_kill_group_ignores_eperm_once_the_child_has_ended(tmp_path, monkeypatch):
-    # macOS answers EPERM for a group whose only member is the unreaped (zombie) child.
-    process = subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True)
-    child = child_of(process)
-    os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOWAIT)
-    monkeypatch.setattr(_process.os, "killpg", refuse)
-
-    try:
-        child._kill_group()
-    finally:
-        process.wait()
-
-
-def test_kill_group_raises_eperm_while_the_child_runs(tmp_path, monkeypatch):
-    process = subprocess.Popen(
-        [sys.executable, "-c", "import time; time.sleep(30)"], start_new_session=True
+def test_output_that_is_not_utf8_is_kept(tmp_path, caplog):
+    caplog.set_level(logging.INFO, logger="mogs.grader.sandbox")
+    body = (
+        "import sys\n"
+        "sys.stdout.buffer.write(b'\\xff\\xfe tail')\n"
+        "sys.stdout.flush()\n"
+        "assert False\n"
     )
-    child = child_of(process)
-    monkeypatch.setattr(_process.os, "killpg", refuse)
+
+    results = run(tmp_path, fixture("infinite_loop"), bundle(hostile(body), cell("q2", Q2)))
+
+    assert assert_only_bad_fails(results).reason is FailureReason.ASSERTION
+    [record] = caplog.records
+    assert "\ufffd\ufffd tail" in record.args[-1]
+
+
+def test_child_that_closes_its_event_channel_fails_alone(tmp_path):
+    body = "import os, sys\nos.close(int(sys.argv[1]))\n"
+
+    results = run(tmp_path, fixture("infinite_loop"), bundle(hostile(body), cell("q2", Q2)))
+
+    assert assert_only_bad_fails(results).reason is FailureReason.KILLED
+
+
+def test_child_that_ignores_sigterm_is_killed(tmp_path):
+    body = "import signal\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nwhile True:\n    pass\n"
+
+    start = time.monotonic()
+    results = run(tmp_path, fixture("infinite_loop"), bundle(hostile(body), cell("q2", Q2)))
+
+    assert time.monotonic() - start < 15
+    assert assert_only_bad_fails(results).reason is FailureReason.TIMEOUT
+
+
+def test_processes_a_test_forks_are_killed_with_it(tmp_path):
+    # A bounded fork storm: without a grading user there is no process cap.
+    body = textwrap.dedent(
+        """\
+        import os, time
+        pids = []
+        for _ in range(100):
+            pid = os.fork()
+            if pid == 0:
+                time.sleep(60)
+                os._exit(0)
+            pids.append(pid)
+        with open("forked.txt", "w") as f:
+            f.write(" ".join(map(str, pids)))
+        while True:
+            pass
+        """
+    )
+
+    results = run(tmp_path, fixture("infinite_loop"), bundle(hostile(body), cell("q2", Q2)))
+
+    assert assert_only_bad_fails(results).reason is FailureReason.TIMEOUT
+    pids = [int(pid) for pid in (tmp_path / "work" / "public" / "forked.txt").read_text().split()]
+    assert len(pids) == 100
+
+    # Killed processes vanish once reaped. macOS reaps the orphans through launchd, which can
+    # take a moment, so wait a little before calling a process a survivor.
+    deadline = time.monotonic() + 5
+    alive = pids
+
+    while alive and time.monotonic() < deadline:
+        alive = [pid for pid in alive if exists(pid)]
+        time.sleep(0.1)
+
+    assert alive == []
+
+
+def exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+
+    return True
+
+
+def test_child_gets_no_inherited_descriptors(tmp_path):
+    fd = os.open(tmp_path, os.O_RDONLY)
+    os.set_inheritable(fd, True)
+    body = textwrap.dedent(
+        f"""\
+        import os
+        try:
+            os.fstat({fd})
+        except OSError:
+            pass
+        else:
+            raise AssertionError("descriptor {fd} reached the child")
+        """
+    )
 
     try:
-        with pytest.raises(PermissionError):
-            child._kill_group()
+        results = run(tmp_path, notebook(tmp_path, ""), bundle(hostile(body), cell("q2", Q2)))
+    finally:
+        os.close(fd)
+
+    assert results["test_q1_bad"].passed, results["test_q1_bad"]
+
+
+# Ctrl+C and the GIL
+
+
+def test_ctrl_c_stops_grading_and_kills_the_child(tmp_path):
+    source = textwrap.dedent(
+        """\
+        import os, time
+        from pathlib import Path
+
+        def test_q1_wait():
+            Path("pid").write_text(str(os.getpid()))
+            time.sleep(60)
+        """
+    )
+    grading = GradingBundle(config(timeout=60), "", (cell("q1", source, uses=()),))
+    (tmp_path / "bundle.json").write_text(grading.to_json(), encoding="utf-8")
+    (tmp_path / "work").mkdir()
+    submission = notebook(tmp_path, "")
+    script = textwrap.dedent(
+        f"""\
+        from pathlib import Path
+        from mogs._native import grade
+        from mogs.grader.bundle import GradingBundle
+
+        bundle = GradingBundle.from_json(Path("bundle.json").read_text())
+        grade(bundle, Path({str(submission)!r}), Path.cwd() / "work", user=None)
+        """
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", script], stderr=subprocess.PIPE, text=True, cwd=tmp_path
+    )
+    pid_file = tmp_path / "work" / "public" / "pid"
+
+    try:
+        for _ in range(300):
+            if pid_file.exists() and pid_file.read_text():
+                break
+            time.sleep(0.1)
+
+        child = int(pid_file.read_text())
+        start = time.monotonic()
+        process.send_signal(signal.SIGINT)
+        _, stderr = process.communicate(timeout=10)
     finally:
         process.kill()
-        process.wait()
+
+    assert time.monotonic() - start < 2
+    assert "KeyboardInterrupt" in stderr
+    with pytest.raises(ProcessLookupError):
+        os.kill(child, 0)
+
+
+def test_grading_does_not_hold_the_gil(tmp_path):
+    body = textwrap.dedent(
+        """\
+        import sys, time
+        end = time.monotonic() + 3
+        while time.monotonic() < end:
+            sys.stdout.write("x" * 1000 + "\\n")
+        """
+    )
+    grading = bundle(hostile(body), cell("q2", Q2), timeout=10)
+    finished = []
+    thread = threading.Thread(
+        target=lambda: finished.append(run(tmp_path, fixture("infinite_loop"), grading))
+    )
+    gaps = []
+
+    thread.start()
+    last = time.monotonic()
+
+    while thread.is_alive():
+        time.sleep(0.01)
+        now = time.monotonic()
+        gaps.append(now - last)
+        last = now
+
+    thread.join()
+
+    assert all(outcome.passed for outcome in finished[0].values()), finished
+    assert sum(gaps) > 2.5
+    assert max(gaps) < 0.5
+
+
+# Python values and errors from Rust
+
+
+def test_grade_returns_outcomes_and_load_error(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+
+    graded = grade(bundle(), notebook(tmp_path, ""), root, user=None)
+
+    assert graded.load_error is None
+    assert list(graded.outcomes) == ALL
+    assert all(type(outcome) is Outcome for outcome in graded.outcomes.values())
+    before = graded.outcomes["test_q1_before"]
+    assert before == Outcome("test_q1_before", True, seconds=before.seconds)
+    assert type(graded.outcomes["test_q1_bad"].reason) is FailureReason
+
+
+def test_grade_errors_keep_their_python_class_and_text(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "public").mkdir()
+    missing = tmp_path / "missing.py"
+
+    with pytest.raises(FileNotFoundError) as error:
+        grade(bundle(), missing, root, user=None)
+    assert str(error.value) == f"[Errno 2] No such file or directory: {str(missing)!r}"
+
+    with pytest.raises(FileExistsError) as error:
+        grade(bundle(), notebook(tmp_path, ""), root, user=None)
+    assert str(error.value) == f"[Errno 17] File exists: {str(root / 'public')!r}"
+
+    with pytest.raises(KeyError, match="no-such-mogs-user"):
+        grade(bundle(), notebook(tmp_path, ""), root, user="no-such-mogs-user")
+
+    with pytest.raises(ValueError, match="^data files need a files_root$"):
+        grade(bundle(), notebook(tmp_path, ""), root, user=None, files=["x"])

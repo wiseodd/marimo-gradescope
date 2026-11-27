@@ -32,6 +32,8 @@ from typing import TYPE_CHECKING
 
 from mogs import __version__
 from mogs._env import clean_env
+from mogs._native import build_results
+from mogs._native import data_files as shared_data_files
 from mogs.config import (
     ASSIGNMENT,
     TOOL,
@@ -43,8 +45,6 @@ from mogs.config import (
 )
 from mogs.environment import grading_python
 from mogs.grader.bundle import GradingBundle, bundle_from_notebook
-from mogs.grader.datafiles import data_files as shared_data_files
-from mogs.grader.results import Results, build_results
 from mogs.grader.templates import run_autograder_script, setup_script
 from mogs.requirements import gradescope_requirements
 from mogs.runner import FailureReason, Outcome
@@ -64,7 +64,7 @@ from mogs.transform import (
 )
 
 if TYPE_CHECKING:
-    from mogs.grader.sandbox import Graded
+    from mogs._native import Graded, Results
 
 DIST = "dist"
 # What an `assignment(...)` call looks like in a file that is not valid Python.
@@ -411,7 +411,7 @@ def _build(assignment_dir: Path, tool_requirement: str | None) -> BuildResult:
 def data_files(assignment_dir: Path, cfg: AssignmentConfig) -> dict[PurePosixPath, Path]:
     """The data files to ship, by path relative to the notebook, with folders expanded.
 
-    Uses the sandbox's own checks and junk filter (`grader.datafiles`).
+    Uses the sandbox's own checks and junk filter (`mogs._native.data_files`).
 
     Raises:
         ConfigError: If an entry of `files` is missing, is not inside the notebook's folder, or
@@ -455,7 +455,7 @@ def write_zip(path: Path, entries: Mapping[str, bytes]) -> None:
 @dataclass(frozen=True, slots=True)
 class _Graded:
     outcomes: dict[str, Outcome]
-    results: Results
+    results: "Results"
 
 
 def _self_grade(
@@ -484,7 +484,7 @@ def grade_locally(
     """
 
     # Imported here: the sandbox needs POSIX, and the CLI must start on any platform.
-    from mogs.grader.sandbox import grade
+    from mogs._native import grade
 
     workdir.mkdir()
 
@@ -572,7 +572,7 @@ def marimo_check(notebook: Path, label: str, python: str) -> list[str]:
     return [f"`marimo check` on the {label}:\n{output}"] if output else []
 
 
-def total(results: Results) -> tuple[float, float]:
+def total(results: "Results") -> tuple[float, float]:
     """Score and maximum, summed over the rows of `results`."""
 
     rows = results["tests"]
@@ -580,7 +580,7 @@ def total(results: Results) -> tuple[float, float]:
 
 
 def _scores(
-    cfg: AssignmentConfig, nb: Notebook, solution: Results, blank: Results
+    cfg: AssignmentConfig, nb: Notebook, solution: "Results", blank: "Results"
 ) -> tuple[QuestionScore, ...]:
     ours = {row.get("number"): row["score"] for row in solution["tests"]}
     theirs = {row.get("number"): row["score"] for row in blank["tests"]}

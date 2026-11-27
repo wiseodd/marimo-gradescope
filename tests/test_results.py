@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
+from mogs._native import build_results, failure_results, find_submission
 from mogs.config import AssignmentConfig, Question
 from mogs.grader.bundle import GradingBundle, TestCell
-from mogs.grader.results import build_results, failure_results, find_submission
 from mogs.runner import MAX_BYTES, FailureReason, Outcome
 
 PUBLIC = ("test_q1_a", "test_q1_b")
@@ -46,6 +46,19 @@ def shown_to_students(results) -> list:
 
 
 # build_results
+
+
+def test_infinite_points_show_as_python_does():
+    questions = {"q1": Question("q1", "Addition", float("inf"))}
+    cells = (TestCell("q1", "q1-tests", True, "", PUBLIC, ()),)
+    grading = GradingBundle(AssignmentConfig("A", "hw.py", questions), "", cells)
+    passed = {name: Outcome(name, True) for name in PUBLIC}
+
+    results = build_results(grading, passed, [])
+
+    row = question_row(results, "q1")
+    assert row["score"] == row["max_score"] == float("inf")
+    assert results["output"] == "Total: inf / inf\n\n- Addition: inf / inf"
 
 
 def test_three_of_four_tests_give_three_quarters_of_the_points():
@@ -382,3 +395,12 @@ def test_exact_name_twice_is_ambiguous(tmp_path):
 
     assert found.py is None
     assert "a/hw.py" in (found.error or "")
+
+
+def test_submission_compares_and_shows_like_a_dataclass(tmp_path):
+    touch(tmp_path, "hw.py")
+
+    found = find_submission(tmp_path, "hw.py")
+
+    assert found == find_submission(tmp_path, "hw.py")
+    assert repr(found) == f"Submission(py={tmp_path / 'hw.py'!r}, answers=None, error=None)"

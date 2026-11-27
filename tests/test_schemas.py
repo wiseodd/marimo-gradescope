@@ -9,6 +9,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
+from mogs._native import build_results, failure_results
 from mogs.config import read_config
 from mogs.grader.bundle import GradingBundle, HiddenHelper, Phase, bundle_from_notebook
 from mogs.grader.protocol import (
@@ -21,7 +22,6 @@ from mogs.grader.protocol import (
     decode,
     encode,
 )
-from mogs.grader.results import build_results, failure_results
 from mogs.grader.wire import SCHEMA, check_schema
 from mogs.runner import FailureReason, Outcome
 from mogs.source import parse_notebook

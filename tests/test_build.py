@@ -564,14 +564,14 @@ def test_windows_is_refused(tmp_path, monkeypatch):
         build(folder)
 
 
-def test_cli_does_not_import_the_sandbox():
+def test_cli_does_not_import_the_grader():
     code = "import sys, mogs.cli; print(sorted(sys.modules))"
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
 
     assert result.returncode == 0, result.stderr
-    assert "mogs.build" in result.stdout
-    assert "mogs.grader.sandbox" not in result.stdout
-    assert "mogs.grader._process" not in result.stdout
+    assert "'mogs.build'" in result.stdout
+    assert "'mogs.grader.main'" not in result.stdout
+    assert "'resource'" not in result.stdout
 
 
 def fake_result(dist: Path, **fields) -> BuildResult:
