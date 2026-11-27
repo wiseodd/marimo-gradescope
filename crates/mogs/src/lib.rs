@@ -1,5 +1,6 @@
 //! `mogs._native`: the Rust side of mogs, as a Python extension module.
 
+mod build;
 mod cli;
 mod grader;
 mod pdf;

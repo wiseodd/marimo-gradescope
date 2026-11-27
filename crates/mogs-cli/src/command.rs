@@ -80,6 +80,22 @@ pub enum Command {
         )]
         submission: PathBuf,
     },
+    /// Gradescope's entry point, which `run_autograder` runs: grade the submission and write
+    /// `results.json`, whatever happens. Not in `--help`.
+    #[command(
+        hide = true,
+        about = "Gradescope entry point: grade /autograder/submission and write results.json."
+    )]
+    Autograde {
+        #[arg(long, default_value = "/autograder/source")]
+        source: PathBuf,
+        #[arg(long, default_value = "/autograder/submission")]
+        submission: PathBuf,
+        #[arg(long, default_value = "/autograder/results/results.json")]
+        results: PathBuf,
+        #[arg(long, default_value = "/tmp/mogs")]
+        workdir: PathBuf,
+    },
 }
 
 /// What to show instead of running a command: help, the version or a usage error.
@@ -182,7 +198,11 @@ mod tests {
         ];
 
         let cli = Cli::command();
-        let commands: Vec<Vec<String>> = cli.get_subcommands().map(shown).collect();
+        let commands: Vec<Vec<String>> = cli
+            .get_subcommands()
+            .filter(|command| !command.is_hide_set())
+            .map(shown)
+            .collect();
 
         assert_eq!(commands, expected);
         assert_eq!(
@@ -214,6 +234,50 @@ mod tests {
                 submission: "sub.zip".into()
             })
         );
+    }
+
+    #[test]
+    fn autograde_defaults_to_gradescope_paths() {
+        assert_eq!(
+            parsed(&["autograde"]),
+            Ok(Command::Autograde {
+                source: "/autograder/source".into(),
+                submission: "/autograder/submission".into(),
+                results: "/autograder/results/results.json".into(),
+                workdir: "/tmp/mogs".into(),
+            })
+        );
+        assert_eq!(
+            parsed(&[
+                "autograde",
+                "--source",
+                "s",
+                "--submission",
+                "u",
+                "--results",
+                "r.json",
+                "--workdir",
+                "w",
+            ]),
+            Ok(Command::Autograde {
+                source: "s".into(),
+                submission: "u".into(),
+                results: "r.json".into(),
+                workdir: "w".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn autograde_is_hidden() {
+        let cli = Cli::command();
+        let hidden: Vec<&str> = cli
+            .get_subcommands()
+            .filter(|command| command.is_hide_set())
+            .map(clap::Command::get_name)
+            .collect();
+
+        assert_eq!(hidden, ["autograde"]);
     }
 
     #[test]

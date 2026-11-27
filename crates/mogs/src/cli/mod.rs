@@ -1,15 +1,16 @@
 //! The `mogs` command line (`mogs-cli`) as `_native.main`.
 //!
 //! Only glue: argv goes to clap, `init` runs in Rust with Python's text, checks and file
-//! operations, `edit` starts marimo through `subprocess`, and `build` and `grade` run their
-//! Python handlers in `mogs.cli`. Output goes through Python's `print`, so it lands in
-//! `sys.stdout` and `sys.stderr` in order with Python's own.
+//! operations, `edit` starts marimo through `subprocess`, `build` and `grade` run in Rust
+//! (`crate::build`), and the hidden `autograde` runs the grader. Output goes through Python's
+//! `print`, so it lands in `sys.stdout` and `sys.stderr` in order with Python's own.
 
 mod edit;
 mod interpreter;
 mod scaffold;
 
 use std::ffi::OsString;
+use std::path::PathBuf;
 
 use mogs_cli::Command;
 use pyo3::prelude::*;
@@ -37,19 +38,48 @@ pub fn main(py: Python<'_>, argv: Option<Vec<OsString>>) -> PyResult<i64> {
     match command {
         Command::Init { dir } => scaffold::init(py, &dir),
         Command::Edit { path } => edit::edit(py, &path),
-        Command::Build { dir } => py
-            .import("mogs.cli")?
-            .call_method1("build_command", (dir,))?
-            .extract(),
-        Command::Grade { dir, submission } => py
-            .import("mogs.cli")?
-            .call_method1("grade_command", (dir, submission))?
-            .extract(),
+        Command::Build { dir } => crate::build::build(py, &dir),
+        Command::Grade { dir, submission } => crate::build::grade(py, &dir, &submission),
+        Command::Autograde {
+            source,
+            submission,
+            results,
+            workdir,
+        } => autograde(py, [source, submission, results, workdir]),
     }
 }
 
+/// Grade the submission and write `results.json`, whatever happens, with logs on stderr.
+///
+/// Exit code 0, since Gradescope treats any other as a crash and shows no results.
+#[cfg(unix)]
+fn autograde(py: Python<'_>, paths: [PathBuf; 4]) -> PyResult<i64> {
+    let [source, submission, results, workdir] = paths;
+    let logging = py.import("logging")?;
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("level", logging.getattr("INFO")?)?;
+    kwargs.set_item("stream", py.import("sys")?.getattr("stderr")?)?;
+    logging.call_method("basicConfig", (), Some(&kwargs))?;
+
+    crate::grader::autograde::autograde(py, source, submission, results, workdir)?;
+
+    Ok(0)
+}
+
+#[cfg(not(unix))]
+fn autograde(py: Python<'_>, _paths: [PathBuf; 4]) -> PyResult<i64> {
+    let message = PyString::new(py, "Grading needs Linux or macOS (WSL on Windows).");
+
+    fail(py, "Grading", message)
+}
+
 /// `print(text, file=sys.stderr if to_stderr else sys.stdout, end=end)`.
-fn print(py: Python<'_>, text: Bound<'_, PyString>, to_stderr: bool, end: &str) -> PyResult<()> {
+pub(crate) fn print(
+    py: Python<'_>,
+    text: Bound<'_, PyString>,
+    to_stderr: bool,
+    end: &str,
+) -> PyResult<()> {
     let sys = py.import("sys")?;
     let file = if to_stderr {
         sys.getattr("stderr")?
@@ -67,7 +97,7 @@ fn print(py: Python<'_>, text: Bound<'_, PyString>, to_stderr: bool, end: &str) 
 }
 
 /// Print `<what> failed.` and `message` on stderr, and give exit code 1.
-fn fail(py: Python<'_>, what: &str, message: Bound<'_, PyString>) -> PyResult<i64> {
+pub(crate) fn fail(py: Python<'_>, what: &str, message: Bound<'_, PyString>) -> PyResult<i64> {
     let text = PyString::new(py, &format!("{what} failed.\n"))
         .add(message)?
         .cast_into::<PyString>()?;
@@ -77,7 +107,12 @@ fn fail(py: Python<'_>, what: &str, message: Bound<'_, PyString>) -> PyResult<i6
 }
 
 /// Whether `error` is an instance of the class `name` in `module`.
-fn is_instance(py: Python<'_>, error: &PyErr, module: &str, name: &str) -> PyResult<bool> {
+pub(crate) fn is_instance(
+    py: Python<'_>,
+    error: &PyErr,
+    module: &str,
+    name: &str,
+) -> PyResult<bool> {
     let class = py.import(module)?.getattr(name)?;
 
     error.value(py).is_instance(&class)

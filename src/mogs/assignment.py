@@ -147,7 +147,7 @@ def _problems(name: str, problems: list[str], path: Path) -> str:
 def _data_problems(path: Path, cfg: AssignmentConfig) -> list[str]:
     """The build's complaint about the data files, if any."""
 
-    from mogs.build import data_files
+    from mogs._analysis import data_files
 
     try:
         data_files(path.parent, cfg)

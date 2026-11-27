@@ -13,14 +13,14 @@ use super::{fail, is_instance};
 ///
 /// marimo runs on this package's Python, which has pytest. The editor server compiles the
 /// test cells there, and without pytest it logs a warning for each of them. A `BuildError`
-/// from `mogs.build.source_notebook`, or an `OSError` from it or from starting marimo, fails
+/// from `mogs._analysis.source_notebook`, or an `OSError` from it or from starting marimo, fails
 /// the command with exit code 1.
 pub(super) fn edit(py: Python<'_>, path: &Path) -> PyResult<i64> {
     let marimo = match start(py, path) {
         Ok(marimo) => marimo,
         Err(error)
             if error.is_instance_of::<PyOSError>(py)
-                || is_instance(py, &error, "mogs.build", "BuildError")? =>
+                || is_instance(py, &error, "mogs._analysis", "BuildError")? =>
         {
             return fail(py, "Edit", error.value(py).str()?);
         }
@@ -41,7 +41,7 @@ pub(super) fn edit(py: Python<'_>, path: &Path) -> PyResult<i64> {
 /// `subprocess.Popen([sys.executable, "-m", "marimo", "edit", "--sandbox", str(notebook)])`.
 fn start<'py>(py: Python<'py>, path: &Path) -> PyResult<Bound<'py, PyAny>> {
     let notebook = py
-        .import("mogs.build")?
+        .import("mogs._analysis")?
         .call_method1("source_notebook", (path,))?
         .str()?;
     let python = py.import("sys")?.getattr("executable")?;

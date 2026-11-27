@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import sys
 import sysconfig
@@ -7,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from mogs._analysis import read_assignment
 from mogs._native import main
-from mogs.build import build, read_assignment
 from mogs.source import CellKind
 
 SCRIPT = Path(sysconfig.get_path("scripts")) / ("mogs.exe" if os.name == "nt" else "mogs")
@@ -281,8 +282,9 @@ def test_cli_init_shows_paths_as_python_does(tmp_path, monkeypatch, capsys):
 def test_init_notebook_builds(tmp_path, capsys):
     init(tmp_path / "A12", capsys)
 
-    result = build(tmp_path / "A12")
+    code = main(["build", str(tmp_path / "A12")])
+    out = capsys.readouterr().out
 
-    assert result.solution == (4, 4)
-    assert result.blank == (0, 4)
-    assert result.warnings == []
+    assert code == 0
+    assert re.search(r"^Total +4/4 +0/4$", out, re.MULTILINE), out
+    assert "Warnings:" not in out

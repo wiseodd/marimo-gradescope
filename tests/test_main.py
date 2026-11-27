@@ -8,15 +8,17 @@ from pathlib import Path
 
 import pytest
 
+from mogs._native import main
 from mogs.config import read_config
 from mogs.grader.bundle import bundle_from_notebook
-from mogs.grader.main import main
 from mogs.source import parse_notebook
 
 pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="the grader is Linux only")
 
 SOLUTION = Path(__file__).parent / "fixtures" / "solution.py"
 HIDDEN = ["test_q1_add_large", "test_q2_upper", "test_q2_empty"]
+# The `mogs` command of this environment, which `run_autograder` runs on Gradescope.
+MOGS = Path(sys.executable).with_name("mogs")
 
 
 class Paths:
@@ -55,7 +57,7 @@ class Paths:
             path.write_text(content, encoding="utf-8")
 
     def run(self) -> dict:
-        main(self.argv())
+        assert main(["autograde", *self.argv()]) == 0
         return json.loads(self.results.read_text(encoding="utf-8"))
 
 
@@ -185,9 +187,7 @@ def test_hostile_submission_still_writes_results_and_exits_0(paths):
     )
     paths.add("solution.pdf", "%PDF")
 
-    result = subprocess.run(
-        [sys.executable, "-m", "mogs.grader.main", *paths.argv()], capture_output=True
-    )
+    result = subprocess.run([MOGS, "autograde", *paths.argv()], capture_output=True)
 
     assert result.returncode == 0, result.stderr
     results = json.loads(paths.results.read_text(encoding="utf-8"))
@@ -201,7 +201,7 @@ def test_workdir_that_is_not_utf8_still_writes_results_and_exits_0(paths, tmp_pa
     workdir = os.fsdecode(bytes(tmp_path) + b"/work-\xff")
     argv = [*paths.argv()[:-1], workdir]
 
-    result = subprocess.run([sys.executable, "-m", "mogs.grader.main", *argv], capture_output=True)
+    result = subprocess.run([MOGS, "autograde", *argv], capture_output=True)
 
     assert result.returncode == 0, result.stderr
     results = json.loads(paths.results.read_text(encoding="utf-8"))

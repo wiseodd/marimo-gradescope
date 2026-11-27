@@ -91,8 +91,9 @@ cache-keys = [
   # The Typst template and the vendored Typst packages are compiled into the module.
   { file = "crates/**/*.typ" },
   { file = "crates/mogs-pdf/typst/**/*" },
-  # So is the notebook template of `mogs init`.
+  # So are the notebook template of `mogs init` and Gradescope's scripts.
   { file = "crates/mogs-cli/templates/*" },
+  { file = "crates/mogs-build/templates/*" },
   { file = "crates/**/Cargo.toml" },
 ]
 # The lockfile must install on every CI platform: Linux, macOS and Windows.

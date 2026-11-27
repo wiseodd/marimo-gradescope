@@ -5,9 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from mogs._native import STUDENT_USER
 from mogs.config import ConfigError, read_config
-from mogs.grader.templates import UV_VERSION, run_autograder_script, setup_script
 from mogs.requirements import RequirementsError, gradescope_requirements
 
 REPO = Path(__file__).parent.parent
@@ -338,92 +336,8 @@ def test_tool_requirement_must_name_the_tool(tmp_path):
         gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), "numpy==1.0")
 
 
-# Templates
-
-
-def bash_check(script: str, tmp_path: Path) -> None:
-    path = tmp_path / "script.sh"
-    path.write_text(script, encoding="utf-8")
-    result = subprocess.run(["bash", "-n", str(path)], capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
-
-    shellcheck = shutil.which("shellcheck")
-    if shellcheck is not None:
-        result = subprocess.run([shellcheck, str(path)], capture_output=True, text=True)
-        assert result.returncode == 0, result.stdout
-
-
-def test_setup_script(tmp_path):
-    cfg = config(with_python(OVERRIDE, "3.12"), tmp_path)
-    assert cfg.python == "3.12"
-
-    script = setup_script(cfg)
-
-    assert script.startswith("#!/usr/bin/env bash\n")
-    assert "set -euo pipefail" in script
-    assert "command -v curl >/dev/null || { apt-get update && apt-get install -y curl " in script
-    assert script.index("command -v curl") < script.index("astral.sh")
-    assert "command -v pkill >/dev/null || { apt-get update && apt-get install -y procps; }" in (
-        script
-    )
-    assert f"https://astral.sh/uv/{UV_VERSION}/install.sh" in script
-    assert "UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1" in script
-    assert "UV_PYTHON_INSTALL_DIR=/opt/mogs-python" in script
-    assert "uv venv --managed-python --python 3.12 /opt/mogs-venv" in script
-    assert "--index-strategy unsafe-best-match" in script
-    assert "--compile-bytecode" in script
-    assert f"useradd --system --no-create-home --shell /usr/sbin/nologin {STUDENT_USER}" in script
-    assert "chmod -R a+rX /opt/mogs-python /opt/mogs-venv" in script
-    assert "chmod -R go-rwx /autograder/source" in script
-    sanity = 'python -c "import mogs, marimo"'
-    assert script.rstrip().endswith(f"runuser -u {STUDENT_USER} -- /opt/mogs-venv/bin/{sanity}")
-    assert "${" not in script
-    bash_check(script, tmp_path)
-
-
-@pytest.mark.network
-def test_uv_installer_url_exists():
-    # curl, as in setup.sh; the CDN refuses urllib's default user agent.
-    url = f"https://astral.sh/uv/{UV_VERSION}/install.sh"
-    command = ["curl", "-fsSLI", "-o", "/dev/null", "-w", "%{http_code}", url]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout == "200"
-
-
-def test_templates_do_not_import_the_grader():
-    code = (
-        "import sys, mogs.grader.templates\n"
-        "assert 'resource' not in sys.modules, 'resource'\n"
-        "assert 'mogs.grader.main' not in sys.modules, 'grader'\n"
-    )
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
-
-    assert result.returncode == 0, result.stderr
-
-
-@pytest.mark.parametrize("python", ["3.13; rm -rf /", "latest", "3", ""])
-def test_setup_script_rejects_bad_python(python, tmp_path):
-    cfg = config(with_python(OVERRIDE, python), tmp_path)
-
-    with pytest.raises(ConfigError, match="python"):
-        setup_script(cfg)
-
-
-def test_run_autograder_script(tmp_path):
-    script = run_autograder_script()
-
-    assert script == (
-        "#!/usr/bin/env bash\n"
-        "set -euo pipefail\n"
-        "exec /opt/mogs-venv/bin/python -m mogs.grader.main\n"
-    )
-    bash_check(script, tmp_path)
-
-
 @pytest.mark.slow
-def test_wheel_ships_templates_and_typst_licenses(tmp_path):
+def test_wheel_ships_typst_licenses(tmp_path):
     uv = shutil.which("uv")
     assert uv is not None
 
@@ -436,8 +350,8 @@ def test_wheel_ships_templates_and_typst_licenses(tmp_path):
         check=True,
     ).stdout
 
-    assert "mogs/grader/templates/setup.sh" in names
-    assert "mogs/grader/templates/run_autograder" in names
+    # The templates of `setup.sh` and `run_autograder` are in the extension module.
+    assert "templates/" not in names
 
     # The Typst packages the PDF of written answers needs are in the extension module; their
     # licenses ship with the wheel's metadata.

@@ -122,33 +122,41 @@ pub fn failure_results<'py>(
 }
 
 /// A `mogs.grader.bundle.GradingBundle` as the Rust type, through its JSON.
-///
-/// The config's numbers come from the Python objects: the config accepts infinity (such as
-/// `budget=1e999`), which Python's JSON writes as `Infinity` and serde_json rejects.
 pub(crate) fn bundle_from_py(bundle: &Bound<'_, PyAny>) -> PyResult<Bundle> {
-    let config = bundle.getattr("config")?;
-    let data = bundle.call_method0("to_dict")?;
-    let data_config = data.get_item("config")?;
-    data_config.set_item("timeout", 0.0)?;
-    data_config.set_item("budget", 0.0)?;
+    bundle_from_dict(&bundle.call_method0("to_dict")?)
+}
 
-    for question in data_config.get_item("questions")?.try_iter()? {
-        question?.set_item("points", 0.0)?;
+/// The fields of a bundle, as `GradingBundle.to_dict` gives them, as the Rust type. It sets
+/// the numbers of `data` to 0.
+///
+/// The numbers go around JSON: the config accepts infinity (such as `budget=1e999`), which
+/// Python's JSON writes as `Infinity` and serde_json rejects.
+pub(crate) fn bundle_from_dict(data: &Bound<'_, PyAny>) -> PyResult<Bundle> {
+    let config = data.get_item("config")?;
+    let timeout: f64 = config.get_item("timeout")?.extract()?;
+    let budget: f64 = config.get_item("budget")?.extract()?;
+    let mut points: Vec<f64> = Vec::new();
+    config.set_item("timeout", 0.0)?;
+    config.set_item("budget", 0.0)?;
+
+    for question in config.get_item("questions")?.try_iter()? {
+        let question = question?;
+        points.push(question.get_item("points")?.extract()?);
+        question.set_item("points", 0.0)?;
     }
 
-    let text: String = bundle
+    let text: String = data
         .py()
         .import("json")?
-        .call_method1("dumps", (&data,))?
+        .call_method1("dumps", (data,))?
         .extract()?;
     let mut read: Bundle =
         mogs_schema::decode(&text).map_err(|error| PyValueError::new_err(error.to_string()))?;
-    read.config.timeout = config.getattr("timeout")?.extract()?;
-    read.config.budget = config.getattr("budget")?.extract()?;
-    let questions = config.getattr("questions")?.call_method0("values")?;
+    read.config.timeout = timeout;
+    read.config.budget = budget;
 
-    for (question, source) in read.config.questions.iter_mut().zip(questions.try_iter()?) {
-        question.points = source?.getattr("points")?.extract()?;
+    for (question, points) in read.config.questions.iter_mut().zip(points) {
+        question.points = points;
     }
 
     Ok(read)
