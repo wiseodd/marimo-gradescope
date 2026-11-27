@@ -7,3 +7,7 @@ version = "0.7.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/wiseodd/mogs"
+
+# Release wheels drop the symbols, most of the extension's size. Dev builds keep them.
+[profile.release]
+strip = true
