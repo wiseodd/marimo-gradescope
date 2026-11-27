@@ -1,5 +1,6 @@
 //! `mogs init`: a new assignment folder with a notebook to start from.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use crate::Interpreter;
@@ -13,8 +14,8 @@ const NOTEBOOK: &str = include_str!("../templates/notebook.py.tmpl");
 pub struct Created {
     /// The notebook, `<folder>/<name>.py`, as Python shows it.
     pub notebook: PathBuf,
-    /// The folder, quoted for a shell.
-    pub quoted: String,
+    /// The folder, as Python shows it.
+    pub folder: PathBuf,
 }
 
 /// Why `init` failed.
@@ -81,21 +82,19 @@ pub fn init<P: Interpreter>(folder: &Path, python: &P) -> Result<Created, InitEr
 
     python.make_folder(&folder).map_err(InitError::Python)?;
 
-    let notebook = python
-        .path(&folder.join(format!("{name}.py")))
-        .map_err(InitError::Python)?;
+    let mut file = name.clone();
+    file.push(".py");
+    let notebook = python.path(&folder.join(file)).map_err(InitError::Python)?;
     let name = python.literal(&name).map_err(InitError::Python)?;
     let marimo = python
         .marimo_version()
-        .and_then(|version| python.literal(&version))
+        .and_then(|version| python.literal(OsStr::new(&version)))
         .map_err(InitError::Python)?;
     python
         .write_text(&notebook, &render(&name, &marimo))
         .map_err(InitError::Python)?;
 
-    let quoted = python.quote(&folder).map_err(InitError::Python)?;
-
-    Ok(Created { notebook, quoted })
+    Ok(Created { notebook, folder })
 }
 
 /// The notebook text for the Python literals `name` and `marimo`.
@@ -110,6 +109,7 @@ fn render(name: &str, marimo: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
     use std::fs;
 
     use super::*;
@@ -131,22 +131,18 @@ mod tests {
     impl Interpreter for FakePython {
         type Error = String;
 
-        fn check_name(&self, folder: &Path) -> Result<String, String> {
-            let name = folder.file_name().and_then(|name| name.to_str()).unwrap();
+        fn check_name(&self, folder: &Path) -> Result<OsString, String> {
+            let name = folder.file_name().unwrap();
 
-            if name.starts_with('-') {
-                return Err(format!("bad name {name}"));
+            if name.as_encoded_bytes().starts_with(b"-") {
+                return Err(format!("bad name {}", name.display()));
             }
 
             Ok(name.to_owned())
         }
 
-        fn literal(&self, text: &str) -> Result<String, String> {
-            Ok(format!("<{text}>"))
-        }
-
-        fn quote(&self, path: &Path) -> Result<String, String> {
-            Ok(format!("'{}'", path.display()))
+        fn literal(&self, text: &OsStr) -> Result<String, String> {
+            Ok(format!("<{}>", text.display()))
         }
 
         fn path(&self, path: &Path) -> Result<PathBuf, String> {
@@ -220,12 +216,29 @@ mod tests {
             created,
             Created {
                 notebook: folder.join("hw.py"),
-                quoted: format!("'{}'", folder.display()),
+                folder: folder.clone(),
             }
         );
         let text = fs::read_to_string(&created.notebook).unwrap();
         assert!(text.contains("__generated_with = <0.99>\n"));
         assert!(text.contains("mogs.assignment(name=<hw>)\n"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keeps_a_name_that_is_not_utf_8() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join(OsStr::from_bytes(b"h\xffw"));
+
+        let created = init(&folder, &FakePython).unwrap();
+
+        assert_eq!(
+            created.notebook,
+            folder.join(OsStr::from_bytes(b"h\xffw.py"))
+        );
+        assert!(created.notebook.is_file());
     }
 
     #[test]

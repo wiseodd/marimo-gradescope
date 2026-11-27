@@ -8,6 +8,7 @@
 mod command;
 pub mod scaffold;
 
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 pub use command::{Cli, Command, Exit, parse};
@@ -20,24 +21,19 @@ pub trait Interpreter {
     /// A Python exception.
     type Error;
 
-    /// `mogs.config.check_name(Path(folder).resolve().name)`.
+    /// `mogs.config.check_name(Path(folder).resolve().name)`, as a file name: it may hold bytes
+    /// that are not UTF-8.
     ///
     /// # Errors
     ///
     /// The `ConfigError` that names the rule the name breaks.
-    fn check_name(&self, folder: &Path) -> Result<String, Self::Error>;
-    /// `mogs.transform.python_literal(text)`.
+    fn check_name(&self, folder: &Path) -> Result<OsString, Self::Error>;
+    /// `mogs.transform.python_literal(text)`, which escapes what is not printable.
     ///
     /// # Errors
     ///
     /// Any Python exception.
-    fn literal(&self, text: &str) -> Result<String, Self::Error>;
-    /// `shlex.quote(str(path))`.
-    ///
-    /// # Errors
-    ///
-    /// Any Python exception.
-    fn quote(&self, path: &Path) -> Result<String, Self::Error>;
+    fn literal(&self, text: &OsStr) -> Result<String, Self::Error>;
     /// `pathlib.Path(path)`, which shows `./a/` as `a`.
     ///
     /// # Errors

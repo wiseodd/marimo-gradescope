@@ -1,5 +1,6 @@
 //! Python's text, checks and file operations for `mogs-cli`.
 
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 use mogs_cli::Interpreter;
@@ -24,7 +25,7 @@ impl<'py> PyInterpreter<'py> {
 impl Interpreter for PyInterpreter<'_> {
     type Error = PyErr;
 
-    fn check_name(&self, folder: &Path) -> PyResult<String> {
+    fn check_name(&self, folder: &Path) -> PyResult<OsString> {
         let name = self
             .pathlib(folder)?
             .call_method0("resolve")?
@@ -36,17 +37,10 @@ impl Interpreter for PyInterpreter<'_> {
             .extract()
     }
 
-    fn literal(&self, text: &str) -> PyResult<String> {
+    fn literal(&self, text: &OsStr) -> PyResult<String> {
         self.py
             .import("mogs.transform")?
             .call_method1("python_literal", (text,))?
-            .extract()
-    }
-
-    fn quote(&self, path: &Path) -> PyResult<String> {
-        self.py
-            .import("shlex")?
-            .call_method1("quote", (path.as_os_str(),))?
             .extract()
     }
 

@@ -35,15 +35,21 @@ pub(super) fn init(py: Python<'_>, folder: &Path) -> PyResult<i64> {
     fail(py, "Init", error)
 }
 
+/// Print the notebook and the commands to edit and build it.
+///
+/// The paths stay Python strings until printed, so bytes that are not UTF-8 show as in v0.7.
 fn next_steps(py: Python<'_>, created: &Created) -> PyResult<()> {
     let notebook = created.notebook.as_path().into_pyobject(py)?.str()?;
-    let lines = [
-        PyString::new(py, "Created ").add(notebook)?.cast_into()?,
-        PyString::new(py, &format!("Edit it  : mogs edit {}", created.quoted)),
-        PyString::new(py, &format!("Build it : mogs build {}", created.quoted)),
-    ];
+    let quoted = py
+        .import("shlex")?
+        .call_method1("quote", (created.folder.as_os_str(),))?;
 
-    for line in lines {
+    for (lead, path) in [
+        ("Created ", notebook.into_any()),
+        ("Edit it  : mogs edit ", quoted.clone()),
+        ("Build it : mogs build ", quoted),
+    ] {
+        let line = PyString::new(py, lead).add(path)?.cast_into()?;
         print(py, line, false, "\n")?;
     }
 

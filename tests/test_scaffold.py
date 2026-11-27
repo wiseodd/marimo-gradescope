@@ -1,4 +1,7 @@
 import os
+import subprocess
+import sys
+import sysconfig
 from importlib.metadata import version
 from pathlib import Path
 
@@ -7,6 +10,8 @@ import pytest
 from mogs._native import main
 from mogs.build import build, read_assignment
 from mogs.source import CellKind
+
+SCRIPT = Path(sysconfig.get_path("scripts")) / ("mogs.exe" if os.name == "nt" else "mogs")
 
 
 def init(folder: Path, capsys: pytest.CaptureFixture[str]) -> Path:
@@ -232,6 +237,30 @@ def test_cli_init_says_what_to_do_next(tmp_path, monkeypatch, capsys):
         "Edit it  : mogs edit A12",
         "Build it : mogs build A12",
     ]
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="needs a file system of bytes")
+@pytest.mark.parametrize("folder", [b"p\xff/hw", b"h\xffw"])
+def test_cli_init_keeps_bytes_that_are_not_utf_8(folder, tmp_path):
+    try:
+        os.mkdir(bytes(tmp_path) + b"/\xff")
+    except OSError as error:
+        pytest.skip(f"the file system refuses the name: {error}")
+
+    name = folder.rsplit(b"/", 1)[-1]
+    env = dict(os.environ, PYTHONIOENCODING="utf-8:surrogateescape")
+
+    result = subprocess.run(
+        [SCRIPT, "init", os.fsdecode(folder)], cwd=tmp_path, env=env, capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        b"Created " + folder + b"/" + name + b".py",
+        b"Edit it  : mogs edit '" + folder + b"'",
+        b"Build it : mogs build '" + folder + b"'",
+    ]
+    assert os.path.isfile(bytes(tmp_path) + b"/" + folder + b"/" + name + b".py")
 
 
 def test_cli_init_shows_paths_as_python_does(tmp_path, monkeypatch, capsys):
