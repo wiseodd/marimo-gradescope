@@ -1,4 +1,4 @@
-//! The JSON messages between the `mogs` executable and its Python processes.
+//! The JSON messages between the Rust side of mogs and its Python processes.
 //!
 //! These types are the source of truth: the JSON Schemas in the repo's `schemas/` folder are
 //! generated from them (see [`schemas`]). Every message except [`Results`] carries `"schema"`,

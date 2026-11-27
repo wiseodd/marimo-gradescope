@@ -451,7 +451,8 @@ def build_context(context: Path, archive: Path) -> None:
 def build_wheel(out: Path) -> Path:
     """Build a wheel of this checkout into `out` for the base image's Ubuntu on x86_64.
 
-    maturin cross-compiles the `mogs` executable with zig, so this works from any host.
+    maturin cross-compiles the abi3 extension `mogs._native` with zig, so this works from any
+    host without a Python of the target.
     """
 
     uv = shutil.which("uv")

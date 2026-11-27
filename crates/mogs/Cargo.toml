@@ -7,11 +7,13 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
+# The extension module `mogs._native`, which maturin builds into the wheel.
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+# The Python tests cover the module. A Rust test binary would need libpython to run.
+test = false
+doctest = false
+
 [dependencies]
-dunce = "1"
-
-[dev-dependencies]
-tempfile = "3"
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+pyo3 = { version = "0.30", features = ["abi3-py313"] }

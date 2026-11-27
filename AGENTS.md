@@ -16,15 +16,13 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   vendored for the PDF of written answers (`pdf.py`). They need the Typst
   version the `pdf` extra pins (`typst>=0.15,<0.16`): bump the pin and the
   vendored versions together.
-- `crates/mogs/`: the `mogs` executable, in Rust. It runs
-  `python -P -m mogs.cli` with the interpreter in its own folder, found after
-  resolving symlinks. On Windows it then tries the folder above `Scripts`,
-  where a global `pip install` puts `python.exe`. Last comes
-  `$(uv tool dir)/mogs`, because uv copies tool executables on Windows.
-  maturin builds it into platform wheels together with
-  `src/mogs/`. The version is `[workspace.package] version` in `Cargo.toml`.
-  `src/mogs/_binary.py` finds and runs the installed executable.
-- `crates/mogs-schema/`: the JSON messages between the `mogs` executable and
+- `crates/mogs/`: the extension module `mogs._native`, in Rust (PyO3, abi3
+  for Python 3.13 and newer). The `mogs` command is the console script
+  `mogs._native:main`, which for now runs `mogs.cli.main()`. maturin builds
+  it into one wheel per platform together with `src/mogs/`, and
+  `src/mogs/_native.pyi` types it. The version is `[workspace.package] version`
+  in `Cargo.toml`.
+- `crates/mogs-schema/`: the JSON messages between Rust and
   Python (job, events, bundle, inspect, `results.json`) as Rust types. Every
   message but `results.json` has `"schema": 1`: bump `SCHEMA` there and in
   `src/mogs/grader/wire.py` together. `schemas/` holds the JSON Schemas
@@ -53,7 +51,7 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 
 Always go through `uv` (never global Python). The Rust toolchain is
 `rust-toolchain.toml` (stable, with clippy and rustfmt). `uv sync` and
-`uv run` rebuild the executable when `Cargo.toml`, `Cargo.lock` or a `.rs`
+`uv run` rebuild the extension when `Cargo.toml`, `Cargo.lock` or a `.rs`
 file changes.
 
 ```bash

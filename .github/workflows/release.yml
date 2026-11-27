@@ -28,7 +28,8 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  # Each wheel is built on a runner of its architecture, so the smoke test can run it.
+  # One abi3 wheel per platform serves Python 3.13 and newer. Each wheel is built on a runner
+  # of its architecture, so the smoke test can run it.
   linux:
     needs: version
     strategy:
@@ -52,13 +53,16 @@ jobs:
       - if: startsWith(matrix.compatibility, 'manylinux')
         uses: astral-sh/setup-uv@v6
       # `mogs --version` imports only `mogs` and `packaging`, so no other dependency is needed.
+      # Python 3.14 runs the abi3 wheel too.
       - if: startsWith(matrix.compatibility, 'manylinux')
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          uv venv --python 3.13 smoke
-          uv pip install --python smoke --no-deps dist/*.whl packaging
-          test "$(smoke/bin/mogs --version)" = "mogs $VERSION"
+          for python in 3.13 3.14; do
+            uv venv --python "$python" "smoke-$python"
+            uv pip install --python "smoke-$python" --no-deps dist/*.whl packaging
+            test "$("smoke-$python/bin/mogs" --version)" = "mogs $VERSION"
+          done
       - if: startsWith(matrix.compatibility, 'musllinux')
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -113,6 +117,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      # The abi3 module links against the import library of a Python 3.13 or newer.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
       - uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
