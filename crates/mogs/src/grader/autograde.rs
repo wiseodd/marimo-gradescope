@@ -8,6 +8,7 @@ use indexmap::IndexMap;
 use mogs_grader::sandbox::GradeOptions;
 use mogs_schema::{Bundle, Outcome, Results};
 use pyo3::exceptions::PyException;
+use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -66,8 +67,8 @@ pub fn grade(
 
 /// Grade `submission` against `source/bundle.json` and write `results`, whatever happens.
 ///
-/// A failure becomes results that name only its class, after a log of it. Exceptions that are
-/// not an `Exception`, such as `KeyboardInterrupt`, propagate.
+/// A failure, an `Exception` or a Rust panic, becomes results that name only its class,
+/// after a log of it. Other exceptions, such as `KeyboardInterrupt`, propagate.
 #[pyfunction]
 pub fn autograde(
     py: Python<'_>,
@@ -81,7 +82,10 @@ pub fn autograde(
 
     let content = match graded {
         Ok(content) => content,
-        Err(error) if error.is_instance_of::<PyException>(py) => {
+        Err(error)
+            if error.is_instance_of::<PyException>(py)
+                || error.is_instance_of::<PanicException>(py) =>
+        {
             let logger = py
                 .import("logging")?
                 .call_method1("getLogger", (MAIN_LOGGER,))?;
@@ -133,14 +137,8 @@ fn autograde_run(
 
     match ran {
         Ok(ran) => host.finish(py, ran),
-        Err(panic) => {
-            let message = match (panic.downcast_ref::<&str>(), panic.downcast_ref::<String>()) {
-                (Some(text), _) => text.to_string(),
-                (_, Some(text)) => text.clone(),
-                _ => "panic".into(),
-            };
-            Err(pyo3::panic::PanicException::new_err(message))
-        }
+        // The panic hook has printed the message on stderr.
+        Err(_) => Err(PanicException::new_err("the grader panicked")),
     }
 }
 

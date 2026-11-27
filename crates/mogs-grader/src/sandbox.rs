@@ -261,7 +261,13 @@ impl PhaseRun<'_> {
                 run_failed: run_failed.clone(),
                 alarm: true,
             };
-            let job = serde_json::to_string(&job).expect("a job is plain JSON");
+            // JSON strings are Unicode, so a path that is not UTF-8 cannot reach the child.
+            let job = serde_json::to_string(&job).map_err(|_| {
+                GradeError::Value(format!(
+                    "a grading path must be UTF-8: {}",
+                    self.submission.display()
+                ))
+            })?;
             let options = launch_options(
                 self.workdir,
                 self.user,

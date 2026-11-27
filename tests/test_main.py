@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import stat
 import subprocess
@@ -179,6 +180,19 @@ def test_hostile_submission_still_writes_results_and_exits_0(paths):
     results = json.loads(paths.results.read_text(encoding="utf-8"))
     assert rows(results)["q1"]["score"] == 0
     assert "loading your notebook" in rows(results)["q1"]["output"]
+
+
+def test_workdir_that_is_not_utf8_still_writes_results_and_exits_0(paths, tmp_path):
+    paths.add("solution.py")
+    paths.add("solution.pdf", "%PDF")
+    workdir = os.fsdecode(bytes(tmp_path) + b"/work-\xff")
+    argv = [*paths.argv()[:-1], workdir]
+
+    result = subprocess.run([sys.executable, "-m", "mogs.grader.main", *argv], capture_output=True)
+
+    assert result.returncode == 0, result.stderr
+    results = json.loads(paths.results.read_text(encoding="utf-8"))
+    assert "The autograder failed (ValueError)" in rows(results)["q1"]["output"]
 
 
 def test_symlink_to_the_bundle_is_not_graded(paths):
