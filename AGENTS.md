@@ -38,7 +38,9 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   It runs the Python grading child (`python -m mogs.grader.child <fd>`),
   enforces its deadlines and builds `results.json`. `crates/mogs/src/grader/`
   only converts values to and from Python. Text with Python's rules (`repr`,
-  `:g`, `round`) comes from Python through the `PyText` trait.
+  `:g`, `round`) comes from Python through the `PyText` trait. Its sandbox
+  tests run the real child on `$VIRTUAL_ENV/bin/python`, so run them through
+  `uv run`, as `make test` does.
 - `crates/mogs-schema/`: the JSON messages between Rust and
   Python (job, events, bundle, `results.json`) as Rust types. Every
   message but `results.json` has `"schema": 1`: bump `SCHEMA` there and in

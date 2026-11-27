@@ -16,7 +16,6 @@ test = false
 doctest = false
 
 [dependencies]
-indexmap = "2"
 mogs-cli = { path = "../mogs-cli" }
 mogs-grader = { path = "../mogs-grader" }
 mogs-pdf = { path = "../mogs-pdf" }

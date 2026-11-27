@@ -1,16 +1,19 @@
 import json
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
 from mogs._native import main
-from mogs.config import read_config
-from mogs.grader.bundle import bundle_from_notebook
+from mogs.config import AssignmentConfig, Question, read_config
+from mogs.grader.bundle import GradingBundle, TestCell, bundle_from_notebook
 from mogs.source import parse_notebook
 
 pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="the grader is Linux only")
@@ -231,3 +234,75 @@ def test_symlink_to_the_bundle_is_not_graded(paths):
 
     assert rows(results)["q1"]["score"] == 0
     assert "Submission" in rows(results)
+
+
+# Ctrl+C and the GIL
+
+
+def only_bundle(paths: Paths, source: str, timeout: float) -> None:
+    """Replace the bundle with one question whose test cell is `source`."""
+
+    tests = tuple(line[4:].split("(")[0] for line in source.splitlines() if line.startswith("def "))
+    cfg = AssignmentConfig("A", "solution.py", {"q1": Question("q1", "Q1", 1)}, timeout=timeout)
+    grading = GradingBundle(cfg, "", (TestCell("q1", "q1-tests", False, source, tests, ()),))
+    (paths.source / "bundle.json").write_text(grading.to_json(), encoding="utf-8")
+
+
+def test_ctrl_c_stops_grading_and_kills_the_child(paths):
+    source = (
+        "import os, time\nfrom pathlib import Path\n\n"
+        "def test_q1_wait():\n    Path('pid').write_text(str(os.getpid()))\n    time.sleep(60)\n"
+    )
+    only_bundle(paths, source, timeout=60)
+    paths.add("solution.py")
+    process = subprocess.Popen(
+        [MOGS, "autograde", *paths.argv()], stderr=subprocess.PIPE, text=True
+    )
+    pid_file = paths.workdir / "public" / "pid"
+
+    try:
+        for _ in range(300):
+            if pid_file.exists() and pid_file.read_text():
+                break
+            time.sleep(0.1)
+
+        child = int(pid_file.read_text())
+        start = time.monotonic()
+        process.send_signal(signal.SIGINT)
+        _, stderr = process.communicate(timeout=10)
+    finally:
+        process.kill()
+
+    assert time.monotonic() - start < 2
+    assert "KeyboardInterrupt" in stderr
+    with pytest.raises(ProcessLookupError):
+        os.kill(child, 0)
+
+
+def test_grading_does_not_hold_the_gil(paths):
+    source = (
+        "import sys, time\n\n"
+        "def test_q1_flood():\n    end = time.monotonic() + 3\n"
+        "    while time.monotonic() < end:\n        sys.stdout.write('x' * 1000 + '\\n')\n"
+    )
+    only_bundle(paths, source, timeout=10)
+    paths.add("solution.py")
+    paths.add("solution.pdf", "%PDF")
+    finished = []
+    thread = threading.Thread(target=lambda: finished.append(paths.run()))
+    gaps = []
+
+    thread.start()
+    last = time.monotonic()
+
+    while thread.is_alive():
+        time.sleep(0.01)
+        now = time.monotonic()
+        gaps.append(now - last)
+        last = now
+
+    thread.join()
+
+    assert rows(finished[0])["q1"]["score"] == 1, finished
+    assert sum(gaps) > 2.5
+    assert max(gaps) < 0.5

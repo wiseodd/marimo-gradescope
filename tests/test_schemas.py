@@ -9,7 +9,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
-from mogs._native import build_results, failure_results
+from mogs._native import main
 from mogs.config import read_config
 from mogs.grader.bundle import GradingBundle, HiddenHelper, Phase, bundle_from_notebook
 from mogs.grader.protocol import (
@@ -23,7 +23,7 @@ from mogs.grader.protocol import (
     encode,
 )
 from mogs.grader.wire import SCHEMA, check_schema
-from mogs.runner import FailureReason, Outcome
+from mogs.runner import Outcome
 from mogs.source import parse_notebook
 
 SCHEMAS = Path(__file__).parents[1] / "schemas"
@@ -90,14 +90,35 @@ def test_bundle_json_matches_schema():
         validate(json.loads(part.to_json()), "bundle")
 
 
-def test_results_match_schema():
-    bundle = solution_bundle()
-    names = [name for cell in bundle.cells for name in cell.tests]
-    outcomes = {name: Outcome(name, False, "boom", FailureReason.ASSERTION) for name in names}
+def autograde(folder: Path, bundle: str, notebook: str, workdir: Path | None = None) -> object:
+    """The `results.json` that `mogs autograde` writes for `notebook`, with no PDF."""
 
-    validate(build_results(bundle, outcomes, ["No PDF found."]), "results")
-    validate(failure_results(bundle, RuntimeError()), "results")
-    validate(failure_results(None, RuntimeError()), "results")
+    source, submission, results = folder / "source", folder / "submission", folder / "results.json"
+    source.mkdir(parents=True)
+    submission.mkdir()
+    (source / "bundle.json").write_text(bundle, encoding="utf-8")
+    (submission / "solution.py").write_text(notebook, encoding="utf-8")
+    argv = ["--source", str(source), "--submission", str(submission), "--results", str(results)]
+
+    assert main(["autograde", *argv, "--workdir", str(workdir or folder / "work")]) == 0
+    return json.loads(results.read_text(encoding="utf-8"))
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="grading needs Linux or macOS")
+def test_results_match_schema(tmp_path):
+    bundle = solution_bundle().to_json()
+    (tmp_path / "file").write_text("", encoding="utf-8")
+
+    # Failed tests with a notice, a crash with a bundle, and one without.
+    failed = autograde(tmp_path / "failed", bundle, "def broken(:\n")
+    crashed = autograde(tmp_path / "crashed", bundle, "x = 1\n", tmp_path / "file" / "work")
+    unreadable = autograde(tmp_path / "unreadable", "{not json", "x = 1\n")
+
+    for results in (failed, crashed, unreadable):
+        validate(results, "results")
+    assert "No PDF" in json.dumps(failed)
+    assert "The autograder failed (NotADirectoryError)" in json.dumps(crashed)
+    assert "The autograder failed (JSONDecodeError)" in json.dumps(unreadable)
 
 
 def other_version(text: str) -> str:
@@ -137,11 +158,13 @@ def with_extra_key(data: dict, path: tuple[str | int, ...]) -> dict:
     return data
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="grading needs Linux or macOS")
 def test_schemas_reject_unknown_keys(tmp_path):
     bundle = solution_bundle()
     job = json.loads(Job(bundle, tmp_path / "s.py").to_json())
-    passed = {name: Outcome(name, True) for cell in bundle.cells for name in cell.tests}
-    results = dict(build_results(bundle, passed, []))
+    solution = SOLUTION.read_text(encoding="utf-8")
+    results = autograde(tmp_path / "graded", bundle.to_json(), solution)
+    assert isinstance(results, dict)
     events = [
         {"schema": 1, "event": "loaded", "error": None, "unavailable": {}},
         {"schema": 1, "event": "loading", "tests": []},

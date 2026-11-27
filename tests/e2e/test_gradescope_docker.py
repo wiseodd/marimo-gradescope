@@ -32,7 +32,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from mogs._native import find_submission, main
+from mogs._native import main
 from mogs.config import normalized_name, read_config
 from mogs.grader.bundle import bundle_from_notebook
 from mogs.source import BEGIN, parse_notebook
@@ -751,9 +751,11 @@ def test_submission_files(assignment, tmp_path, name):
             else:
                 ast.parse(content)
 
-    found = find_submission(tmp_path, NOTEBOOK)
-    assert (found.py is None) == (name == "two_py")
-    assert (found.answers is None) == (name == "missing_pdf")
+    # Only `two_py` has more than one notebook, and only `missing_pdf` lacks the answers.
+    notebooks = [rel for rel in files if rel.endswith(".py") and not rel.startswith("__MACOSX")]
+    answers = [rel for rel in files if rel.endswith(".pdf") and not rel.startswith("__MACOSX")]
+    assert (len(notebooks) == 1) == (name != "two_py")
+    assert (answers == []) == (name == "missing_pdf")
 
 
 def test_wheel_requirement_names_the_tool():

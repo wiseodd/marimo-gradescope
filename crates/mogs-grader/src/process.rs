@@ -842,6 +842,7 @@ mod tests {
 
     #[test]
     fn kill_group_ignores_eperm_once_the_child_has_ended() {
+        let _spawning = crate::fake::spawning();
         let mut process = Command::new("true").process_group(0).spawn().unwrap();
         let pid = Pid::from_child(&process);
         let options = WaitIdOptions::EXITED | WaitIdOptions::NOWAIT;
@@ -855,6 +856,7 @@ mod tests {
 
     #[test]
     fn kill_group_raises_eperm_while_the_child_runs() {
+        let _spawning = crate::fake::spawning();
         let mut process = Command::new("sleep")
             .arg("30")
             .process_group(0)

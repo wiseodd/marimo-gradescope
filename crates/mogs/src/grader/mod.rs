@@ -10,65 +10,15 @@ pub mod autograde;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use indexmap::IndexMap;
 use mogs_grader::{GradeError, GradingUser, Host, Level, PyText};
-use mogs_schema::{Bundle, Outcome};
+use mogs_schema::Bundle;
 use pyo3::exceptions::{PyKeyError, PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString, PyTuple};
 use serde::Serialize;
-use serde::de::DeserializeOwned;
 
 /// The logger of the supervisor's messages, as in v0.7.
 const SANDBOX_LOGGER: &str = "mogs.grader.sandbox";
-
-/// The files found in an upload.
-#[pyclass(frozen, eq, module = "mogs._native")]
-#[derive(PartialEq)]
-pub struct Submission {
-    /// The notebook to grade, or `None` when there is none or it is ambiguous.
-    #[pyo3(get)]
-    py: Option<PathBuf>,
-    /// The written answers, or `None`.
-    #[pyo3(get)]
-    answers: Option<PathBuf>,
-    /// Why `py` is `None`, ready to show the student.
-    #[pyo3(get)]
-    error: Option<String>,
-}
-
-#[pymethods]
-impl Submission {
-    /// As the v0.7 dataclass shows it: each field as Python's `repr`.
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        let py_repr = self.py.as_ref().into_pyobject(py)?.repr()?;
-        let answers = self.answers.as_ref().into_pyobject(py)?.repr()?;
-        let error = self.error.as_deref().into_pyobject(py)?.repr()?;
-
-        Ok(format!(
-            "Submission(py={py_repr}, answers={answers}, error={error})"
-        ))
-    }
-}
-
-/// Find the notebook and the written answers anywhere under `sub_dir`.
-#[pyfunction]
-#[pyo3(signature = (sub_dir, notebook, name=None))]
-pub fn find_submission(
-    py: Python<'_>,
-    sub_dir: PathBuf,
-    notebook: &str,
-    name: Option<&str>,
-) -> PyResult<Submission> {
-    let host = PyHost::default();
-    let found = mogs_grader::submission::find_submission(&sub_dir, notebook, name, &host);
-
-    host.finish(py, Ok(found)).map(|found| Submission {
-        py: found.py,
-        answers: found.answers,
-        error: found.error,
-    })
-}
 
 /// The data files to ship, by `PurePosixPath` relative to `root`, with folders expanded.
 #[pyfunction]
@@ -87,38 +37,6 @@ pub fn data_files<'py>(
     }
 
     Ok(out)
-}
-
-/// Gradescope's `results.json` content for the outcomes of `bundle`'s tests.
-#[pyfunction]
-pub fn build_results<'py>(
-    py: Python<'py>,
-    bundle: &Bound<'py, PyAny>,
-    outcomes: &Bound<'py, PyAny>,
-    notices: Vec<String>,
-) -> PyResult<Bound<'py, PyAny>> {
-    let bundle = bundle_from_py(bundle)?;
-    let outcomes = outcomes_from_py(outcomes)?;
-    let host = PyHost::default();
-    let built = mogs_grader::results::build_results(&bundle, &outcomes, &notices, &host);
-
-    results_to_py(py, &host.finish(py, built)?)
-}
-
-/// Results for a grader crash, naming only the class of `error`.
-#[pyfunction]
-pub fn failure_results<'py>(
-    py: Python<'py>,
-    bundle: Option<&Bound<'py, PyAny>>,
-    error: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyAny>> {
-    let bundle = bundle.map(bundle_from_py).transpose()?;
-    let name = error.get_type().name()?.to_string();
-
-    results_to_py(
-        py,
-        &mogs_grader::results::failure_results(bundle.as_ref(), &name),
-    )
 }
 
 /// A `mogs.grader.bundle.GradingBundle` as the Rust type, through its JSON.
@@ -177,30 +95,6 @@ pub(crate) fn results_to_py<'py>(
     }
 
     Ok(out)
-}
-
-/// A mapping of names to `mogs.runner.Outcome`s as Rust outcomes, through their JSON.
-fn outcomes_from_py(outcomes: &Bound<'_, PyAny>) -> PyResult<IndexMap<String, Outcome>> {
-    let py = outcomes.py();
-    let dicts = PyDict::new(py);
-
-    for item in outcomes.call_method0("items")?.try_iter()? {
-        let (name, outcome): (Bound<'_, PyAny>, Bound<'_, PyAny>) = item?.extract()?;
-        dicts.set_item(name, outcome.call_method0("to_dict")?)?;
-    }
-
-    from_py(&dicts)
-}
-
-/// A JSON-like Python value as a Rust value, through `json.dumps`.
-fn from_py<T: DeserializeOwned>(value: &Bound<'_, PyAny>) -> PyResult<T> {
-    let text: String = value
-        .py()
-        .import("json")?
-        .call_method1("dumps", (value,))?
-        .extract()?;
-
-    serde_json::from_str(&text).map_err(|error| PyValueError::new_err(error.to_string()))
 }
 
 /// A Rust value as plain Python values, through `json.loads`.

@@ -1312,7 +1312,6 @@ dependencies = [
 name = "mogs"
 version = "0.7.0"
 dependencies = [
- "indexmap",
  "mogs-build",
  "mogs-cli",
  "mogs-grader",
