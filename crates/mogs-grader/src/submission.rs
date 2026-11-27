@@ -189,13 +189,15 @@ mod tests {
 
         let found = find_submission(dir.path(), "hw.py", Some("A"), &FakeHost::default());
 
+        // Relative paths use the platform's separator, as `str(path)` did in v0.7.
+        let nested = Path::new("b").join("x.py").display().to_string();
         assert_eq!(found.py, None);
         assert_eq!(
-            found.error.as_deref(),
-            Some(
-                "No `hw.py` in your upload, and several other `.py` files: `a.py`, `b/x.py`. \
+            found.error,
+            Some(format!(
+                "No `hw.py` in your upload, and several other `.py` files: `a.py`, `{nested}`. \
                  Upload `hw.py`, or a single `.py` file."
-            )
+            ))
         );
     }
 }
