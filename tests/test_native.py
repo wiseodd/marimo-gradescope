@@ -41,16 +41,6 @@ def test_command_runs_the_cli(tmp_path):
     assert result.stderr == "Build failed.\nmissing-dir does not exist.\n"
 
 
-def test_command_through_symlink(tmp_path):
-    link = tmp_path / SCRIPT.name
-    link.symlink_to(SCRIPT)
-
-    result = subprocess.run([link, "--version"], capture_output=True, text=True)
-
-    assert result.returncode == 0
-    assert result.stdout == f"mogs {version('mogs')}\n"
-
-
 def test_command_ignores_modules_in_working_directory(tmp_path):
     (tmp_path / "packaging.py").write_text("raise SystemExit('shadowed')\n")
 

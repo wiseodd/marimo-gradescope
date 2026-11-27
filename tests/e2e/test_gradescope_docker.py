@@ -464,7 +464,7 @@ def build_wheel(out: Path) -> Path:
         "tool",
         "run",
         "--from",
-        "maturin[zig]>=1.9,<2",
+        "maturin[zig]>=1.9.4,<2",
         "maturin",
         "build",
         "--release",

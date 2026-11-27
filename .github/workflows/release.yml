@@ -86,6 +86,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      # PyO3 builds against a Python 3.13 or newer, as `abi3-py313` needs.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
       - uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}

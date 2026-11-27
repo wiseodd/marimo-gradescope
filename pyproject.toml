@@ -26,7 +26,8 @@ pdf = ["typst>=0.15,<0.16"]
 mogs = "mogs._native:main"
 
 [build-system]
-requires = ["maturin>=1.9,<2"]
+# maturin 1.9.4 sets `PYO3_BUILD_EXTENSION_MODULE`, so the module does not link libpython.
+requires = ["maturin>=1.9.4,<2"]
 build-backend = "maturin"
 
 # The wheel holds the Python package and the extension module `mogs._native`, built from
