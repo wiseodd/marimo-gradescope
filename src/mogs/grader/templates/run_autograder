@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-exec /opt/mogs-venv/bin/python -m mogs.grader.main
