@@ -539,9 +539,17 @@ mod tests {
 
     #[test]
     fn many_backslashes_are_found_fast() {
-        let text = format!("{}\n\n{ALIGN}", "Some \\alpha and ".repeat(200_000));
+        // 34 kB with 2000 backslashes: linear work takes about a millisecond here, while one scan
+        // to the end per backslash takes far longer than the bound.
+        let text = format!("{}\n\n{ALIGN}", "Some \\alpha and ".repeat(2000));
+        let start = std::time::Instant::now();
 
         assert_eq!(spans(&text).last(), Some(&ALIGN));
+        assert!(
+            start.elapsed() < std::time::Duration::from_millis(100),
+            "{:?}",
+            start.elapsed()
+        );
     }
 
     #[test]

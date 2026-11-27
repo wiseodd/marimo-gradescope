@@ -305,6 +305,19 @@ mod tests {
     }
 
     #[test]
+    fn a_world_gets_system_fonts_only_when_its_inputs_need_them() {
+        let cjk = PdfWorld::new(
+            "test.typ",
+            "",
+            &[("doc", "Answer: 中文答案"), ("display", "false")],
+        );
+        let latin = PdfWorld::new("test.typ", "", &[("doc", "Ünïcödé Ελληνικά — “x” 𝛼")]);
+
+        assert!(std::ptr::eq(cjk.fonts, font_store(true)));
+        assert!(std::ptr::eq(latin.fonts, font_store(false)));
+    }
+
+    #[test]
     fn other_scripts_get_system_fonts_too() {
         assert!(uses_system_fonts(&[("doc", "中文答案")]));
 
