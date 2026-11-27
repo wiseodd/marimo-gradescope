@@ -8,7 +8,7 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - Design, plans and progress notes live outside this repo, in the author's
   private planning directory. Never put design notes, plans or local paths in
   the repo.
-- `src/mogs/`: the package, imported, published on PyPI and run as `mogs`.
+- `src/mogs/`: the Python package, imported and published on PyPI.
   `config.py` reads the config from the notebook's `mogs.assignment(...)` and
   `mogs.grade(...)` calls (statically, from the AST) and edits the PEP 723
   header as text. `scaffold.py` is `mogs init`.
@@ -16,14 +16,28 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   vendored for the PDF of written answers (`pdf.py`). They need the Typst
   version the `pdf` extra pins (`typst>=0.15,<0.16`): bump the pin and the
   vendored versions together.
-- `tests/`: pytest suite.
+- `crates/mogs/`: the `mogs` executable, in Rust. It runs
+  `python -P -m mogs.cli` with the interpreter in its own folder, found after
+  resolving symlinks. On Windows it then tries the folder above `Scripts`,
+  where a global `pip install` puts `python.exe`. Last comes
+  `$(uv tool dir)/mogs`, because uv copies tool executables on Windows.
+  maturin builds it into platform wheels together with
+  `src/mogs/`. The version is `[workspace.package] version` in `Cargo.toml`.
+  `src/mogs/_binary.py` finds and runs the installed executable.
+- `tests/`: pytest suite. `cargo test` runs the Rust tests.
 - `tests/e2e/`: end-to-end tests. The `docker` ones build the demo autograder
   into Gradescope's base image (`tests/e2e/Dockerfile`) and grade submissions
   through the real `/autograder/run_autograder`. They need docker or podman
   (`MOGS_CONTAINER=docker|podman` picks one) and network, and take several
-  minutes. Without a runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI)
+  minutes. The wheel for the image comes from `maturin build --zig` for
+  manylinux_2_17 x86_64, so it builds on any host. Without a runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI)
   makes that a failure. The base image is amd64 only: on an arm64 host it runs
   under emulation, which is slow enough that grading timeouts may trip.
+- `.github/workflows/release.yml`: on a published GitHub release (tags like
+  `0.7`, no `v`), checks the tag against the `Cargo.toml` version, builds the
+  wheels and the sdist, smoke-tests each wheel on a runner that can run it,
+  then publishes them all to PyPI through
+  trusted publishing.
 - `docs/`: the docs site (Astro Starlight, built with Bun), deployed to
   https://mogs.kristia.de by `.github/workflows/docs.yml`. Pages
   are `docs/src/content/docs/` (`index.md`, `instructors.md`,
@@ -31,11 +45,14 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 
 ## Commands
 
-Always go through `uv` (never global Python).
+Always go through `uv` (never global Python). The Rust toolchain is
+`rust-toolchain.toml` (stable, with clippy and rustfmt). `uv sync` and
+`uv run` rebuild the executable when `Cargo.toml`, `Cargo.lock` or a `.rs`
+file changes.
 
 ```bash
 make sync        # uv sync
-make check       # ruff check + format check, ty, pytest (the CI gate)
+make check       # ruff, cargo fmt + clippy, ty, cargo test, pytest (the CI gate)
 make docs        # build the docs site into docs/dist (needs Bun)
 make docs-serve  # live preview at localhost:4321
 make test TESTS=tests/test_config.py ARGS="-k header"
@@ -43,7 +60,7 @@ make test ARGS="-m slow"      # only the slow tests (marimo via `uv run --with`;
 make test ARGS="-m network"   # only the tests that resolve packages through uv (included by default)
 make test ARGS="-m 'not slow and not network'"   # offline
 make test ARGS="-m docker"    # only the Docker end-to-end tests: deselected unless `-m` names `docker`
-make fix         # ruff fixes, then format
+make fix         # ruff fixes, then ruff format and cargo fmt
 ```
 
 ## Rules

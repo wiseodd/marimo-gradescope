@@ -1,0 +1,160 @@
+name: release
+on:
+  release:
+    types: [published]
+permissions:
+  contents: read
+jobs:
+  # Tags look like `0.7`: the tag, padded with `.0` to three parts, must equal the version in
+  # Cargo.toml, which the wheels carry.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml)
+          padded="$TAG"
+          while [ "$(printf '%s' "$padded" | tr -cd . | wc -c)" -lt 2 ]; do
+            padded="$padded.0"
+          done
+          if [ "$padded" != "$version" ]; then
+            echo "::error::Release tag $TAG does not match version $version in Cargo.toml."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  # Each wheel is built on a runner of its architecture, so the smoke test can run it.
+  linux:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        compatibility: [manylinux_2_17, musllinux_1_2]
+        include:
+          - runner: ubuntu-latest
+            target: x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.compatibility }}
+          args: --release --out dist
+      - if: startsWith(matrix.compatibility, 'manylinux')
+        uses: astral-sh/setup-uv@v6
+      # `mogs --version` imports only `mogs` and `packaging`, so no other dependency is needed.
+      - if: startsWith(matrix.compatibility, 'manylinux')
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          uv venv --python 3.13 smoke
+          uv pip install --python smoke --no-deps dist/*.whl packaging
+          test "$(smoke/bin/mogs --version)" = "mogs $VERSION"
+      - if: startsWith(matrix.compatibility, 'musllinux')
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          docker run --rm -v "$PWD/dist:/dist" -e VERSION python:3.13-alpine sh -euc '
+            pip install --quiet --root-user-action=ignore --no-deps /dist/*.whl packaging
+            test "$(mogs --version)" = "mogs $VERSION"
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-linux-${{ matrix.target }}-${{ matrix.compatibility }}
+          path: dist
+
+  # Both wheels are built on an arm64 runner. Only the arm64 one runs there.
+  macos:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64, x86_64]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+      - if: matrix.target == 'aarch64'
+        uses: astral-sh/setup-uv@v6
+      - if: matrix.target == 'aarch64'
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          uv venv --python 3.13 smoke
+          uv pip install --python smoke --no-deps dist/*.whl packaging
+          test "$(smoke/bin/mogs --version)" = "mogs $VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-macos-${{ matrix.target }}
+          path: dist
+
+  windows:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: x64
+          - runner: windows-11-arm
+            target: aarch64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+      - uses: astral-sh/setup-uv@v6
+      - shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          uv venv --python 3.13 smoke
+          uv pip install --python smoke --no-deps dist/*.whl packaging
+          test "$(smoke/Scripts/mogs.exe --version | tr -d '\r')" = "mogs $VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-windows-${{ matrix.target }}
+          path: dist
+
+  sdist:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-sdist
+          path: dist
+
+  # Trusted publishing: PyPI trusts this workflow in the `pypi` environment. No token.
+  publish:
+    needs: [linux, macos, windows, sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          merge-multiple: true
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
