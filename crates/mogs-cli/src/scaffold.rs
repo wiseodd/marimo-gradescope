@@ -224,7 +224,8 @@ mod tests {
         assert!(text.contains("mogs.assignment(name=<hw>)\n"));
     }
 
-    #[cfg(unix)]
+    // Linux file names may hold any bytes; APFS on macOS refuses them (EILSEQ).
+    #[cfg(target_os = "linux")]
     #[test]
     fn keeps_a_name_that_is_not_utf_8() {
         use std::os::unix::ffi::OsStrExt;
