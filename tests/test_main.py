@@ -135,6 +135,19 @@ def test_two_notebooks_are_both_named_and_nothing_is_graded(paths):
     assert rows(results)["q2"]["score"] == 0
 
 
+def test_infinite_budget_grades_everything(paths):
+    bundle = json.loads((paths.source / "bundle.json").read_text(encoding="utf-8"))
+    bundle["config"]["budget"] = float("inf")
+    (paths.source / "bundle.json").write_text(json.dumps(bundle), encoding="utf-8")
+    paths.add("solution.py")
+    paths.add("solution.pdf", "%PDF")
+
+    results = paths.run()
+
+    assert rows(results)["q1"]["score"] == 4
+    assert rows(results)["q2"]["score"] == 6
+
+
 def test_unreadable_bundle_still_writes_results(paths):
     (paths.source / "bundle.json").write_text("{not json", encoding="utf-8")
     paths.add("solution.py")

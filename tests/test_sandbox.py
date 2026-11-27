@@ -516,6 +516,29 @@ def test_grade_rejects_a_symlinked_submission(tmp_path):
         grade(bundle(), link, root, user=None)
 
 
+def test_infinite_budget_means_no_overall_deadline(tmp_path):
+    # `mogs.assignment(budget=1e999)` reads as infinity, which the bundle JSON writes as
+    # `Infinity`.
+    grading = GradingBundle.from_json(bundle(budget=float("inf")).to_json())
+
+    results = run(tmp_path, notebook(tmp_path, "def misbehave():\n    return True\n"), grading)
+
+    assert all(outcome.passed for outcome in results.values()), results
+
+
+def test_infinite_timeout_reaches_the_child(tmp_path):
+    # As in v0.7, the child cannot arm an infinite timer, so each cell fails to load.
+    grading = GradingBundle.from_json(bundle(timeout=float("inf")).to_json())
+
+    results = run(tmp_path, notebook(tmp_path, ""), grading)
+
+    assert list(results) == ALL
+
+    for outcome in results.values():
+        assert outcome.reason is FailureReason.LOAD_FAILED, outcome
+        assert "the test cell failed to load (OverflowError" in outcome.message
+
+
 def test_grade_shares_the_budget(tmp_path):
     slow = "import time\n\ndef test_{qid}_slow():\n    time.sleep({seconds})\n"
     grading = GradingBundle(

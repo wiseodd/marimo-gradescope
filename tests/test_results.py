@@ -48,6 +48,19 @@ def shown_to_students(results) -> list:
 # build_results
 
 
+def test_infinite_points_show_as_python_does():
+    questions = {"q1": Question("q1", "Addition", float("inf"))}
+    cells = (TestCell("q1", "q1-tests", True, "", PUBLIC, ()),)
+    grading = GradingBundle(AssignmentConfig("A", "hw.py", questions), "", cells)
+    passed = {name: Outcome(name, True) for name in PUBLIC}
+
+    results = build_results(grading, passed, [])
+
+    row = question_row(results, "q1")
+    assert row["score"] == row["max_score"] == float("inf")
+    assert results["output"] == "Total: inf / inf\n\n- Addition: inf / inf"
+
+
 def test_three_of_four_tests_give_three_quarters_of_the_points():
     results = build_results(bundle(), outcomes(), [])
 

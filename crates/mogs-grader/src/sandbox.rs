@@ -263,7 +263,7 @@ impl PhaseRun<'_> {
             };
             // JSON strings are Unicode, so a path that is not UTF-8 cannot reach the child.
             // The job's only path is `workdir/submission.py`, so the folder is at fault.
-            let job = serde_json::to_string(&job).map_err(|_| {
+            let job = job_json(&job).map_err(|_| {
                 GradeError::Value(format!(
                     "the grading folder must be a UTF-8 path: {}",
                     self.workdir.display()
@@ -319,6 +319,39 @@ impl PhaseRun<'_> {
             load_error,
         })
     }
+}
+
+/// `job` as JSON for the Python child, which reads `Infinity` and `NaN`.
+///
+/// The config accepts an infinite `timeout`, `budget` or `points`, and serde_json writes a
+/// number that is not finite as `null`. Each such `"<key>":null` is written as Python's
+/// `json.dumps` would. Compact JSON escapes every `"` inside a string, so `"<key>":null`
+/// occurs only as a key and its value, in the order the config fields serialize.
+///
+/// # Errors
+///
+/// If a path in the job is not UTF-8.
+fn job_json(job: &Job) -> Result<String, serde_json::Error> {
+    let config = &job.bundle.config;
+    let numbers = [("timeout", config.timeout), ("budget", config.budget)]
+        .into_iter()
+        .chain(config.questions.iter().map(|q| ("points", q.points)));
+    let mut text = serde_json::to_string(job)?;
+
+    for (key, value) in numbers.filter(|(_, value)| !value.is_finite()) {
+        let python = match value {
+            v if v.is_nan() => "NaN",
+            v if v > 0.0 => "Infinity",
+            _ => "-Infinity",
+        };
+        text = text.replacen(
+            &format!("\"{key}\":null"),
+            &format!("\"{key}\":{python}"),
+            1,
+        );
+    }
+
+    Ok(text)
 }
 
 /// Create `workdir` with copies of the submission and the data files.
@@ -378,4 +411,48 @@ fn hand_over(workdir: &Path, user: &GradingUser) -> Result<(), GradeError> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn job_json_writes_infinite_numbers_as_python_does() {
+        let mut bundle: Bundle = serde_json::from_value(serde_json::json!({
+            "schema": 1,
+            "config": {
+                "name": "A", "notebook": "hw.py", "files": [], "timeout": 60.0,
+                "budget": 0.0, "memory_mb": 1, "python": "3.13",
+                "questions": [
+                    {"id": "q1", "title": "\"points\":null", "points": 0.0, "manual": false},
+                    {"id": "q2", "title": "Q", "points": 2.0, "manual": false},
+                ],
+            },
+            "setup_code": "",
+            "cells": [],
+            "helpers": [],
+        }))
+        .unwrap();
+        bundle.config.budget = f64::INFINITY;
+        bundle.config.questions[0].points = f64::INFINITY;
+        let job = Job {
+            schema: SCHEMA,
+            bundle,
+            submission: "submission.py".into(),
+            skip: Vec::new(),
+            run_failed: None,
+            alarm: true,
+        };
+
+        let text = job_json(&job).unwrap();
+
+        assert!(text.contains(r#""title":"\"points\":null""#), "{text}");
+        assert!(text.contains(r#""points":Infinity"#), "{text}");
+        assert!(text.contains(r#""points":2.0"#), "{text}");
+        assert!(
+            text.contains(r#""timeout":60.0,"budget":Infinity"#),
+            "{text}"
+        );
+    }
 }

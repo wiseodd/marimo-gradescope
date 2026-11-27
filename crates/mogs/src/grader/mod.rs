@@ -102,7 +102,7 @@ pub fn build_results<'py>(
     let host = PyHost::default();
     let built = mogs_grader::results::build_results(&bundle, &outcomes, &notices, &host);
 
-    to_py(py, &host.finish(py, built)?)
+    results_to_py(py, &host.finish(py, built)?)
 }
 
 /// Results for a grader crash, naming only the class of `error`.
@@ -115,17 +115,60 @@ pub fn failure_results<'py>(
     let bundle = bundle.map(bundle_from_py).transpose()?;
     let name = error.get_type().name()?.to_string();
 
-    to_py(
+    results_to_py(
         py,
         &mogs_grader::results::failure_results(bundle.as_ref(), &name),
     )
 }
 
 /// A `mogs.grader.bundle.GradingBundle` as the Rust type, through its JSON.
+///
+/// The config's numbers come from the Python objects: the config accepts infinity (such as
+/// `budget=1e999`), which Python's JSON writes as `Infinity` and serde_json rejects.
 pub(crate) fn bundle_from_py(bundle: &Bound<'_, PyAny>) -> PyResult<Bundle> {
-    let text: String = bundle.call_method0("to_json")?.extract()?;
+    let config = bundle.getattr("config")?;
+    let data = bundle.call_method0("to_dict")?;
+    let data_config = data.get_item("config")?;
+    data_config.set_item("timeout", 0.0)?;
+    data_config.set_item("budget", 0.0)?;
 
-    mogs_schema::decode(&text).map_err(|error| PyValueError::new_err(error.to_string()))
+    for question in data_config.get_item("questions")?.try_iter()? {
+        question?.set_item("points", 0.0)?;
+    }
+
+    let text: String = bundle
+        .py()
+        .import("json")?
+        .call_method1("dumps", (&data,))?
+        .extract()?;
+    let mut read: Bundle =
+        mogs_schema::decode(&text).map_err(|error| PyValueError::new_err(error.to_string()))?;
+    read.config.timeout = config.getattr("timeout")?.extract()?;
+    read.config.budget = config.getattr("budget")?.extract()?;
+    let questions = config.getattr("questions")?.call_method0("values")?;
+
+    for (question, source) in read.config.questions.iter_mut().zip(questions.try_iter()?) {
+        question.points = source?.getattr("points")?.extract()?;
+    }
+
+    Ok(read)
+}
+
+/// `results` as Python values. Scores keep infinity and NaN, which JSON cannot carry.
+pub(crate) fn results_to_py<'py>(
+    py: Python<'py>,
+    results: &mogs_schema::Results,
+) -> PyResult<Bound<'py, PyAny>> {
+    let out = to_py(py, results)?;
+    let rows = out.get_item("tests")?;
+
+    for (at, row) in results.tests.iter().enumerate() {
+        let shown = rows.get_item(at)?;
+        shown.set_item("score", row.score)?;
+        shown.set_item("max_score", row.max_score)?;
+    }
+
+    Ok(out)
 }
 
 /// A mapping of names to `mogs.runner.Outcome`s as Rust outcomes, through their JSON.

@@ -12,7 +12,7 @@ use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use super::{PyHost, bundle_from_py, os_error, to_py};
+use super::{PyHost, bundle_from_py, os_error, results_to_py, to_py};
 
 /// The logger of the autograder's crash report, as in v0.7.
 const MAIN_LOGGER: &str = "mogs.grader.main";
@@ -98,7 +98,13 @@ pub fn autograde(
         Err(error) => return Err(error),
     };
 
-    let text = serde_json::to_string_pretty(&content).expect("results are plain JSON");
+    // As v0.7 wrote it, with infinite or NaN scores as Python's JSON writes them.
+    let kwargs = PyDict::new(py);
+    kwargs.set_item("indent", 2)?;
+    let text: String = py
+        .import("json")?
+        .call_method("dumps", (results_to_py(py, &content)?,), Some(&kwargs))?
+        .extract()?;
 
     if let Some(parent) = results.parent() {
         std::fs::create_dir_all(parent).map_err(|e| os_error(py, &e, Some(parent.into())))?;
