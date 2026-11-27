@@ -10,7 +10,7 @@ import pytest
 from pypdf import PdfReader
 from pypdf.generic import DictionaryObject
 
-from mogs import _native
+from mogs import _answers, _native
 from mogs._answers import (
     Part,
     PdfUnavailable,
@@ -483,12 +483,19 @@ def test_code_answer_and_one_line_cell_are_shown_as_code(tmp_path):
     assert 'def answer_q3(): mo.md("Because."); return' in text_of(PdfReader(out))
 
 
-def test_status_is_reported(tmp_path):
-    messages = []
+def test_status_is_reported_before_the_questions_are_built(tmp_path, monkeypatch):
+    events = []
+    real = _answers.manual_question
 
-    render(tmp_path, {"q1": "x"}, status=messages.append)
+    def built(*args, **kwargs):
+        events.append("built")
+        return real(*args, **kwargs)
 
-    assert messages == ["Creating the PDF of your written answers…"]
+    monkeypatch.setattr(_answers, "manual_question", built)
+
+    render(tmp_path, {"q1": "x", "q2": "y"}, status=events.append)
+
+    assert events == ["Creating the PDF of your written answers…", "built", "built"]
 
 
 # Failures
@@ -535,8 +542,20 @@ def test_typst_error_is_a_plain_exception():
 def test_unknown_role_names_the_value():
     bogus = Part("x", "bogus", Style.MARKDOWN)  # ty: ignore[invalid-argument-type]  # on purpose
 
-    with pytest.raises(ValueError, match="'bogus'"):
+    with pytest.raises(TypeError) as raised:
         _native.render_pdf([Question("Q", (bogus,))], lambda message: None)
+
+    chain = []
+    error: BaseException | None = raised.value
+    while error is not None:
+        chain.append(f"{type(error).__name__}: {error}")
+        error = error.__cause__
+
+    assert chain == [
+        "TypeError: failed to extract field Question.parts",
+        "TypeError: failed to extract field Part.role",
+        "ValueError: unknown role 'bogus'",
+    ]
 
 
 def test_render_pdf_gives_the_pdf_bytes():

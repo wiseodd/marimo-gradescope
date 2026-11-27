@@ -188,5 +188,7 @@ def render_pdf(questions: Iterable[Question], status: Callable[[str], None]) -> 
 
     Raises:
         TypstError: If Typst fails even on the plain-text document.
-        ValueError: If a part's role or style is not one of `Role` or `Style`.
+        TypeError: If a question or part lacks a field, or a field has the wrong type. A
+            role or style outside `Role` or `Style` is a `TypeError` caused by a `ValueError`
+            that names the value.
     """

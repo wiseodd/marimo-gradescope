@@ -79,29 +79,6 @@ pub enum Style {
     Note,
 }
 
-impl Role {
-    /// The role named `value` in Python, or `None`.
-    pub fn named(value: &str) -> Option<Self> {
-        match value {
-            "prompt" => Some(Self::Prompt),
-            "answer" => Some(Self::Answer),
-            _ => None,
-        }
-    }
-}
-
-impl Style {
-    /// The style named `value` in Python, or `None`.
-    pub fn named(value: &str) -> Option<Self> {
-        match value {
-            "markdown" => Some(Self::Markdown),
-            "plain" => Some(Self::Plain),
-            "note" => Some(Self::Note),
-            _ => None,
-        }
-    }
-}
-
 /// Why `render` gave no PDF.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RenderError {
@@ -263,13 +240,5 @@ mod tests {
         let result = stoppable(&Never, |_| Err::<(), _>(Failure::Typst("boom".into())));
 
         assert_eq!(result, Err(RenderError::Typst("boom".into())));
-    }
-
-    #[test]
-    fn roles_and_styles_by_their_python_names() {
-        assert_eq!(Role::named("prompt"), Some(Role::Prompt));
-        assert_eq!(Style::named("note"), Some(Style::Note));
-        assert_eq!(Role::named("Prompt"), None);
-        assert_eq!(Style::named("bogus"), None);
     }
 }

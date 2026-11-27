@@ -5,7 +5,7 @@
 
 use std::sync::Mutex;
 
-use mogs_pdf::{Host, Part, Question, RenderError, Role, Style};
+use mogs_pdf::{Host, RenderError};
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::panic::PanicException;
@@ -19,19 +19,21 @@ create_exception!(
     "Typst failed, even on the plain-text document. The message is Typst's."
 );
 
-/// The PDF of `questions`, after calling `status` with a short message.
+/// Call `status` with a short message, then make the PDF of `questions`.
+///
+/// `questions` is read after `status`, so a generator builds them after the message shows.
 #[pyfunction]
 pub fn render_pdf<'py>(
     py: Python<'py>,
     questions: &Bound<'py, PyAny>,
     status: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyBytes>> {
+    status.call1((mogs_pdf::STATUS,))?;
+
     let questions = questions
         .try_iter()?
-        .map(|question| question_from_py(&question?))
-        .collect::<PyResult<Vec<_>>>()?;
-
-    status.call1((mogs_pdf::STATUS,))?;
+        .map(|question| Ok(question?.extract::<Question>()?.into()))
+        .collect::<PyResult<Vec<mogs_pdf::Question>>>()?;
 
     let host = SignalHost::default();
     let rendered = py.detach(|| mogs_pdf::render(questions, &host));
@@ -55,43 +57,72 @@ pub fn render_pdf<'py>(
     }
 }
 
-/// A `mogs._answers.Question` as the Rust type.
-fn question_from_py(question: &Bound<'_, PyAny>) -> PyResult<Question> {
-    let parts = question
-        .getattr("parts")?
-        .try_iter()?
-        .map(|part| part_from_py(&part?))
-        .collect::<PyResult<Vec<_>>>()?;
-
-    Ok(Question {
-        title: question.getattr("title")?.extract()?,
-        parts,
-    })
+/// A `mogs._answers.Question`, read by attribute.
+#[derive(FromPyObject)]
+struct Question {
+    title: String,
+    parts: Vec<Part>,
 }
 
-/// A `mogs._answers.Part` as the Rust type.
-fn part_from_py(part: &Bound<'_, PyAny>) -> PyResult<Part> {
-    let text: String = part.getattr("text")?.extract()?;
-    let role = named(&part.getattr("role")?, "role", Role::named)?;
-    let style = named(&part.getattr("style")?, "style", Style::named)?;
-
-    Ok(Part::new(text, role, style))
+/// A `mogs._answers.Part`, read by attribute.
+#[derive(FromPyObject)]
+struct Part {
+    text: String,
+    role: Role,
+    style: Style,
 }
 
-/// The value of a `StrEnum` member, or a `ValueError` that names it.
-fn named<T>(
-    value: &Bound<'_, PyAny>,
-    what: &str,
-    parse: impl Fn(&str) -> Option<T>,
-) -> PyResult<T> {
-    let name: String = value.extract()?;
+/// A `mogs._answers.Role` member.
+struct Role(mogs_pdf::Role);
 
-    match parse(&name) {
-        Some(found) => Ok(found),
-        None => Err(PyValueError::new_err(format!(
-            "unknown {what} {}",
-            value.repr()?
-        ))),
+/// A `mogs._answers.Style` member.
+struct Style(mogs_pdf::Style);
+
+impl<'a, 'py> FromPyObject<'a, 'py> for Role {
+    type Error = PyErr;
+
+    fn extract(value: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        match value.extract::<String>()?.as_str() {
+            "prompt" => Ok(Self(mogs_pdf::Role::Prompt)),
+            "answer" => Ok(Self(mogs_pdf::Role::Answer)),
+            _ => Err(unknown("role", &value)),
+        }
+    }
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for Style {
+    type Error = PyErr;
+
+    fn extract(value: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        match value.extract::<String>()?.as_str() {
+            "markdown" => Ok(Self(mogs_pdf::Style::Markdown)),
+            "plain" => Ok(Self(mogs_pdf::Style::Plain)),
+            "note" => Ok(Self(mogs_pdf::Style::Note)),
+            _ => Err(unknown("style", &value)),
+        }
+    }
+}
+
+/// A `ValueError` that names the value, as Python's `repr` shows it.
+fn unknown(what: &str, value: &Bound<'_, PyAny>) -> PyErr {
+    match value.repr() {
+        Ok(repr) => PyValueError::new_err(format!("unknown {what} {repr}")),
+        Err(error) => error,
+    }
+}
+
+impl From<Question> for mogs_pdf::Question {
+    fn from(question: Question) -> Self {
+        let parts = question
+            .parts
+            .into_iter()
+            .map(|part| mogs_pdf::Part::new(part.text, part.role.0, part.style.0))
+            .collect();
+
+        Self {
+            title: question.title,
+            parts,
+        }
     }
 }
 
