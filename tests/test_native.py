@@ -20,10 +20,10 @@ def test_version_matches_package():
 
 def test_main_returns_the_exit_code(tmp_path, monkeypatch, capsys):
     missing = tmp_path / "missing-dir"
-    monkeypatch.setattr(sys, "argv", ["mogs", "build", str(missing)])
+    monkeypatch.setattr(sys, "argv", ["mogs", "edit", str(missing)])
 
     assert _native.main() == 1
-    assert capsys.readouterr().err == f"Build failed.\n{missing} does not exist.\n"
+    assert capsys.readouterr().err == f"Edit failed.\n{missing} does not exist.\n"
 
 
 def test_command_prints_version():
@@ -34,11 +34,11 @@ def test_command_prints_version():
 
 
 def test_command_runs_the_cli(tmp_path):
-    result = mogs("build", "missing-dir", cwd=tmp_path)
+    result = mogs("edit", "missing-dir", cwd=tmp_path)
 
     assert result.returncode == 1
     assert result.stdout == ""
-    assert result.stderr == "Build failed.\nmissing-dir does not exist.\n"
+    assert result.stderr == "Edit failed.\nmissing-dir does not exist.\n"
 
 
 def test_command_ignores_modules_in_working_directory(tmp_path):
