@@ -20,12 +20,7 @@ from mogs.config import AssignmentConfig, Question
 from mogs.grader.bundle import GradingBundle, HiddenHelper, TestCell
 from mogs.runner import FailureReason, Outcome
 
-# The sandbox also runs on macOS, but these tests rely on Linux-only limits: the memory bomb
-# fixture needs RLIMIT_AS.
-pytestmark = pytest.mark.skipif(
-    sys.platform != "linux",
-    reason="Linux only: the memory-bomb fixture and the process limits need Linux rlimits",
-)
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="grading needs Linux or macOS")
 
 FIXTURES = Path(__file__).parent / "fixtures"
 OUTPUT_LIMIT = 64 * 1024
@@ -109,7 +104,13 @@ def notebook(tmp_path: Path, body: str, name: str = "submission.py") -> Path:
         ("c_loop", FailureReason.TIMEOUT, "longer than 1 s"),
         ("segfault", FailureReason.KILLED, "SIGSEGV"),
         ("exits", FailureReason.KILLED, "exited with code 3"),
-        ("memory_bomb", FailureReason.OUT_OF_MEMORY, "MemoryError"),
+        pytest.param(
+            "memory_bomb",
+            FailureReason.OUT_OF_MEMORY,
+            "MemoryError",
+            # macOS rejects RLIMIT_AS, so there the bomb would take the machine's memory.
+            marks=pytest.mark.skipif(sys.platform != "linux", reason="needs RLIMIT_AS"),
+        ),
     ],
 )
 def test_misbehaving_test_fails_alone(tmp_path, name, reason, detail):
@@ -693,6 +694,29 @@ def test_processes_a_test_forks_are_killed_with_it(tmp_path):
     for pid in pids:
         with pytest.raises(ProcessLookupError):
             os.kill(pid, 0)
+
+
+def test_child_gets_no_inherited_descriptors(tmp_path):
+    fd = os.open(tmp_path, os.O_RDONLY)
+    os.set_inheritable(fd, True)
+    body = textwrap.dedent(
+        f"""\
+        import os
+        try:
+            os.fstat({fd})
+        except OSError:
+            pass
+        else:
+            raise AssertionError("descriptor {fd} reached the child")
+        """
+    )
+
+    try:
+        results = run(tmp_path, notebook(tmp_path, ""), bundle(hostile(body), cell("q2", Q2)))
+    finally:
+        os.close(fd)
+
+    assert results["test_q1_bad"].passed, results["test_q1_bad"]
 
 
 # Ctrl+C and the GIL

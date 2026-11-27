@@ -124,6 +124,7 @@ name = "mogs-grader"
 version = "0.7.0"
 dependencies = [
  "indexmap",
+ "libc",
  "mogs-schema",
  "rustix",
  "serde_json",

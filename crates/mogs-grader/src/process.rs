@@ -303,15 +303,38 @@ impl Child {
         }
 
         let limits = options.limits.clone();
+        let keep = write.as_raw_fd();
+        let last = open_fd_bound();
         // SAFETY: the hook runs between fork and exec, where only async-signal-safe calls are
-        // allowed. It makes only raw system calls (setsid, getrlimit, setrlimit, fcntl) and
-        // allocates nothing: `limits` and `write` were moved in before the fork.
+        // allowed. It makes only raw system calls (setsid, getrlimit, setrlimit, fcntl,
+        // close_range) and allocates nothing: `limits`, `keep`, `last` and `write` were moved
+        // in before the fork. `fcntl` on a descriptor that is not open fails with EBADF, which
+        // is ignored.
         unsafe {
             command.pre_exec(move || {
                 setsid()?;
 
                 for limit in &limits {
                     setrlimit(limit.resource, clamped(limit.resource, limit.value))?;
+                }
+
+                // Only stdin, stdout, stderr and the event channel reach the child, as with
+                // `close_fds=True`. Close on exec rather than close now, so std still hears
+                // back from a failed exec.
+                #[cfg(target_os = "linux")]
+                let marked = {
+                    let flags = libc::CLOSE_RANGE_CLOEXEC;
+                    let below =
+                        keep <= 3 || libc::syscall(libc::SYS_close_range, 3, keep - 1, flags) == 0;
+                    below && libc::syscall(libc::SYS_close_range, keep + 1, u32::MAX, flags) == 0
+                };
+                #[cfg(not(target_os = "linux"))]
+                let marked = false;
+
+                if !marked {
+                    for fd in (3..last).filter(|fd| *fd != keep) {
+                        libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
+                    }
                 }
 
                 // Keep the event channel open across exec, as `pass_fds` does.
@@ -482,6 +505,16 @@ impl Drop for Child {
     }
 }
 
+/// One past the highest descriptor number this process may have open: the soft `RLIMIT_NOFILE`,
+/// at most `2^20` when it is unlimited.
+fn open_fd_bound() -> i32 {
+    let most = 1 << 20;
+
+    getrlimit(Resource::Nofile)
+        .current
+        .map_or(most, |soft| soft.min(most as u64) as i32)
+}
+
 /// Whether the process `pid` has ended, without reaping it.
 fn ended(pid: Pid) -> bool {
     let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
@@ -624,9 +657,13 @@ mod tests {
 
     #[test]
     fn limits_never_exceed_the_hard_limit() {
-        let hard = getrlimit(Resource::Nofile).maximum.unwrap();
+        // macOS leaves the hard limit on open files unlimited; Linux sets one.
+        match getrlimit(Resource::Nofile).maximum {
+            Some(hard) => assert_eq!(clamped(Resource::Nofile, hard + 1).current, Some(hard)),
+            None => assert_eq!(clamped(Resource::Nofile, 1 << 40).current, Some(1 << 40)),
+        }
 
-        assert_eq!(clamped(Resource::Nofile, hard + 1).current, Some(hard));
+        assert_eq!(clamped(Resource::Nofile, 16).current, Some(16));
         assert_eq!(clamped(Resource::Nofile, 16).maximum, Some(16));
     }
 
