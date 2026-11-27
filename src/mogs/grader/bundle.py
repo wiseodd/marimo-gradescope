@@ -2,6 +2,10 @@
 
 A bundle holds the setup cell and every test cell. Each grading phase gets only its own cells,
 so the public phase never sees hidden test source.
+
+The JSON of a bundle, a job and an event carries `"schema": SCHEMA`, the version of its
+format. The Rust crate `mogs-schema` defines the formats; `schemas/` in the repo holds their
+JSON Schemas.
 """
 
 import copy
@@ -12,6 +16,8 @@ from typing import Self
 
 from mogs.config import AssignmentConfig, Question
 from mogs.source import Notebook, SourceError, cell_names, question_id
+
+SCHEMA = 1
 
 
 class Phase(StrEnum):
@@ -158,6 +164,7 @@ class GradingBundle:
         """JSON-ready fields."""
 
         return {
+            "schema": SCHEMA,
             "config": _config_to_dict(self.config),
             "setup_code": self.setup_code,
             "cells": [cell.to_dict() for cell in self.cells],
@@ -169,8 +176,11 @@ class GradingBundle:
         """Inverse of `to_dict`.
 
         Raises:
-            ValueError: If a field is missing or has the wrong type.
+            ValueError: If the schema version is not `SCHEMA`, or a field is missing or has
+                the wrong type.
         """
+
+        check_schema(data)
 
         match data:
             case {
@@ -198,7 +208,7 @@ class GradingBundle:
         """Inverse of `to_json`.
 
         Raises:
-            ValueError: If the text is not JSON or not a bundle.
+            ValueError: If the text is not JSON or not a bundle of version `SCHEMA`.
         """
 
         return cls.from_dict(json.loads(text))
@@ -254,6 +264,23 @@ def bundle_from_notebook(nb: Notebook, cfg: AssignmentConfig) -> GradingBundle:
         cells.append(TestCell(qids.pop(), cell.hidden, source, cell.tests, uses, needs))
 
     return GradingBundle(cfg, nb.setup_source(), tuple(cells), tuple(helpers))
+
+
+def check_schema(data: object) -> None:
+    """Check that a decoded message is of format version `SCHEMA`.
+
+    Raises:
+        ValueError: If `data` has no `schema` key, or another version. The message names both
+            versions.
+    """
+
+    match data:
+        case {"schema": int() as version} if not isinstance(version, bool) and version == SCHEMA:
+            return
+        case {"schema": version}:
+            raise ValueError(f"schema version {json.dumps(version)}, expected {SCHEMA}")
+
+    raise ValueError(f"missing schema version, expected {SCHEMA}")
 
 
 def _strings(items: list) -> tuple[str, ...]:

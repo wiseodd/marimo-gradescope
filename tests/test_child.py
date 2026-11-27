@@ -362,14 +362,23 @@ def test_outcome_from_bad_dict_raises():
 def test_event_encoding():
     outcome = Outcome("test_q1_a", False, "AssertionError", FailureReason.ASSERTION, 0.5)
 
-    assert json.loads(encode(Loaded(None))) == {"event": "loaded", "error": None}
-    assert json.loads(encode(Start("test_q1_a"))) == {"event": "start", "test": "test_q1_a"}
-    assert json.loads(encode(Loading(("a", "b")))) == {"event": "loading", "tests": ["a", "b"]}
-    assert json.loads(encode(Result(outcome))) == {"event": "result", **outcome.to_dict()}
+    loaded = {"schema": 1, "event": "loaded", "error": None, "unavailable": {"x": "it raised"}}
+    start = {"schema": 1, "event": "start", "test": "test_q1_a"}
+    loading = {"schema": 1, "event": "loading", "tests": ["a", "b"]}
+    result = {"schema": 1, "event": "result", **outcome.to_dict()}
+
+    assert json.loads(encode(Loaded(None, {"x": "it raised"}))) == loaded
+    assert json.loads(encode(Loaded(None)))["unavailable"] == {}
+    assert json.loads(encode(Start("test_q1_a"))) == start
+    assert json.loads(encode(Loading(("a", "b")))) == loading
+    assert json.loads(encode(Result(outcome))) == result
+    assert list(json.loads(encode(Start("t")))) == ["schema", "event", "test"]
     assert encode(Loaded("x")).endswith("\n")
     assert encode(Loaded("x")).count("\n") == 1
 
-    for event in [Loaded(None), Loaded("bad"), Loading(("t",)), Start("t"), Result(outcome)]:
+    events = [Loaded(None), Loaded("bad", {"x": "y"}), Loading(("t",)), Start("t"), Result(outcome)]
+
+    for event in events:
         assert decode(encode(event)) == event
 
 
@@ -384,8 +393,11 @@ def test_event_encoding():
         '{"event": "loading", "tests": "t"}',
         '{"event": "loading", "tests": [1]}',
         "[" * 200_000 + "]" * 200_000,
-        '{"event": "result", "name": "t", "passed": true, "message": "", "reason": "x", '
-        '"seconds": 0}',
+        '{"schema": 1, "event": "result", "name": "t", "passed": true, "message": "", '
+        '"reason": "x", "seconds": 0}',
+        '{"schema": 1, "event": "loaded", "error": null}',
+        '{"schema": 1, "event": "loaded", "error": null, "unavailable": {"x": 1}}',
+        '{"schema": true, "event": "start", "test": "t"}',
     ],
 )
 def test_decode_rejects_bad_lines(line):
@@ -403,6 +415,21 @@ def test_job_json_round_trip_with_run_failed(tmp_path):
     job = Job(solution_bundle(), tmp_path / "s.py", run_failed="exit code 3")
 
     assert Job.from_json(job.to_json()) == job
+
+
+def test_job_alarm_defaults_to_true_and_round_trips(tmp_path):
+    job = Job(solution_bundle(), tmp_path / "s.py")
+
+    assert job.alarm
+    assert Job.from_json(copy.replace(job, alarm=False).to_json()).alarm is False
+
+
+def test_job_without_alarm_is_rejected(tmp_path):
+    data = json.loads(Job(solution_bundle(), tmp_path / "s.py").to_json())
+    del data["alarm"]
+
+    with pytest.raises(ProtocolError, match="alarm"):
+        Job.from_json(json.dumps(data))
 
 
 # Child process
@@ -596,7 +623,7 @@ def test_timeout_fails_only_the_slow_test(tmp_path):
 
 
 def test_student_streams_are_not_the_event_channel(tmp_path):
-    fake = json.dumps({"event": "result", **Outcome("test_q1_a", True).to_dict()})
+    fake = json.dumps({"schema": 1, "event": "result", **Outcome("test_q1_a", True).to_dict()})
     path = submission(
         tmp_path,
         f"""

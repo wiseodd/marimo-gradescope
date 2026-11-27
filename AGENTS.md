@@ -24,6 +24,12 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   maturin builds it into platform wheels together with
   `src/mogs/`. The version is `[workspace.package] version` in `Cargo.toml`.
   `src/mogs/_binary.py` finds and runs the installed executable.
+- `crates/mogs-schema/`: the JSON messages between the `mogs` executable and
+  Python (job, events, bundle, inspect, `results.json`) as Rust types. Every
+  message but `results.json` has `"schema": 1`: bump `SCHEMA` there and in
+  `src/mogs/grader/bundle.py` together. `schemas/` holds the JSON Schemas
+  generated from the types. `MOGS_BLESS=1 cargo test` rewrites them, and
+  `tests/test_schemas.py` checks what Python writes against them.
 - `tests/`: pytest suite. `cargo test` runs the Rust tests.
 - `tests/e2e/`: end-to-end tests. The `docker` ones build the demo autograder
   into Gradescope's base image (`tests/e2e/Dockerfile`) and grade submissions

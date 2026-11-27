@@ -164,7 +164,7 @@ def test_parent_keeps_first_result_and_ignores_unstarted_tests(tmp_path):
     import json, os, sys
 
     def send(name, passed):
-        result = {"event": "result", "name": name, "passed": passed}
+        result = {"schema": 1, "event": "result", "name": name, "passed": passed}
         result |= {"message": "forged", "reason": None if passed else "error", "seconds": 0.0}
         os.write(int(sys.argv[1]), (json.dumps(result) + "\\n").encode())
 

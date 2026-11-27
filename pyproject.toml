@@ -40,6 +40,7 @@ dev = [
   "pypdf>=5",
   # The PDF tests need the pdf extra.
   "mogs[pdf]",
+  "jsonschema>=4",
 ]
 
 [tool.ty.src]
