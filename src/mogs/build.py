@@ -326,8 +326,8 @@ def _build(assignment_dir: Path, tool_requirement: str | None) -> BuildResult:
     src, cfg, nb = assignment.src, assignment.cfg, assignment.nb
 
     data = data_files(assignment_dir, cfg)
-    student = student_notebook(src, nb, cfg, pinned_requirement(cfg))
-    solved = student_notebook(src, nb, cfg, pinned_requirement(cfg), solutions=True)
+    student = student_notebook(src, nb, cfg, pinned_requirement())
+    solved = student_notebook(src, nb, cfg, pinned_requirement(), solutions=True)
     bundle = bundle_from_notebook(nb, cfg)
     tests = public_test_files(nb)
     requirement = tool_requirement or f"{TOOL}=={__version__}"

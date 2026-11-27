@@ -354,12 +354,10 @@ def make_assignment(folder: Path) -> Assignment:
     src = path.read_text(encoding="utf-8")
     cfg = read_config(src, path)
 
-    blank = student_notebook(src, parse_notebook(src), cfg, pinned_requirement(cfg))
+    blank = student_notebook(src, parse_notebook(src), cfg, pinned_requirement())
 
     # The solved copy the build writes to dist/autograder/ (`build_image` checks that).
-    solution = student_notebook(
-        src, parse_notebook(src), cfg, pinned_requirement(cfg), solutions=True
-    )
+    solution = student_notebook(src, parse_notebook(src), cfg, pinned_requirement(), solutions=True)
 
     hidden = []
     for cell in bundle_from_notebook(parse_notebook(src), cfg).cells:

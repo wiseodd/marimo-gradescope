@@ -59,8 +59,8 @@ class MarimoImport(StrEnum):
 type Edits = dict[int, list[tuple[int, str]]]
 
 
-def pinned_requirement(cfg: AssignmentConfig) -> str:
-    """Requirement on this exact package version, for every assignment `cfg`.
+def pinned_requirement() -> str:
+    """Requirement on this exact package version.
 
     The written-answer PDF is part of mogs itself, so manual questions need no extra.
     """
@@ -110,7 +110,7 @@ def student_notebook(
         nb: The notebook parsed from `src`. It should pass `validate`.
         cfg: Assignment config of the notebook.
         tool_requirement: Requirement on this package for the header, such as
-            `pinned_requirement(cfg)`.
+            `pinned_requirement()`.
         solutions: Keep the solutions.
 
     Returns:
