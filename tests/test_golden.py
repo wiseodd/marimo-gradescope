@@ -4,7 +4,17 @@ import hashlib
 import json
 
 import pytest
-from golden.record import BLOBS, CASES, FUNCTIONS, PYFMT, VERSION, read_cases, replay
+from golden.record import (
+    BLOBS,
+    CASES,
+    FUNCTIONS,
+    PYFMT,
+    VERSION,
+    read_cases,
+    replay,
+    scrub,
+    unscrub,
+)
 
 import mogs
 from mogs import transform
@@ -45,6 +55,34 @@ def test_blobs_are_named_by_their_hash() -> None:
 
     for blob in blobs:
         assert hashlib.sha256(blob.read_bytes()).hexdigest()[:16] == blob.stem
+
+
+def test_pyfmt_records_results_only() -> None:
+    cases = read_cases(PYFMT)
+    errors = [case for case in cases if "error" in case]
+
+    assert {case["function"] for case in cases} == {"repr", "format_g"}
+    assert errors == []
+
+
+def test_replay_keeps_other_pins_of_the_running_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    case = next(case for case in read_cases("config") if "tabulate==0.9.0" in json.dumps(case))
+    expected = {key: value for key, value in case.items() if key in ("ok", "error")}
+
+    monkeypatch.setattr(mogs, "__version__", "0.9.0")
+
+    assert json.dumps(replay("config", case)) == json.dumps(expected)
+
+
+def test_scrub_rewrites_only_pins_on_mogs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(mogs, "__version__", "0.9.0")
+    text = "tabulate==0.9.0, mogs==0.9.0, mogs[pdf]==0.9.0. mogs==0.9.0.1 python-mogs==0.9.0"
+    scrubbed = (
+        "tabulate==0.9.0, mogs==<version>, mogs[pdf]==<version>. mogs==0.9.0.1 python-mogs==0.9.0"
+    )
+
+    assert scrub(text) == scrubbed
+    assert unscrub(scrubbed) == text
 
 
 def test_corpus_holds_no_copy_of_the_running_version() -> None:

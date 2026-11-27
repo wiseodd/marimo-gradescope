@@ -110,12 +110,22 @@ FUNCTIONS: dict[str, tuple[FunctionType, ...]] = {
 }
 
 
+# The replay calls by keyword, and the builtins take positional arguments only.
+
+
+def _repr(value: object) -> str:
+    return repr(value)
+
+
 def _format_g(value: object) -> str:
     return format(value, "g")
 
 
 # Python's own formatting, which the messages above use through `!r` and `:g`.
-PYFMT_FUNCTIONS: dict[str, Callable[[object], str]] = {"repr": repr, "format_g": _format_g}
+PYFMT_FUNCTIONS: dict[str, Callable[[object], str]] = {"repr": _repr, "format_g": _format_g}
+# Functions whose every recorded call raises, on purpose. A function outside this set with
+# only `error` cases fails the recording, since that usually means a broken call.
+ERRORS_ONLY: frozenset[str] = frozenset()
 STRINGS = ("", "plain", "it's", 'say "hi"', "both ' and \"", "line\nbreak", "nul\x00", "café")
 FLOATS = (0.1, 1e-05, 1e16, 60.0, 2.5, 18.75, math.inf, -math.inf, math.nan, -0.0, 0.0)
 INTS = (0, 1, 25, -3, 10**16)
@@ -237,27 +247,33 @@ def scrub(text: str) -> str:
 
     A path in the repo becomes relative to it, the repo itself `<repo>`, and a pytest
     temporary folder `<tmp>`. The module name of a loaded submission, which hashes its
-    absolute path, becomes `_mogs_submission_<digest>`. The running version of this package,
-    `mogs.__version__`, becomes `<version>`, so the corpus outlives a version bump.
+    absolute path, becomes `_mogs_submission_<digest>`. In a pin on this package,
+    `mogs==<v>` or `mogs[pdf]==<v>` with `<v>` the running `mogs.__version__`, the version
+    becomes `<version>`, so the corpus outlives a version bump. The package writes its
+    version nowhere else that a recorded function returns.
     """
 
     root = ROOT.as_posix()
     text = PYTEST_TMP_RE.sub(TMP, text).replace(f"{root}/", "").replace(root, REPO)
     text = SUBMISSION_RE.sub(SUBMISSION, text)
 
-    return _version_re().sub(VERSION, text)
+    return _pin_re(re.escape(mogs.__version__)).sub(rf"\g<pin>{VERSION}", text)
 
 
-def _version_re() -> re.Pattern[str]:
-    """The running version, read on each call so that a test can patch it."""
+def _pin_re(version: str) -> re.Pattern[str]:
+    """A pin on this package to `version`, a regex; read on each call so a test can patch it.
 
-    return re.compile(rf"(?<![\w.]){re.escape(mogs.__version__)}(?![\w])")
+    `0.7.0` in `mogs==0.7.0.1` or `mogs==0.7.0rc1` is not the version; a trailing `.` that
+    ends a sentence is not part of it.
+    """
+
+    return re.compile(rf"(?<![\w.-])(?P<pin>mogs(?:\[pdf\])?==){version}(?!\.?\w)")
 
 
 def unscrub(text: str) -> str:
-    """`text` with `<version>` back to the running version; the other replacements stay."""
+    """`text` with `<version>` in pins back to the running version; the rest stays."""
 
-    return text.replace(VERSION, mogs.__version__)
+    return _pin_re(re.escape(VERSION)).sub(rf"\g<pin>{mogs.__version__}", text)
 
 
 # Decoding
@@ -578,19 +594,28 @@ class Recorder:
             module: sorted(json.dumps(case, ensure_ascii=False) for case in cases)
             for module, cases in by_module.items()
         }
+        blobs = {name: self.blobs[name] for name in _blob_names(by_module)}
         leaks = [line for module in lines for line in lines[module] if _leaks(line)]
+        leaks += [f"blob {name}: {text}" for name, text in sorted(blobs.items()) if _leaks(text)]
+        errors_only = sorted(
+            f"{module}.{name}"
+            for module, cases in by_module.items()
+            for name in {case["function"] for case in cases}
+            if name not in ERRORS_ONLY
+            and all("error" in case for case in cases if case["function"] == name)
+        )
         self.summary += [f"golden: dropped {line}" for line in dropped]
         self.summary += [
             f"golden: skipped {n} call(s) of {why}" for why, n in sorted(self.skipped.items())
         ]
 
-        if missing or leaks:
+        if missing or leaks or errors_only:
             self.summary += [f"golden: no case for {name}" for name in missing]
+            self.summary += [f"golden: only errors for {name}" for name in errors_only]
             self.summary += [f"golden: machine-specific text in {line[:200]}" for line in leaks]
             session.exitstatus = pytest.ExitCode.TESTS_FAILED
             return
 
-        blobs = {name: self.blobs[name] for name in _blob_names(by_module)}
         _write(lines, blobs)
         self.summary += [
             f"golden: {module}.{name}: {n} case(s)"
@@ -607,11 +632,11 @@ class Recorder:
             terminalreporter.write_line(line)
 
 
-def _leaks(line: str) -> bool:
-    """Whether a corpus line holds an absolute path of this machine."""
+def _leaks(text: str) -> bool:
+    """Whether a corpus line or blob holds an absolute path of this machine."""
 
     marks = (ROOT.as_posix(), Path.home().as_posix(), tempfile.gettempdir())
-    return any(mark in line for mark in marks)
+    return any(mark in text for mark in marks)
 
 
 def _blob_names(value: object) -> set[str]:

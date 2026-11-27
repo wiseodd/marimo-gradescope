@@ -14,39 +14,39 @@
 {"function": "format_g", "args": {"value": {"float": "-inf"}}, "ok": "-inf"}
 {"function": "format_g", "args": {"value": {"float": "inf"}}, "ok": "inf"}
 {"function": "format_g", "args": {"value": {"float": "nan"}}, "ok": "nan"}
-{"function": "repr", "args": {"value": ""}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": "both ' and \""}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": "café"}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": "it's"}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": "line\nbreak"}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": "nul\u0000"}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": "plain"}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": "say \"hi\""}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": -3}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": 0.0}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": 0.1}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": 0}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": 10000000000000000}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": 18.75}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": 1e+16}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": 1e-05}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": 1}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": 2.5}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": 25}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": 60.0}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": ["a", 1, null]}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": []}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": false}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": null}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": true}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": {"float": "-0.0"}}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": {"float": "-inf"}}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": {"float": "inf"}}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": {"float": "nan"}}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": {"k": [true, null], "n": {"x": 1.5, "t": {"tuple": ["y"]}}}}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": {"str_utf16": [55296]}}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": {"tuple": ["a", 1.5, ["b"]]}}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": {"tuple": ["x"]}}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": {"tuple": []}}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": {"url": "./wheels", "default": true}}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
-{"function": "repr", "args": {"value": {}}, "error": {"type": "TypeError", "message": "repr() takes no keyword arguments"}}
+{"function": "repr", "args": {"value": ""}, "ok": "''"}
+{"function": "repr", "args": {"value": "both ' and \""}, "ok": "'both \\' and \"'"}
+{"function": "repr", "args": {"value": "café"}, "ok": "'café'"}
+{"function": "repr", "args": {"value": "it's"}, "ok": "\"it's\""}
+{"function": "repr", "args": {"value": "line\nbreak"}, "ok": "'line\\nbreak'"}
+{"function": "repr", "args": {"value": "nul\u0000"}, "ok": "'nul\\x00'"}
+{"function": "repr", "args": {"value": "plain"}, "ok": "'plain'"}
+{"function": "repr", "args": {"value": "say \"hi\""}, "ok": "'say \"hi\"'"}
+{"function": "repr", "args": {"value": -3}, "ok": "-3"}
+{"function": "repr", "args": {"value": 0.0}, "ok": "0.0"}
+{"function": "repr", "args": {"value": 0.1}, "ok": "0.1"}
+{"function": "repr", "args": {"value": 0}, "ok": "0"}
+{"function": "repr", "args": {"value": 10000000000000000}, "ok": "10000000000000000"}
+{"function": "repr", "args": {"value": 18.75}, "ok": "18.75"}
+{"function": "repr", "args": {"value": 1e+16}, "ok": "1e+16"}
+{"function": "repr", "args": {"value": 1e-05}, "ok": "1e-05"}
+{"function": "repr", "args": {"value": 1}, "ok": "1"}
+{"function": "repr", "args": {"value": 2.5}, "ok": "2.5"}
+{"function": "repr", "args": {"value": 25}, "ok": "25"}
+{"function": "repr", "args": {"value": 60.0}, "ok": "60.0"}
+{"function": "repr", "args": {"value": ["a", 1, null]}, "ok": "['a', 1, None]"}
+{"function": "repr", "args": {"value": []}, "ok": "[]"}
+{"function": "repr", "args": {"value": false}, "ok": "False"}
+{"function": "repr", "args": {"value": null}, "ok": "None"}
+{"function": "repr", "args": {"value": true}, "ok": "True"}
+{"function": "repr", "args": {"value": {"float": "-0.0"}}, "ok": "-0.0"}
+{"function": "repr", "args": {"value": {"float": "-inf"}}, "ok": "-inf"}
+{"function": "repr", "args": {"value": {"float": "inf"}}, "ok": "inf"}
+{"function": "repr", "args": {"value": {"float": "nan"}}, "ok": "nan"}
+{"function": "repr", "args": {"value": {"k": [true, null], "n": {"x": 1.5, "t": {"tuple": ["y"]}}}}, "ok": "{'k': [True, None], 'n': {'x': 1.5, 't': ('y',)}}"}
+{"function": "repr", "args": {"value": {"str_utf16": [55296]}}, "ok": "'\\ud800'"}
+{"function": "repr", "args": {"value": {"tuple": ["a", 1.5, ["b"]]}}, "ok": "('a', 1.5, ['b'])"}
+{"function": "repr", "args": {"value": {"tuple": ["x"]}}, "ok": "('x',)"}
+{"function": "repr", "args": {"value": {"tuple": []}}, "ok": "()"}
+{"function": "repr", "args": {"value": {"url": "./wheels", "default": true}}, "ok": "{'url': './wheels', 'default': True}"}
+{"function": "repr", "args": {"value": {}}, "ok": "{}"}

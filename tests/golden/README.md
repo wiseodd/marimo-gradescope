@@ -6,7 +6,8 @@ port must give the same output.
 
 To record it again, run `make golden`. It runs the test suite with `record.py` as a plugin
 (Python 3.13, docker tests left out) and rewrites `cases/` and `blobs/`. The plugin fails if
-a test fails, a function gets no case, or a line holds an absolute path.
+a test fails, a function gets no case or only errors, or a line or blob holds an absolute
+path.
 
 ## Shapes
 
@@ -14,7 +15,8 @@ Each line of `cases/<module>.jsonl` is
 `{"function": ..., "args": {...}, "ok": <value>}`, or the same with
 `"error": {"type": <exception class name>, "message": <str(exc)>}` in place of `ok`.
 `args` holds every parameter by name, defaults included. Lines are sorted, and each
-(function, args) pair appears once.
+(function, args) pair appears once. An exception is identified by its class name only, not
+its module.
 
 - Strings, ints, bools, `None`, lists and string-keyed dicts are themselves. Tuples are
   lists, sets are sorted lists, enums are their value, and paths are POSIX strings.
@@ -25,9 +27,11 @@ Each line of `cases/<module>.jsonl` is
 - Absolute paths are rewritten in every string: a path in the repo becomes relative to
   it, the repo itself `<repo>`, and a pytest temporary folder `<tmp>`.
   `_mogs_submission_<digest>` stands for a loaded submission's module name, which hashes
-  its path. The running version of mogs (`mogs.__version__`) is `<version>`, also inside
-  blobs, whose names hash the rewritten text. The replay puts the running version back
-  into the arguments and rewrites the live output the same way before comparing.
+  its path. In a pin on mogs, `mogs==<v>` or `mogs[pdf]==<v>`, the running version
+  (`mogs.__version__`) is `<version>`, also inside blobs, whose names hash the rewritten
+  text. Other pins, such as `tabulate==0.9.0`, stay as they are. The replay puts the
+  running version back into the arguments and rewrites the live output the same way
+  before comparing.
 - `Notebook` is `{"cells": [<Cell>, ...], "src": ...}`, and `Cell` has every field:
   `kind`, `name`, `start`, `end`, `tests`, `hidden`, `grade_qid`, `assignment`,
   `late_hidden`.
