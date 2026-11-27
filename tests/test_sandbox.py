@@ -63,7 +63,7 @@ def cell(qid: str, source: str, *, hidden: bool = False, uses=("add", "misbehave
     tests = tuple(
         line[4:].split("(")[0] for line in source.splitlines() if line.startswith("def test_")
     )
-    return TestCell(qid, hidden, source, tests, tuple(uses))
+    return TestCell(qid, f"{qid}-tests", hidden, source, tests, tuple(uses))
 
 
 def bundle(*cells: TestCell, **kwargs) -> GradingBundle:
@@ -164,7 +164,7 @@ def test_parent_keeps_first_result_and_ignores_unstarted_tests(tmp_path):
     import json, os, sys
 
     def send(name, passed):
-        result = {"event": "result", "name": name, "passed": passed}
+        result = {"schema": 1, "event": "result", "name": name, "passed": passed}
         result |= {"message": "forged", "reason": None if passed else "error", "seconds": 0.0}
         os.write(int(sys.argv[1]), (json.dumps(result) + "\\n").encode())
 

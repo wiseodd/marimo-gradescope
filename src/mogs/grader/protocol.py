@@ -1,13 +1,17 @@
 """Messages between the grader parent and a grading child.
 
 The parent writes one `Job` as JSON to the child's stdin. The child writes events, one JSON
-object per line, to a separate file descriptor whose number is its first argument:
+object per line, to a separate file descriptor whose number is its first argument. Each event
+starts with `"schema": SCHEMA`, the format version:
 
-- `{"event": "loaded", "error": str | None}` once, after setup and binding;
+- `{"event": "loaded", "error": str | None, "unavailable": {name: reason}}` once, after setup
+  and binding;
 - `{"event": "loading", "tests": [name, ...]}` before loading each test cell (and the hidden
   helpers it needs), naming the cell's tests that will run;
 - `{"event": "start", "test": name}` before each test;
 - `{"event": "result", **outcome}` after each test, with the fields of `Outcome.to_dict`.
+
+A job or event of another format version is a `ProtocolError`.
 
 Student code writes to stdout and stderr freely; neither carries events.
 """
@@ -18,6 +22,7 @@ from pathlib import Path
 from typing import Self
 
 from mogs.grader.bundle import GradingBundle
+from mogs.grader.wire import SCHEMA, check_schema, reject_extra
 from mogs.runner import Outcome
 
 
@@ -35,22 +40,27 @@ class Job:
         skip: Tests already done, e.g. by an earlier child that died.
         run_failed: Why an earlier child died while running the whole notebook. When set,
             the child does not run it again; see `loader.bind`.
+        alarm: Whether the child times each test itself with an alarm. The child does not
+            read it yet.
     """
 
     bundle: GradingBundle
     submission: Path
     skip: tuple[str, ...] = ()
     run_failed: str | None = None
+    alarm: bool = True
 
     def to_json(self) -> str:
         """The job as JSON text."""
 
         return json.dumps(
             {
+                "schema": SCHEMA,
                 "bundle": self.bundle.to_dict(),
                 "submission": str(self.submission),
                 "skip": list(self.skip),
                 "run_failed": self.run_failed,
+                "alarm": self.alarm,
             }
         )
 
@@ -59,31 +69,44 @@ class Job:
         """Inverse of `to_json`.
 
         Raises:
-            ProtocolError: If the text is not a job.
+            ProtocolError: If the text is not a job of version `SCHEMA`.
         """
 
         try:
-            match json.loads(text):
+            data = json.loads(text)
+            check_schema(data)
+
+            match data:
                 case {
+                    "schema": _,
                     "bundle": bundle,
                     "submission": str() as submission,
                     "skip": list() as skip,
                     "run_failed": None | str() as run_failed,
+                    "alarm": bool() as alarm,
+                    **extra,
                 } if all(isinstance(name, str) for name in skip):
-                    return cls(
-                        GradingBundle.from_dict(bundle), Path(submission), tuple(skip), run_failed
-                    )
+                    reject_extra(extra, "job")
+                    bundle = GradingBundle.from_dict(bundle)
+                    return cls(bundle, Path(submission), tuple(skip), run_failed, alarm)
         except ValueError as e:
             raise ProtocolError(f"bad job: {e}") from e
 
-        raise ProtocolError("bad job: expected bundle, submission, skip and run_failed")
+        raise ProtocolError("bad job: expected bundle, submission, skip, run_failed and alarm")
 
 
 @dataclass(frozen=True, slots=True)
 class Loaded:
-    """The child is ready to run tests, or failed to set up (`error`)."""
+    """The child is ready to run tests, or failed to set up (`error`).
+
+    Attributes:
+        error: Why setup failed, `None` when it worked.
+        unavailable: `(name, reason)` for each name the tests use that the submission could
+            not provide, in the order found. The child leaves it empty for now.
+    """
 
     error: str | None
+    unavailable: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,14 +137,20 @@ def encode(event: Event) -> str:
     """One event as a JSON line, ending in a newline."""
 
     match event:
-        case Loaded(error):
-            data: dict[str, object] = {"event": "loaded", "error": error}
+        case Loaded(error, unavailable):
+            data: dict[str, object] = {
+                "event": "loaded",
+                "error": error,
+                "unavailable": dict(unavailable),
+            }
         case Loading(tests):
             data = {"event": "loading", "tests": list(tests)}
         case Start(test):
             data = {"event": "start", "test": test}
         case Result(outcome):
             data = {"event": "result", **outcome.to_dict()}
+
+    data = {"schema": SCHEMA, **data}
 
     # `json.dumps` escapes newlines inside strings, so the line stays one line.
     return json.dumps(data) + "\n"
@@ -151,22 +180,47 @@ def _decode(line: str) -> Event:
     except ValueError as e:
         raise ProtocolError(f"not JSON: {_excerpt(line)}") from e
 
+    try:
+        check_schema(data)
+        event = _event(data)
+    except ValueError as e:
+        raise ProtocolError(str(e)[:200]) from e
+
+    if event is None:
+        raise ProtocolError(f"not an event: {_excerpt(line)}")
+
+    return event
+
+
+def _event(data: object) -> Event | None:
+    """The event in a decoded line of the right version, or `None` for another shape.
+
+    Raises:
+        ValueError: If the line has a key its event does not, or a bad outcome.
+    """
+
     match data:
-        case {"event": "loaded", "error": None | str() as error}:
-            return Loaded(error)
-        case {"event": "loading", "tests": list() as tests} if all(
+        case {
+            "schema": _,
+            "event": "loaded",
+            "error": None | str() as error,
+            "unavailable": dict() as unavailable,
+            **extra,
+        } if all(isinstance(reason, str) for reason in unavailable.values()):
+            reject_extra(extra, "loaded event")
+            return Loaded(error, tuple(unavailable.items()))
+        case {"schema": _, "event": "loading", "tests": list() as tests, **extra} if all(
             isinstance(test, str) for test in tests
         ):
+            reject_extra(extra, "loading event")
             return Loading(tuple(tests))
-        case {"event": "start", "test": str() as test}:
+        case {"schema": _, "event": "start", "test": str() as test, **extra}:
+            reject_extra(extra, "start event")
             return Start(test)
-        case {"event": "result", **fields}:
-            try:
-                return Result(Outcome.from_dict(fields))
-            except ValueError as e:
-                raise ProtocolError(str(e)[:200]) from e
+        case {"schema": _, "event": "result", **fields}:
+            return Result(Outcome.from_dict(fields))
 
-    raise ProtocolError(f"not an event: {_excerpt(line)}")
+    return None
 
 
 def _excerpt(line: str) -> str:

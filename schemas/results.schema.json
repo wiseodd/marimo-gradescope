@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Results",
+  "description": "The content of `results.json`.",
+  "type": "object",
+  "properties": {
+    "tests": {
+      "description": "One row per entry Gradescope shows.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Row"
+      }
+    },
+    "stdout_visibility": {
+      "description": "Who sees the grader's stdout.",
+      "type": "string"
+    },
+    "score": {
+      "description": "The total, set only when `tests` is empty.",
+      "type": "number",
+      "format": "double"
+    },
+    "output": {
+      "description": "The score summary for students.",
+      "type": "string"
+    },
+    "output_format": {
+      "description": "Format of `output`.",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "tests",
+    "stdout_visibility"
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "Row": {
+      "description": "One entry of `tests` in `results.json`, with its keys in the order `results.row` adds them.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Row title.",
+          "type": "string"
+        },
+        "score": {
+          "description": "Points earned.",
+          "type": "number",
+          "format": "double"
+        },
+        "max_score": {
+          "description": "Points possible.",
+          "type": "number",
+          "format": "double"
+        },
+        "output": {
+          "description": "Text under the row.",
+          "type": "string"
+        },
+        "output_format": {
+          "description": "Format of `output`.",
+          "type": "string"
+        },
+        "visibility": {
+          "description": "Who sees the row.",
+          "type": "string"
+        },
+        "number": {
+          "description": "Question id shown next to the title.",
+          "type": "string"
+        },
+        "status": {
+          "description": "`failed` marks the row as failed.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "score",
+        "max_score",
+        "output",
+        "output_format",
+        "visibility"
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

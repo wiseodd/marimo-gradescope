@@ -96,7 +96,7 @@ def config(timeout: float = 60) -> AssignmentConfig:
 
 
 def cell(source: str, tests: tuple[str, ...], uses: tuple[str, ...] = ()) -> TestCell:
-    return TestCell("q1", False, textwrap.dedent(source), tests, uses)
+    return TestCell("q1", "q1-tests", False, textwrap.dedent(source), tests, uses)
 
 
 def submission(tmp_path: Path, body: str = "") -> Path:
@@ -245,6 +245,16 @@ def test_bundle_json_holds_no_host_paths(tmp_path):
     assert GradingBundle.from_json(text).config.requirements is None
 
 
+def test_bundle_labels_each_cell_after_its_question():
+    bundle = solution_bundle()
+
+    assert [(c.qid, c.label) for c in bundle.cells] == [
+        (c.qid, f"{c.qid}-tests") for c in bundle.cells
+    ]
+    assert {c.qid for c in bundle.cells} == {"q1", "q2"}
+    assert json.loads(bundle.to_json())["cells"][0]["label"] == "q1-tests"
+
+
 def test_for_phase_splits_cells():
     bundle = solution_bundle()
 
@@ -362,14 +372,33 @@ def test_outcome_from_bad_dict_raises():
 def test_event_encoding():
     outcome = Outcome("test_q1_a", False, "AssertionError", FailureReason.ASSERTION, 0.5)
 
-    assert json.loads(encode(Loaded(None))) == {"event": "loaded", "error": None}
-    assert json.loads(encode(Start("test_q1_a"))) == {"event": "start", "test": "test_q1_a"}
-    assert json.loads(encode(Loading(("a", "b")))) == {"event": "loading", "tests": ["a", "b"]}
-    assert json.loads(encode(Result(outcome))) == {"event": "result", **outcome.to_dict()}
+    unavailable = (("y", "it raised"), ("x", "no cell defines it"))
+    loaded = {"schema": 1, "event": "loaded", "error": None, "unavailable": dict(unavailable)}
+    start = {"schema": 1, "event": "start", "test": "test_q1_a"}
+    loading = {"schema": 1, "event": "loading", "tests": ["a", "b"]}
+    result = {"schema": 1, "event": "result", **outcome.to_dict()}
+
+    assert json.loads(encode(Loaded(None, unavailable))) == loaded
+    assert list(json.loads(encode(Loaded(None, unavailable)))["unavailable"]) == ["y", "x"]
+    assert decode(encode(Loaded(None, unavailable))) == Loaded(None, unavailable)
+    assert json.loads(encode(Loaded(None)))["unavailable"] == {}
+    assert hash(Loaded(None, unavailable))
+    assert json.loads(encode(Start("test_q1_a"))) == start
+    assert json.loads(encode(Loading(("a", "b")))) == loading
+    assert json.loads(encode(Result(outcome))) == result
+    assert list(json.loads(encode(Start("t")))) == ["schema", "event", "test"]
     assert encode(Loaded("x")).endswith("\n")
     assert encode(Loaded("x")).count("\n") == 1
 
-    for event in [Loaded(None), Loaded("bad"), Loading(("t",)), Start("t"), Result(outcome)]:
+    events = [
+        Loaded(None),
+        Loaded("bad", (("x", "y"),)),
+        Loading(("t",)),
+        Start("t"),
+        Result(outcome),
+    ]
+
+    for event in events:
         assert decode(encode(event)) == event
 
 
@@ -379,18 +408,26 @@ def test_event_encoding():
         "",
         "not json",
         "[]",
-        '{"event": "nope"}',
-        '{"event": "start"}',
-        '{"event": "loading", "tests": "t"}',
-        '{"event": "loading", "tests": [1]}',
+        '{"event": "start", "test": "t"}',
+        '{"schema": 1, "event": "nope"}',
+        '{"schema": 1, "event": "start"}',
+        '{"schema": 1, "event": "loading", "tests": "t"}',
+        '{"schema": 1, "event": "loading", "tests": [1]}',
         "[" * 200_000 + "]" * 200_000,
-        '{"event": "result", "name": "t", "passed": true, "message": "", "reason": "x", '
-        '"seconds": 0}',
+        '{"schema": 1, "event": "result", "name": "t", "passed": true, "message": "", '
+        '"reason": "x", "seconds": 0}',
+        '{"schema": 1, "event": "loaded", "error": null}',
+        '{"schema": 1, "event": "loaded", "error": null, "unavailable": {"x": 1}}',
+        '{"schema": true, "event": "start", "test": "t"}',
     ],
 )
 def test_decode_rejects_bad_lines(line):
-    with pytest.raises(ProtocolError):
+    with pytest.raises(ProtocolError) as error:
         decode(line)
+
+    # A line of the right version fails on its shape, not on the version check.
+    if line.startswith('{"schema": 1,'):
+        assert "schema version" not in str(error.value)
 
 
 def test_job_json_round_trip(tmp_path):
@@ -403,6 +440,21 @@ def test_job_json_round_trip_with_run_failed(tmp_path):
     job = Job(solution_bundle(), tmp_path / "s.py", run_failed="exit code 3")
 
     assert Job.from_json(job.to_json()) == job
+
+
+def test_job_alarm_defaults_to_true_and_round_trips(tmp_path):
+    job = Job(solution_bundle(), tmp_path / "s.py")
+
+    assert job.alarm
+    assert Job.from_json(copy.replace(job, alarm=False).to_json()).alarm is False
+
+
+def test_job_without_alarm_is_rejected(tmp_path):
+    data = json.loads(Job(solution_bundle(), tmp_path / "s.py").to_json())
+    del data["alarm"]
+
+    with pytest.raises(ProtocolError, match="alarm"):
+        Job.from_json(json.dumps(data))
 
 
 # Child process
@@ -495,6 +547,15 @@ def test_cell_that_fails_to_load_fails_only_its_tests(tmp_path):
     assert results["test_q1_b"].passed
     assert results["test_q1_c"].reason is FailureReason.LOAD_FAILED
     assert "SyntaxError" in results["test_q1_c"].message
+
+
+def test_cell_compiles_under_its_label(tmp_path):
+    broken = TestCell("q1", "tests/q1.py", False, "def test_q1_a(:\n", ("test_q1_a",), ())
+    bundle = GradingBundle(config(), "", (broken,))
+    results = by_name(run_child(tmp_path, Job(bundle, submission(tmp_path))))
+
+    assert results["test_q1_a"].reason is FailureReason.LOAD_FAILED
+    assert "q1.py" in results["test_q1_a"].message
 
 
 def test_test_missing_from_its_cell_fails(tmp_path):
@@ -596,7 +657,7 @@ def test_timeout_fails_only_the_slow_test(tmp_path):
 
 
 def test_student_streams_are_not_the_event_channel(tmp_path):
-    fake = json.dumps({"event": "result", **Outcome("test_q1_a", True).to_dict()})
+    fake = json.dumps({"schema": 1, "event": "result", **Outcome("test_q1_a", True).to_dict()})
     path = submission(
         tmp_path,
         f"""

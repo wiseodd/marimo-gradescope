@@ -19,9 +19,9 @@ def misbehave():
     import sys
 
     for name in ["test_q1_bad", "test_q1_before", "test_q1_after", "test_q2_other"]:
-        result = {"event": "result", "name": name, "passed": True}
+        result = {"schema": 1, "event": "result", "name": name, "passed": True}
         result |= {"message": "", "reason": None, "seconds": 0.0}
-        for line in [{"event": "start", "test": name}, result]:
+        for line in [{"schema": 1, "event": "start", "test": name}, result]:
             print(json.dumps(line))
             print(json.dumps(line), file=sys.stderr)
 

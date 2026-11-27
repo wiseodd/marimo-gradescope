@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Self
 
+from mogs.grader.wire import reject_extra
+
 MAX_LINES = 25
 MAX_BYTES = 4096
 MAX_STATEMENT_LINES = 5
@@ -69,7 +71,8 @@ class Outcome:
         """Inverse of `to_dict`.
 
         Raises:
-            ValueError: If a field is missing or has the wrong type, or `reason` is unknown.
+            ValueError: If a field is missing, unknown or has the wrong type, or `reason` is
+                unknown.
         """
 
         match data:
@@ -79,7 +82,9 @@ class Outcome:
                 "message": str() as message,
                 "reason": None | str() as reason,
                 "seconds": int() | float() as seconds,
+                **extra,
             } if not isinstance(seconds, bool):
+                reject_extra(extra, "outcome")
                 kind = None if reason is None else FailureReason(reason)
                 return cls(name, passed, message, kind, float(seconds))
 

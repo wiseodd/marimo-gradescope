@@ -258,7 +258,7 @@ def _run_cell(
 
     namespace = {**base, **provided}
 
-    match _load(cell.source, f"{cell.qid}-tests", namespace, timeout):
+    match _load(cell.source, cell.label, namespace, timeout):
         case (message, reason):
             _fail_cell(cell, skip, f"the test cell {message}", reason, emit)
             return

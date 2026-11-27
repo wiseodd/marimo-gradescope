@@ -1,7 +1,8 @@
 """The tests the grader runs, cut from the source notebook and stored as JSON.
 
 A bundle holds the setup cell and every test cell. Each grading phase gets only its own cells,
-so the public phase never sees hidden test source.
+so the public phase never sees hidden test source. Its JSON carries the format version; see
+`wire`.
 """
 
 import copy
@@ -11,6 +12,7 @@ from enum import StrEnum
 from typing import Self
 
 from mogs.config import AssignmentConfig, Question
+from mogs.grader.wire import SCHEMA, check_schema, reject_extra
 from mogs.source import Notebook, SourceError, cell_names, question_id
 
 
@@ -27,6 +29,9 @@ class TestCell:
 
     Attributes:
         qid: Question id of the cell's tests.
+        label: File name the cell is compiled under, shown in tracebacks and syntax errors:
+            `<qid>-tests` for a notebook cell, the path relative to the notebook for a file of
+            public tests.
         hidden: Whether the cell is marked `# HIDDEN`.
         source: Cell body, run as a module.
         tests: Test function names, in file order.
@@ -37,6 +42,7 @@ class TestCell:
     __test__ = False
 
     qid: str
+    label: str
     hidden: bool
     source: str
     tests: tuple[str, ...]
@@ -48,6 +54,7 @@ class TestCell:
 
         return {
             "qid": self.qid,
+            "label": self.label,
             "hidden": self.hidden,
             "source": self.source,
             "tests": list(self.tests),
@@ -66,13 +73,17 @@ class TestCell:
         match data:
             case {
                 "qid": str() as qid,
+                "label": str() as label,
                 "hidden": bool() as hidden,
                 "source": str() as source,
                 "tests": list() as tests,
                 "uses": list() as uses,
                 "needs": list() as needs,
+                **extra,
             }:
-                return cls(qid, hidden, source, _strings(tests), _strings(uses), _strings(needs))
+                reject_extra(extra, "test cell")
+                strings = _strings(tests), _strings(uses), _strings(needs)
+                return cls(qid, label, hidden, source, *strings)
 
         raise ValueError(f"not a test cell: {data!r}")
 
@@ -120,7 +131,9 @@ class HiddenHelper:
                 "defines": list() as defines,
                 "uses": list() as uses,
                 "needs": list() as needs,
+                **extra,
             }:
+                reject_extra(extra, "hidden helper")
                 return cls(source, _strings(defines), _strings(uses), _strings(needs))
 
         raise ValueError(f"not a hidden helper: {data!r}")
@@ -158,6 +171,7 @@ class GradingBundle:
         """JSON-ready fields."""
 
         return {
+            "schema": SCHEMA,
             "config": _config_to_dict(self.config),
             "setup_code": self.setup_code,
             "cells": [cell.to_dict() for cell in self.cells],
@@ -169,16 +183,22 @@ class GradingBundle:
         """Inverse of `to_dict`.
 
         Raises:
-            ValueError: If a field is missing or has the wrong type.
+            ValueError: If the schema version is not `SCHEMA`, or a field is missing or has
+                the wrong type.
         """
+
+        check_schema(data)
 
         match data:
             case {
+                "schema": _,
                 "config": dict() as config,
                 "setup_code": str() as setup,
                 "cells": list() as cells,
                 "helpers": list() as helpers,
+                **extra,
             }:
+                reject_extra(extra, "grading bundle")
                 return cls(
                     _config_from_dict(config),
                     setup,
@@ -198,7 +218,7 @@ class GradingBundle:
         """Inverse of `to_json`.
 
         Raises:
-            ValueError: If the text is not JSON or not a bundle.
+            ValueError: If the text is not JSON or not a bundle of version `SCHEMA`.
         """
 
         return cls.from_dict(json.loads(text))
@@ -251,7 +271,8 @@ def bundle_from_notebook(nb: Notebook, cfg: AssignmentConfig) -> GradingBundle:
         _, free = cell_names(source)
         uses = tuple(sorted(free & students))
         needs = tuple(sorted(free & provided)) if cell.hidden else ()
-        cells.append(TestCell(qids.pop(), cell.hidden, source, cell.tests, uses, needs))
+        qid = qids.pop()
+        cells.append(TestCell(qid, f"{qid}-tests", cell.hidden, source, cell.tests, uses, needs))
 
     return GradingBundle(cfg, nb.setup_source(), tuple(cells), tuple(helpers))
 
@@ -292,7 +313,9 @@ def _config_from_dict(data: dict) -> AssignmentConfig:
             "budget": int() | float() as budget,
             "memory_mb": int() as memory_mb,
             "python": str() as python,
+            **extra,
         }:
+            reject_extra(extra, "assignment config")
             return AssignmentConfig(
                 name=name,
                 notebook=notebook,
@@ -314,7 +337,9 @@ def _question_from_dict(data: object) -> Question:
             "title": str() as title,
             "points": int() | float() as points,
             "manual": bool() as manual,
+            **extra,
         }:
+            reject_extra(extra, "question")
             return Question(qid, title, float(points), manual)
 
     raise ValueError(f"not a question: {data!r}")
