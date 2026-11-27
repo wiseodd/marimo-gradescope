@@ -23,7 +23,10 @@ import time
 from pathlib import Path
 
 folder = Path(os.environ["FAKE_MARIMO"])
-(folder / "command.json").write_text(json.dumps(sys.orig_argv), encoding="utf-8")
+# On macOS a venv's python starts the framework binary, which then is `orig_argv[0]`, but
+# `sys.executable` stays the venv's python that was started.
+command = [sys.executable, *sys.orig_argv[1:]]
+(folder / "command.json").write_text(json.dumps(command), encoding="utf-8")
 
 if (folder / "hold").exists():
     (folder / "started").touch()
