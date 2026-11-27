@@ -1,0 +1,87 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "marimo",
+#     "mogs",
+# ]
+# ///
+
+import marimo
+
+__generated_with = "0.24.2"
+app = marimo.App()
+
+with app.setup:
+    import marimo as mo
+
+    import mogs
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    # Fixture assignment
+
+    ## Question 1
+    """)
+    return
+
+
+@app.function
+def add(a, b):
+    """Sum of two numbers."""
+    ...
+
+
+@app.cell
+def _():
+    mogs.grade("q1", points=4, title="Question 1", test_file="tests/q1.py", uses=[add], hidden=1)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ## Question 2
+    """)
+    return
+
+
+@app.function
+def count_vowels(s):
+    """Number of vowels in `s`."""
+    ...
+
+
+@app.cell
+def _():
+    mogs.grade("q2", points=6, title="Vowels", test_file="tests/q2.py", uses=[count_vowels], hidden=2)
+    return
+
+
+@app.cell(hide_code=True)
+def prompt_q3():
+    mo.md(r"""
+    ## Question 3
+
+    Why is addition commutative?
+    """)
+    return
+
+
+@app.cell
+def answer_q3():
+    mo.md(r"""
+    Because the order of the terms does not change the sum.
+    """)
+    return
+
+
+@app.cell
+def _():
+    mogs.grade("q3", points=5, title="Question 3", manual=True)
+    return
+
+
+if __name__ == "__main__":
+    app.run()

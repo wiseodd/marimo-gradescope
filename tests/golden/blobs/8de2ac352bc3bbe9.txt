@@ -1,0 +1,61 @@
+# /// script
+# dependencies = [
+#     "marimo",
+#     "mogs==9.9.9",
+# ]
+#
+# [tool.uv]
+# exclude-newer = "2026-01-01T00:00:00Z"
+#
+# [tool.marimo.runtime]
+# reactive_tests = false
+# ///
+
+import marimo
+
+app = marimo.App()
+
+with app.setup:
+    import mogs
+
+
+@app.cell
+def _():
+    a: int = ...
+    b = ...
+    c = 3  # not a solution
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    import marimo as mo
+
+    return (mo,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Submit
+
+    Save the notebook, then click **Export submission** below. It runs the public tests on
+    the saved file and makes a zip of your notebook. Upload that zip to Gradescope.
+
+    No button below? Run the notebook first: **Run all stale cells**, or Ctrl+Shift+R
+    (Cmd+Shift+R on a Mac).
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    export_button = mogs.export_button()
+    export_button
+    return (export_button,)
+
+
+@app.cell(hide_code=True)
+def _(export_button):
+    mogs.export(export_button, name="nb", manual=[], titles={"q1": "Q1"}, placeholders={})
+    return

@@ -1,0 +1,107 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = ["marimo", "mogs"]
+# ///
+
+import marimo
+
+__generated_with = "0.25.2"
+app = marimo.App()
+
+with app.setup:
+    import marimo as mo
+    import mogs
+
+
+@app.cell
+def _():
+    mogs.assignment(name="A12")
+
+
+@app.cell(hide_code=True)
+def instructor_guide():
+    mo.md(r"""
+    ## How to write this assignment
+
+    See docs: https://mogs.kristia.de/instructors
+
+    The two questions below are examples. Change them into your own questions or delete
+    them. Each question ends with a `mogs.grade("<id>", points=...)` cell.
+
+    **Auto-graded question `q1`:**
+
+    1. The question text, as Markdown.
+    2. The function students write. Put your solution between `# BEGIN SOLUTION` and
+       `# END SOLUTION`, or by putting an inline comment `# SOLUTION`.
+    3. Public tests: a cell of functions named `test_q1_<anything>`.
+    4. Hidden tests, optional: another such cell, with `# HIDDEN` as its first line.
+    5. `mogs.grade("q1", points=4)`
+
+    **Written question `q2`:**
+
+    1. The question text, as Markdown.
+    2. Your answer, as Markdown between `<!-- BEGIN SOLUTION -->` and
+       `<!-- END SOLUTION -->`.
+    3. `mogs.grade("q2", points=5)`
+    """)
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ## Question 1
+
+    Write `mean(xs)`, the average of a list of numbers.
+    """)
+
+
+@app.function
+def mean(xs):
+    # BEGIN SOLUTION
+    return sum(xs) / len(xs)
+    # END SOLUTION
+
+
+@app.cell
+def _():
+    def test_q1_basic():
+        assert mean([1, 2, 3]) == 2
+
+
+@app.cell
+def _():
+    # HIDDEN
+    def test_q1_single():
+        assert mean([7]) == 7
+
+
+@app.cell
+def _():
+    mogs.grade("q1", points=4)
+
+
+@app.cell(hide_code=True)
+def _():
+    mo.md(r"""
+    ## Question 2
+
+    What does `mean([])` do?
+    """)
+
+
+@app.cell
+def _():
+    mo.md(r"""
+    <!-- BEGIN SOLUTION -->
+    It divides by zero and raises `ZeroDivisionError`.
+    <!-- END SOLUTION -->
+    """)
+
+
+@app.cell
+def _():
+    mogs.grade("q2", points=5)
+
+
+if __name__ == "__main__":
+    app.run()

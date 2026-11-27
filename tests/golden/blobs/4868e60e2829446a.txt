@@ -1,0 +1,85 @@
+# /// script
+# dependencies = ["marimo"]
+#
+# [tool.uv]
+# exclude-newer = "2026-01-01T00:00:00Z"
+#
+# [tool.marimo.runtime]
+# reactive_tests = false
+# ///
+
+import marimo
+
+app = marimo.App()
+
+with app.setup:
+    import mogs
+
+
+@app.cell
+def _():
+    mo.md(r"""
+    
+    ## Question 2
+
+    Explain.
+    """)
+    return
+
+@app.cell
+def _():
+    mo.md(r"""
+    <!-- BEGIN SOLUTION -->
+    Yes.
+    <!-- END SOLUTION -->
+    """)
+    return
+
+@app.cell
+def _():
+    mo.md(r"""
+    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    """)
+    return
+
+@app.cell
+def _():
+    mo.md(r"""
+    <!-- BEGIN SOLUTION -->
+    Yes.
+    <!-- END SOLUTION -->
+    """)
+    return
+
+@app.cell
+def _():
+    mo.md(f"Question {n}")
+    return
+
+@app.cell
+def _():
+    mo.md(r"""
+    <!-- BEGIN SOLUTION -->
+    Yes.
+    <!-- END SOLUTION -->
+    """)
+    return
+
+@app.cell
+def _():
+    mogs.grade("q2", points=1)
+    return
+
+@app.cell
+def _():
+    mo.md(r"""
+    <!-- BEGIN SOLUTION -->
+    Yes.
+    <!-- END SOLUTION -->
+    """)
+    return
+
+@app.cell
+def _():
+    mogs.grade("q3", points=1)
+    return

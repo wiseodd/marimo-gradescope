@@ -4,7 +4,7 @@ UV ?= uv run
 TESTS ?= tests
 ARGS ?=
 
-.PHONY: sync test lint fix typecheck check docs docs-serve
+.PHONY: sync test golden lint fix typecheck check docs docs-serve
 
 sync:
 	uv sync
@@ -17,6 +17,11 @@ sync:
 test:
 	cargo test --workspace
 	$(UV) pytest $(TESTS) -q $(ARGS)
+
+# Record the golden corpus (tests/golden) from the whole suite, docker tests aside.
+# `python -m` puts the repo on sys.path for `-p tests.golden.record`.
+golden:
+	MOGS_RECORD=1 $(UV) python -m pytest tests -q -p tests.golden.record -m 'not docker'
 
 lint:
 	$(UV) ruff check

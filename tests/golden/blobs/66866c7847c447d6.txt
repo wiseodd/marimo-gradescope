@@ -1,0 +1,83 @@
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#     "marimo",
+#     "mogs",
+# ]
+# ///
+
+import marimo
+
+__generated_with = "0.24.2"
+app = marimo.App()
+
+with app.setup:
+    import mogs
+
+
+@app.function
+def three():
+    n = ...
+    return n
+
+
+@app.cell
+def _():
+    mogs.grade("q1", points=1, title="Question 1", test_file="tests/q1.py", uses=[three], hidden=0)
+    return
+
+
+@app.function
+def double(x):
+    y = ...
+    return y
+
+
+@app.cell
+def _():
+    mogs.grade("q2", points=1, title="Question 2", test_file="tests/q2.py", uses=[double], hidden=0)
+    return
+
+
+@app.cell
+def _():
+    demo = double(4) + 1
+    return (demo,)
+
+
+@app.cell(hide_code=True)
+def _():
+    import marimo as mo
+
+    return (mo,)
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Submit
+
+    Save the notebook, then click **Export submission** below. It runs the public tests on
+    the saved file and makes a zip of your notebook. Upload that zip to Gradescope.
+
+    No button below? Run the notebook first: **Run all stale cells**, or Ctrl+Shift+R
+    (Cmd+Shift+R on a Mac).
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _():
+    export_button = mogs.export_button()
+    export_button
+    return (export_button,)
+
+
+@app.cell(hide_code=True)
+def _(export_button):
+    mogs.export(export_button, name="Plain cell", manual=[], titles={"q1": "Question 1", "q2": "Question 2"}, placeholders={})
+    return
+
+
+if __name__ == "__main__":
+    app.run()

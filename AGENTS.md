@@ -31,6 +31,9 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   generated from the types. `MOGS_BLESS=1 cargo test` rewrites them, and
   `tests/test_schemas.py` checks what Python writes against them.
 - `tests/`: pytest suite. `cargo test` runs the Rust tests.
+- `tests/golden/`: calls to the Python functions the Rust port replaces, recorded from
+  the test suite with their results, which the port must reproduce. Its README gives the
+  JSON shapes; `tests/test_golden.py` replays them.
 - `tests/e2e/`: end-to-end tests. The `docker` ones build the demo autograder
   into Gradescope's base image (`tests/e2e/Dockerfile`) and grade submissions
   through the real `/autograder/run_autograder`. They need docker or podman
@@ -67,6 +70,7 @@ make test ARGS="-m network"   # only the tests that resolve packages through uv 
 make test ARGS="-m 'not slow and not network'"   # offline
 make test ARGS="-m docker"    # only the Docker end-to-end tests: deselected unless `-m` names `docker`
 make fix         # ruff fixes, then ruff format and cargo fmt
+make golden      # record tests/golden again from the suite (slow)
 ```
 
 ## Rules

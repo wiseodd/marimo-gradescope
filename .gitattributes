@@ -1,2 +1,4 @@
 # Keep LF everywhere, also on Windows checkouts: tests compare notebook text exactly.
 * text=auto eol=lf
+# Golden corpus blobs are named by the hash of their exact bytes.
+tests/golden/blobs/** -text
