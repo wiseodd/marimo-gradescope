@@ -510,7 +510,14 @@ impl Child {
 }
 
 impl Drop for Child {
+    /// Kill what is left, as `close` does, but never unwind: a drain-thread panic is dropped
+    /// here, since re-raising it while unwinding would abort the process.
     fn drop(&mut self) {
+        if let Some(output) = self.output.take() {
+            output.stop.store(true, Ordering::Relaxed);
+            let _ = output.thread.join();
+        }
+
         if self.exit.is_none() {
             let _ = self.close();
         }

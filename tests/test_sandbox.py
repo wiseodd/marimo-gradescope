@@ -692,9 +692,25 @@ def test_processes_a_test_forks_are_killed_with_it(tmp_path):
     pids = [int(pid) for pid in (tmp_path / "work" / "public" / "forked.txt").read_text().split()]
     assert len(pids) == 100
 
-    for pid in pids:
-        with pytest.raises(ProcessLookupError):
-            os.kill(pid, 0)
+    # Killed processes vanish once reaped. macOS reaps the orphans through launchd, which can
+    # take a moment, so wait a little before calling a process a survivor.
+    deadline = time.monotonic() + 5
+    alive = pids
+
+    while alive and time.monotonic() < deadline:
+        alive = [pid for pid in alive if exists(pid)]
+        time.sleep(0.1)
+
+    assert alive == []
+
+
+def exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+
+    return True
 
 
 def test_child_gets_no_inherited_descriptors(tmp_path):
