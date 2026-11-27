@@ -1,6 +1,6 @@
 [package]
 name = "mogs-schema"
-description = "The JSON messages between the mogs executable and its Python processes."
+description = "The JSON messages between the Rust side of mogs and its Python processes."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

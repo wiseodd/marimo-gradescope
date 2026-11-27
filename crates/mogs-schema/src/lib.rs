@@ -1,4 +1,4 @@
-//! The JSON messages between the `mogs` executable and its Python processes.
+//! The JSON messages between the Rust side of mogs and its Python processes.
 //!
 //! These types are the source of truth: the JSON Schemas in the repo's `schemas/` folder are
 //! generated from them (see [`schemas`]). Every message except [`Results`] carries `"schema"`,
@@ -6,7 +6,6 @@
 
 mod bundle;
 mod event;
-mod inspect;
 mod job;
 mod outcome;
 mod results;
@@ -22,10 +21,6 @@ use serde_json::Value;
 
 pub use bundle::{Bundle, BundleConfig, BundleQuestion, HiddenHelper, TestCell};
 pub use event::{Event, EventLine};
-pub use inspect::{
-    Answer, Inspect, InspectConfig, InspectQuestion, SyntaxClass, TestFile, TestFileError,
-    Utf8Reason,
-};
 pub use job::Job;
 pub use outcome::{FailureReason, Outcome};
 pub use results::{Results, Row};
@@ -111,7 +106,6 @@ pub fn schemas() -> Vec<(&'static str, Schema)> {
         ("event", versioned::<EventLine>()),
         ("bundle", versioned::<Bundle>()),
         ("results", closed(schema_for!(Results))),
-        ("inspect", versioned::<Inspect>()),
     ]
 }
 

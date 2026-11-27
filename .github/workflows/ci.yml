@@ -24,8 +24,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: echo "RUFF=$(uv export --only-group dev --no-hashes --frozen | grep '^ruff==')" >> "$GITHUB_ENV"
       - run: uvx --from "$RUFF" ruff format --check
-  # rustfmt and clippy, also on Windows, where the binary waits for Python. `make test` and
-  # the Windows job run the Rust tests.
+  # rustfmt and clippy on each platform. `make test` and the Windows job run the Rust tests.
+  # PyO3 builds against the Python on PATH, which `abi3-py313` needs at 3.13 or newer.
   rust:
     strategy:
       fail-fast: false
@@ -34,6 +34,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -86,13 +89,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: uv sync --frozen
-      - run: cargo test --workspace
+      - run: uv run cargo test --workspace
       - run: >-
           uv run pytest -q
           tests/test_config.py tests/test_source.py tests/test_transform.py
           tests/test_assertrewrite_guard.py tests/test_runner.py tests/test_check.py
           tests/test_loader.py tests/test_selfcheck.py tests/test_export.py tests/test_pdf.py
-          tests/test_binary.py
+          tests/test_native.py
   # The autograder graded in Gradescope's base image. MOGS_REQUIRE_CONTAINER makes a missing
   # Docker fail the job instead of skipping the tests.
   docker:

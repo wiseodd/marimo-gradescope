@@ -1,4 +1,5 @@
-# Everything runs through uv, so the tools come from the project's venv.
+# Everything runs through uv, so the tools come from the project's venv. Cargo too: PyO3
+# builds against the venv's Python, as `abi3-py313` needs 3.13 or newer.
 UV ?= uv run
 
 TESTS ?= tests
@@ -15,14 +16,14 @@ sync:
 #   make test TESTS=tests/test_config.py ARGS='-k header'
 #   make test ARGS='-m docker'
 test:
-	cargo test --workspace
+	$(UV) cargo test --workspace
 	$(UV) pytest $(TESTS) -q $(ARGS)
 
 lint:
 	$(UV) ruff check
 	$(UV) ruff format --check
 	cargo fmt --check
-	cargo clippy --workspace --all-targets -- -D warnings
+	$(UV) cargo clippy --workspace --all-targets -- -D warnings
 
 # Fix lint warnings, then format (order matters).
 fix:

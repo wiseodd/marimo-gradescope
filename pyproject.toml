@@ -22,13 +22,19 @@ dependencies = [
 # The vendored Typst packages in `_typst` need Typst 0.15.
 pdf = ["typst>=0.15,<0.16"]
 
+[project.scripts]
+mogs = "mogs._native:main"
+
 [build-system]
-requires = ["maturin>=1.9,<2"]
+# maturin 1.9.4 sets `PYO3_BUILD_EXTENSION_MODULE`, so the module does not link libpython.
+requires = ["maturin>=1.9.4,<2"]
 build-backend = "maturin"
 
-# The wheel holds the Python package and the `mogs` executable built from crates/mogs.
+# The wheel holds the Python package and the extension module `mogs._native`, built from
+# crates/mogs.
 [tool.maturin]
-bindings = "bin"
+bindings = "pyo3"
+module-name = "mogs._native"
 python-source = "src"
 manifest-path = "crates/mogs/Cargo.toml"
 
@@ -79,7 +85,7 @@ markers = [
 ]
 
 [tool.uv]
-# Rebuild the `mogs` executable when the Rust sources change.
+# Rebuild `mogs._native` when the Rust sources change.
 cache-keys = [
   { file = "pyproject.toml" },
   { file = "Cargo.toml" },

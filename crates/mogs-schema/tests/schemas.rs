@@ -5,9 +5,8 @@ use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 use mogs_schema::{
-    Answer, Bundle, BundleConfig, BundleQuestion, Event, EventLine, FailureReason, HiddenHelper,
-    Inspect, InspectConfig, InspectQuestion, Job, Outcome, Results, Row, SCHEMA, SyntaxClass,
-    TestCell, TestFile, TestFileError, Utf8Reason, decode, schemas,
+    Bundle, BundleConfig, BundleQuestion, Event, EventLine, FailureReason, HiddenHelper, Job,
+    Outcome, Results, Row, SCHEMA, TestCell, decode, schemas,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -101,101 +100,6 @@ fn round_trips_each_type() {
             event,
         });
     }
-
-    round_trip(inspect());
-}
-
-fn inspect() -> Inspect {
-    let failed = |error| TestFile {
-        qid: "q1".into(),
-        path: "tests/q1.py".into(),
-        tests: vec![],
-        error: Some(error),
-    };
-
-    Inspect {
-        schema: SCHEMA,
-        source_error: None,
-        config_error: None,
-        config: Some(InspectConfig { name: "hw".into() }),
-        problems: vec!["line 3: bad".into()],
-        questions: vec![InspectQuestion {
-            id: "q2".into(),
-            title: "Question 2".into(),
-            points: 3.0,
-            manual: true,
-            public: vec![],
-            hidden: vec![],
-            prompts: vec!["Explain why.".into()],
-        }],
-        answers: vec![Answer {
-            cell: "answer_q2".into(),
-            text: Some("Because.".into()),
-            source: "@app.cell\ndef answer_q2():\n    mo.md(\"Because.\")\n".into(),
-        }],
-        test_files: vec![
-            TestFile {
-                qid: "q1".into(),
-                path: "tests/q1.py".into(),
-                tests: vec!["test_q1_a".into()],
-                error: None,
-            },
-            failed(TestFileError::Missing {}),
-            failed(TestFileError::Unreadable { errno: 13 }),
-            failed(TestFileError::NotUtf8 {
-                start: 3,
-                bytes: vec![0xff],
-                reason: Utf8Reason::InvalidStartByte,
-            }),
-            failed(TestFileError::Syntax {
-                class: SyntaxClass::TabError,
-                line: 2,
-                message: "inconsistent use of tabs and spaces in indentation".into(),
-            }),
-        ],
-        public_job: Some(bundle()),
-    }
-}
-
-#[test]
-fn test_file_errors_carry_data_tagged_by_kind() {
-    let errors = [
-        (TestFileError::Missing {}, r#"{"kind":"missing"}"#),
-        (
-            TestFileError::Unreadable { errno: 13 },
-            r#"{"kind":"unreadable","errno":13}"#,
-        ),
-        // What `b"abc\xe2(".decode()` reports: the one byte at 3 that starts no valid sequence.
-        (
-            TestFileError::NotUtf8 {
-                start: 3,
-                bytes: vec![0xe2],
-                reason: Utf8Reason::InvalidContinuationByte,
-            },
-            r#"{"kind":"not_utf8","start":3,"bytes":[226],"reason":"invalid_continuation_byte"}"#,
-        ),
-        (
-            TestFileError::Syntax {
-                class: SyntaxClass::SyntaxError,
-                line: 2,
-                message: "invalid syntax".into(),
-            },
-            r#"{"kind":"syntax","class":"syntax_error","line":2,"message":"invalid syntax"}"#,
-        ),
-        (
-            TestFileError::Syntax {
-                class: SyntaxClass::IndentationError,
-                line: 2,
-                message: "unexpected indent".into(),
-            },
-            r#"{"kind":"syntax","class":"indentation_error","line":2,"message":"unexpected indent"}"#,
-        ),
-    ];
-
-    for (error, text) in errors {
-        assert_eq!(serde_json::to_string(&error).unwrap(), text);
-        assert_eq!(serde_json::from_str::<TestFileError>(text).unwrap(), error);
-    }
 }
 
 /// The error of decoding `value` as a `T` after `edit` changes the object at `path`.
@@ -288,21 +192,6 @@ fn rejects_unknown_keys() {
         rejects_extra::<EventLine>(&event, &[]);
     }
 
-    for path in [
-        &[][..],
-        &["config"],
-        &["questions", "0"],
-        &["answers", "0"],
-        &["test_files", "0"],
-        &["test_files", "1", "error"],
-        &["test_files", "2", "error"],
-        &["test_files", "3", "error"],
-        &["test_files", "4", "error"],
-        &["public_job"],
-    ] {
-        rejects_extra::<Inspect>(&inspect(), path);
-    }
-
     let results = r#"{"tests": [], "stdout_visibility": "hidden", "bogus": 1}"#;
     let error = serde_json::from_str::<Results>(results)
         .unwrap_err()
@@ -318,9 +207,6 @@ fn rejects_nested_bundle_of_other_version() {
     };
 
     let error = decode_edited::<Job>(&job(), &["bundle"], other);
-    assert!(error.contains("schema version 2, expected 1"), "{error}");
-
-    let error = decode_edited::<Inspect>(&inspect(), &["public_job"], other);
     assert!(error.contains("schema version 2, expected 1"), "{error}");
 }
 
@@ -363,23 +249,11 @@ fn rejects_missing_nullable_keys() {
             ..outcome()
         }),
     };
-    let inspect = Inspect {
-        config: None,
-        public_job: None,
-        ..inspect()
-    };
 
     rejects_without::<Job>(&job, &[], "run_failed");
     rejects_without::<EventLine>(loaded, &[], "error");
     rejects_without::<EventLine>(&result, &[], "reason");
     rejects_without::<Bundle>(&bundle(), &["cells", "0"], "label");
-
-    for key in ["source_error", "config_error", "config", "public_job"] {
-        rejects_without::<Inspect>(&inspect, &[], key);
-    }
-
-    rejects_without::<Inspect>(&inspect, &["answers", "0"], "text");
-    rejects_without::<Inspect>(&inspect, &["test_files", "0"], "error");
 }
 
 #[test]
@@ -455,4 +329,20 @@ fn checked_in_schemas_are_current() {
         stale.is_empty(),
         "stale schemas, rerun with MOGS_BLESS=1: {stale:?}"
     );
+}
+
+#[test]
+fn every_checked_in_schema_is_generated() {
+    let generated: Vec<String> = schemas()
+        .into_iter()
+        .map(|(name, _)| format!("{name}.schema.json"))
+        .collect();
+    let mut extra: Vec<String> = std::fs::read_dir(schema_dir())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| !generated.contains(name))
+        .collect();
+    extra.sort();
+
+    assert!(extra.is_empty(), "no type generates {extra:?}");
 }
