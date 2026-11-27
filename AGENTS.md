@@ -22,6 +22,11 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   it into one wheel per platform together with `src/mogs/`, and
   `src/mogs/_native.pyi` types it. The version is `[workspace.package] version`
   in `Cargo.toml`.
+- `crates/mogs-grader/`: the grading supervisor, plain Rust with cargo tests.
+  It runs the Python grading child (`python -m mogs.grader.child <fd>`),
+  enforces its deadlines and builds `results.json`. `crates/mogs/src/grader/`
+  only converts values to and from Python. Text with Python's rules (`repr`,
+  `:g`, `round`) comes from Python through the `PyText` trait.
 - `crates/mogs-schema/`: the JSON messages between Rust and
   Python (job, events, bundle, `results.json`) as Rust types. Every
   message but `results.json` has `"schema": 1`: bump `SCHEMA` there and in

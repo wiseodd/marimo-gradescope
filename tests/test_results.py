@@ -3,9 +3,9 @@ from pathlib import Path
 
 import pytest
 
+from mogs._native import build_results, failure_results, find_submission
 from mogs.config import AssignmentConfig, Question
 from mogs.grader.bundle import GradingBundle, TestCell
-from mogs.grader.results import build_results, failure_results, find_submission
 from mogs.runner import MAX_BYTES, FailureReason, Outcome
 
 PUBLIC = ("test_q1_a", "test_q1_b")

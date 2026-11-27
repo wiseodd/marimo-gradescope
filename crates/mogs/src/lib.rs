@@ -1,10 +1,23 @@
 //! `mogs._native`: the Rust side of mogs, as a Python extension module.
 
+mod grader;
+
 use pyo3::prelude::*;
 
 #[pymodule]
 mod _native {
     use pyo3::prelude::*;
+
+    #[pymodule_export]
+    use super::grader::{Submission, build_results, data_files, failure_results, find_submission};
+
+    #[cfg(unix)]
+    #[pymodule_export]
+    use super::grader::autograde::{Graded, autograde, grade};
+
+    /// The user that runs student code on Gradescope.
+    #[pymodule_export]
+    const STUDENT_USER: &str = mogs_grader::STUDENT_USER;
 
     /// The version of mogs.
     #[pyfunction]

@@ -1,7 +1,8 @@
 """The user that runs student code on Gradescope.
 
-Kept apart from the sandbox, so build-time code can read it without importing Linux-only
-modules.
+Kept apart from the sandbox, so build-time code can read it on any platform.
 """
 
-STUDENT_USER = "mogs-student"
+from mogs._native import STUDENT_USER
+
+__all__ = ["STUDENT_USER"]

@@ -8,7 +8,9 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from mogs._native import build_results, find_submission
 from mogs.build import (
     BuildError,
     data_files,
@@ -20,9 +22,11 @@ from mogs.build import (
 from mogs.config import TOOL
 from mogs.environment import grading_python
 from mogs.grader.bundle import GradingBundle, bundle_from_notebook
-from mogs.grader.results import Results, build_results, find_submission
 from mogs.requirements import gradescope_requirements
 from mogs.runner import Outcome
+
+if TYPE_CHECKING:
+    from mogs._native import Results
 
 MAX_ZIP_MEMBERS = 5_000
 MAX_ZIP_BYTES = 500 * 1024 * 1024
@@ -47,7 +51,7 @@ class GradeResult:
     submission: Path
     bundle: GradingBundle
     outcomes: dict[str, Outcome]
-    results: Results
+    results: "Results"
     score: tuple[float, float]
     load_error: str | None
 

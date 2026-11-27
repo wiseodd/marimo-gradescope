@@ -1,13 +1,13 @@
 import json
 import shutil
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
 from mogs.config import read_config
-from mogs.grader import main as main_module
 from mogs.grader.bundle import bundle_from_notebook
 from mogs.grader.main import main
 from mogs.source import parse_notebook
@@ -146,11 +146,10 @@ def test_unreadable_bundle_still_writes_results(paths):
     assert results["stdout_visibility"] == "hidden"
 
 
-def test_internal_error_zeroes_every_row_without_leaking_its_text(paths, monkeypatch):
-    def broken(*args, **kwargs):
-        raise RuntimeError("def test_q1_add_large(): secret source")
-
-    monkeypatch.setattr(main_module, "grade", broken)
+def test_internal_error_zeroes_every_row_without_leaking_its_text(paths, tmp_path):
+    # The work folder cannot be made under a file: the error names its path.
+    (tmp_path / "def test_q1_add_large(): secret").write_text("", encoding="utf-8")
+    paths.workdir = tmp_path / "def test_q1_add_large(): secret" / "work"
     paths.add("solution.py")
     paths.add("solution.pdf", "%PDF")
 
@@ -159,8 +158,27 @@ def test_internal_error_zeroes_every_row_without_leaking_its_text(paths, monkeyp
     by_number = rows(results)
     assert by_number["q1"]["score"] == 0
     assert by_number["q2"]["score"] == 0
-    assert "The autograder failed" in by_number["q1"]["output"]
+    assert "The autograder failed (NotADirectoryError)" in by_number["q1"]["output"]
     assert "secret" not in paths.results.read_text(encoding="utf-8")
+
+
+def test_hostile_submission_still_writes_results_and_exits_0(paths):
+    paths.add(
+        "solution.py",
+        "import marimo\n\napp = marimo.App()\n\nwith app.setup:\n"
+        "    import ctypes, sys\n\n    sys.stdout.buffer.write(b'\\xff' * 100_000)\n"
+        "    ctypes.string_at(0)\n",
+    )
+    paths.add("solution.pdf", "%PDF")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "mogs.grader.main", *paths.argv()], capture_output=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    results = json.loads(paths.results.read_text(encoding="utf-8"))
+    assert rows(results)["q1"]["score"] == 0
+    assert "loading your notebook" in rows(results)["q1"]["output"]
 
 
 def test_symlink_to_the_bundle_is_not_graded(paths):

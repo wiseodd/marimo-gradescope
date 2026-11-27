@@ -32,11 +32,11 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+from mogs._native import find_submission
 from mogs.build import build, write_zip
 from mogs.config import normalized_name, read_config
 from mogs.grader.bundle import bundle_from_notebook
 from mogs.grader.main import main as grader_main
-from mogs.grader.results import find_submission
 from mogs.source import BEGIN, parse_notebook
 from mogs.transform import pinned_requirement, student_notebook
 
