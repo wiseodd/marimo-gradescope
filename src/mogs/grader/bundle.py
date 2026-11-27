@@ -12,7 +12,7 @@ from enum import StrEnum
 from typing import Self
 
 from mogs.config import AssignmentConfig, Question
-from mogs.grader.wire import SCHEMA, check_schema
+from mogs.grader.wire import SCHEMA, check_schema, reject_extra
 from mogs.source import Notebook, SourceError, cell_names, question_id
 
 
@@ -79,7 +79,9 @@ class TestCell:
                 "tests": list() as tests,
                 "uses": list() as uses,
                 "needs": list() as needs,
+                **extra,
             }:
+                reject_extra(extra, "test cell")
                 strings = _strings(tests), _strings(uses), _strings(needs)
                 return cls(qid, label, hidden, source, *strings)
 
@@ -129,7 +131,9 @@ class HiddenHelper:
                 "defines": list() as defines,
                 "uses": list() as uses,
                 "needs": list() as needs,
+                **extra,
             }:
+                reject_extra(extra, "hidden helper")
                 return cls(source, _strings(defines), _strings(uses), _strings(needs))
 
         raise ValueError(f"not a hidden helper: {data!r}")
@@ -187,11 +191,14 @@ class GradingBundle:
 
         match data:
             case {
+                "schema": _,
                 "config": dict() as config,
                 "setup_code": str() as setup,
                 "cells": list() as cells,
                 "helpers": list() as helpers,
+                **extra,
             }:
+                reject_extra(extra, "grading bundle")
                 return cls(
                     _config_from_dict(config),
                     setup,
@@ -306,7 +313,9 @@ def _config_from_dict(data: dict) -> AssignmentConfig:
             "budget": int() | float() as budget,
             "memory_mb": int() as memory_mb,
             "python": str() as python,
+            **extra,
         }:
+            reject_extra(extra, "assignment config")
             return AssignmentConfig(
                 name=name,
                 notebook=notebook,
@@ -328,7 +337,9 @@ def _question_from_dict(data: object) -> Question:
             "title": str() as title,
             "points": int() | float() as points,
             "manual": bool() as manual,
+            **extra,
         }:
+            reject_extra(extra, "question")
             return Question(qid, title, float(points), manual)
 
     raise ValueError(f"not a question: {data!r}")

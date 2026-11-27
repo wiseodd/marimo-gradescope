@@ -5,6 +5,7 @@ A grading bundle, a job and an event each carry `"schema": SCHEMA`. The Rust cra
 """
 
 import json
+from collections.abc import Mapping
 
 SCHEMA = 1
 
@@ -24,3 +25,18 @@ def check_schema(data: object) -> None:
             raise ValueError(f"schema version {json.dumps(version)}, expected {SCHEMA}")
 
     raise ValueError(f"missing schema version, expected {SCHEMA}")
+
+
+def reject_extra(extra: Mapping[object, object], what: str) -> None:
+    """Fail on the keys a reader's pattern left over, as the Rust reader does.
+
+    Args:
+        extra: The keys of a message besides the ones the reader knows.
+        what: The kind of message, for the error.
+
+    Raises:
+        ValueError: If `extra` holds a key, naming the first one.
+    """
+
+    if extra:
+        raise ValueError(f"unknown field `{next(iter(extra))}` in {what}")

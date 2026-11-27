@@ -11,8 +11,17 @@ import jsonschema
 import pytest
 
 from mogs.config import read_config
-from mogs.grader.bundle import GradingBundle, Phase, bundle_from_notebook
-from mogs.grader.protocol import Job, ProtocolError, decode
+from mogs.grader.bundle import GradingBundle, HiddenHelper, Phase, bundle_from_notebook
+from mogs.grader.protocol import (
+    Job,
+    Loaded,
+    Loading,
+    ProtocolError,
+    Result,
+    Start,
+    decode,
+    encode,
+)
 from mogs.grader.results import build_results, failure_results
 from mogs.grader.wire import SCHEMA, check_schema
 from mogs.runner import FailureReason, Outcome, exception_summary
@@ -155,6 +164,40 @@ def test_schemas_reject_unknown_keys(tmp_path):
 
         with pytest.raises(jsonschema.ValidationError, match="bogus"):
             validate(with_extra_key(data, path), name)
+
+
+def test_python_readers_reject_unknown_keys(tmp_path):
+    helper = HiddenHelper("secret = 1\n", ("secret",), (), ())
+    bundle = copy.replace(solution_bundle(), helpers=(helper,))
+    job = json.loads(Job(bundle, tmp_path / "s.py").to_json())
+    events = [
+        json.loads(encode(event))
+        for event in [Loaded(None), Loading(("t",)), Start("t"), Result(Outcome("t", True))]
+    ]
+    job_paths = [
+        (),
+        ("bundle",),
+        ("bundle", "config"),
+        ("bundle", "config", "questions", 0),
+        ("bundle", "cells", 0),
+        ("bundle", "helpers", 0),
+    ]
+
+    for path in job_paths:
+        assert Job.from_json(json.dumps(job)) == Job(bundle, tmp_path / "s.py")
+
+        with pytest.raises(ProtocolError, match="unknown field `bogus`"):
+            Job.from_json(json.dumps(with_extra_key(job, path)))
+
+        if path:
+            with pytest.raises(ValueError, match="unknown field `bogus`"):
+                GradingBundle.from_dict(with_extra_key(job, path)["bundle"])
+
+    for event in events:
+        assert decode(json.dumps(event)) is not None
+
+        with pytest.raises(ProtocolError, match="unknown field `bogus`"):
+            decode(json.dumps(with_extra_key(event, ())))
 
 
 @pytest.mark.parametrize("key", ["score", "output", "output_format"])

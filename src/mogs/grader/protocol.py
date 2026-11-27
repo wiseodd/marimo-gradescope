@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Self
 
 from mogs.grader.bundle import GradingBundle
-from mogs.grader.wire import SCHEMA, check_schema
+from mogs.grader.wire import SCHEMA, check_schema, reject_extra
 from mogs.runner import Outcome
 
 
@@ -78,12 +78,15 @@ class Job:
 
             match data:
                 case {
+                    "schema": _,
                     "bundle": bundle,
                     "submission": str() as submission,
                     "skip": list() as skip,
                     "run_failed": None | str() as run_failed,
                     "alarm": bool() as alarm,
+                    **extra,
                 } if all(isinstance(name, str) for name in skip):
+                    reject_extra(extra, "job")
                     bundle = GradingBundle.from_dict(bundle)
                     return cls(bundle, Path(submission), tuple(skip), run_failed, alarm)
         except ValueError as e:
@@ -179,29 +182,45 @@ def _decode(line: str) -> Event:
 
     try:
         check_schema(data)
+        event = _event(data)
     except ValueError as e:
         raise ProtocolError(str(e)[:200]) from e
 
+    if event is None:
+        raise ProtocolError(f"not an event: {_excerpt(line)}")
+
+    return event
+
+
+def _event(data: object) -> Event | None:
+    """The event in a decoded line of the right version, or `None` for another shape.
+
+    Raises:
+        ValueError: If the line has a key its event does not, or a bad outcome.
+    """
+
     match data:
         case {
+            "schema": _,
             "event": "loaded",
             "error": None | str() as error,
             "unavailable": dict() as unavailable,
+            **extra,
         } if all(isinstance(reason, str) for reason in unavailable.values()):
+            reject_extra(extra, "loaded event")
             return Loaded(error, tuple(unavailable.items()))
-        case {"event": "loading", "tests": list() as tests} if all(
+        case {"schema": _, "event": "loading", "tests": list() as tests, **extra} if all(
             isinstance(test, str) for test in tests
         ):
+            reject_extra(extra, "loading event")
             return Loading(tuple(tests))
-        case {"event": "start", "test": str() as test}:
+        case {"schema": _, "event": "start", "test": str() as test, **extra}:
+            reject_extra(extra, "start event")
             return Start(test)
-        case {"event": "result", "schema": _, **fields}:
-            try:
-                return Result(Outcome.from_dict(fields))
-            except ValueError as e:
-                raise ProtocolError(str(e)[:200]) from e
+        case {"schema": _, "event": "result", **fields}:
+            return Result(Outcome.from_dict(fields))
 
-    raise ProtocolError(f"not an event: {_excerpt(line)}")
+    return None
 
 
 def _excerpt(line: str) -> str:
