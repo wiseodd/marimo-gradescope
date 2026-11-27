@@ -382,3 +382,12 @@ def test_exact_name_twice_is_ambiguous(tmp_path):
 
     assert found.py is None
     assert "a/hw.py" in (found.error or "")
+
+
+def test_submission_compares_and_shows_like_a_dataclass(tmp_path):
+    touch(tmp_path, "hw.py")
+
+    found = find_submission(tmp_path, "hw.py")
+
+    assert found == find_submission(tmp_path, "hw.py")
+    assert repr(found) == f"Submission(py={tmp_path / 'hw.py'!r}, answers=None, error=None)"

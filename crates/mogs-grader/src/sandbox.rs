@@ -262,10 +262,11 @@ impl PhaseRun<'_> {
                 alarm: true,
             };
             // JSON strings are Unicode, so a path that is not UTF-8 cannot reach the child.
+            // The job's only path is `workdir/submission.py`, so the folder is at fault.
             let job = serde_json::to_string(&job).map_err(|_| {
                 GradeError::Value(format!(
-                    "a grading path must be UTF-8: {}",
-                    self.submission.display()
+                    "the grading folder must be a UTF-8 path: {}",
+                    self.workdir.display()
                 ))
             })?;
             let options = launch_options(
@@ -303,13 +304,14 @@ impl PhaseRun<'_> {
             }
         }
 
+        // Every way out of the loop gives each test an outcome; v0.7 raised `KeyError` otherwise.
         let outcomes = tests
             .iter()
-            .filter_map(|name| {
-                done.shift_remove(name)
-                    .map(|outcome| (name.clone(), outcome))
+            .map(|name| match done.get(name) {
+                Some(outcome) => Ok((name.clone(), outcome.clone())),
+                None => Err(GradeError::Key(name.clone())),
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         Ok(Ran {
             outcomes,

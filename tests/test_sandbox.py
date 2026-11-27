@@ -348,7 +348,8 @@ def recording_python(tmp_path: Path) -> tuple[Path, Path]:
     script = tmp_path / "python"
     script.write_text(
         "#!/bin/sh\n"
-        f'job="{jobs}/$(ls {jobs} | wc -l).json"\n'
+        # BSD `wc` pads its count with spaces; `$((...))` drops them.
+        f'job="{jobs}/$(($(ls {jobs} | wc -l))).json"\n'
         'cat > "$job"\n'
         f'exec {sys.executable} "$@" < "$job"\n',
         encoding="utf-8",

@@ -195,6 +195,22 @@ def test_workdir_that_is_not_utf8_still_writes_results_and_exits_0(paths, tmp_pa
     assert "The autograder failed (ValueError)" in rows(results)["q1"]["output"]
 
 
+def test_error_that_is_not_an_os_error_zeroes_every_row(paths):
+    # A data path outside the source folder fails inside grading with a `ValueError`.
+    bundle = json.loads((paths.source / "bundle.json").read_text(encoding="utf-8"))
+    bundle["config"]["files"] = ["../secret.csv"]
+    (paths.source / "bundle.json").write_text(json.dumps(bundle), encoding="utf-8")
+    paths.add("solution.py")
+    paths.add("solution.pdf", "%PDF")
+
+    results = paths.run()
+
+    by_number = rows(results)
+    assert by_number["q1"]["score"] == 0
+    assert "The autograder failed (ValueError)" in by_number["q1"]["output"]
+    assert "secret" not in paths.results.read_text(encoding="utf-8")
+
+
 def test_symlink_to_the_bundle_is_not_graded(paths):
     (paths.submission / "solution.py").symlink_to(paths.source / "bundle.json")
 

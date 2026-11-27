@@ -74,11 +74,11 @@ pub fn build_results(
         let passed = public.iter().chain(&hidden).filter(|o| o.passed).count();
         let score = text.round(question.points * passed as f64 / total as f64, 4);
         let output = output(&public, &hidden, text);
-        question_rows.push(
-            row(&question.title, score, question.points, output)
-                .numbered(&question.id)
-                .hidden(),
-        );
+        question_rows.push(Row {
+            number: Some(question.id.clone()),
+            visibility: "hidden".into(),
+            ..row(&question.title, score, question.points, output)
+        });
     }
 
     let mut rows = Vec::new();
@@ -89,7 +89,7 @@ pub fn build_results(
 
     if !public_parts.is_empty() {
         let row = row(PUBLIC_ROW, 0.0, 0.0, public_parts.join("\n\n"));
-        rows.push(if public_failed { row.failed() } else { row });
+        rows.push(if public_failed { failed(row) } else { row });
     }
 
     if question_rows.is_empty() {
@@ -124,16 +124,17 @@ pub fn failure_results(bundle: Option<&Bundle>, error: &str) -> Results {
     );
 
     let tests = match bundle {
-        None => vec![row("Autograder", 0.0, 0.0, message).failed()],
+        None => vec![failed(row("Autograder", 0.0, 0.0, message))],
         Some(bundle) => bundle
             .config
             .questions
             .iter()
             .filter(|q| !q.manual)
             .map(|q| {
-                row(&q.title, 0.0, q.points, message.clone())
-                    .numbered(&q.id)
-                    .failed()
+                failed(Row {
+                    number: Some(q.id.clone()),
+                    ..row(&q.title, 0.0, q.points, message.clone())
+                })
             })
             .collect(),
     };
@@ -151,7 +152,7 @@ pub fn failure_results(bundle: Option<&Bundle>, error: &str) -> Results {
 pub fn notice_row(notices: &[String], text: &dyn PyText) -> Row {
     let capped: Vec<String> = notices.iter().map(|notice| text.cap(notice)).collect();
 
-    row(NOTICE_ROW, 0.0, 0.0, capped.join("\n\n")).failed()
+    failed(row(NOTICE_ROW, 0.0, 0.0, capped.join("\n\n")))
 }
 
 /// One visible row of `results.json`, without a number or status.
@@ -168,33 +169,11 @@ fn row(name: &str, score: f64, max_score: f64, output: String) -> Row {
     }
 }
 
-/// Changes to a row as `row` builds it.
-trait RowExt {
-    fn numbered(self, number: &str) -> Self;
-    fn failed(self) -> Self;
-    fn hidden(self) -> Self;
-}
-
-impl RowExt for Row {
-    fn numbered(self, number: &str) -> Self {
-        Row {
-            number: Some(number.into()),
-            ..self
-        }
-    }
-
-    fn failed(self) -> Self {
-        Row {
-            status: Some("failed".into()),
-            ..self
-        }
-    }
-
-    fn hidden(self) -> Self {
-        Row {
-            visibility: "hidden".into(),
-            ..self
-        }
+/// `row` marked failed.
+fn failed(row: Row) -> Row {
+    Row {
+        status: Some("failed".into()),
+        ..row
     }
 }
 

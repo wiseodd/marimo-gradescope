@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from mogs._native import STUDENT_USER
 from mogs.config import ConfigError, read_config
-from mogs.grader._user import STUDENT_USER
 from mogs.grader.templates import UV_VERSION, run_autograder_script, setup_script
 from mogs.requirements import RequirementsError, gradescope_requirements
 

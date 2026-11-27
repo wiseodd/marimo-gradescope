@@ -324,9 +324,17 @@ impl Child {
                 #[cfg(target_os = "linux")]
                 let marked = {
                     let flags = libc::CLOSE_RANGE_CLOEXEC;
-                    let below =
-                        keep <= 3 || libc::syscall(libc::SYS_close_range, 3, keep - 1, flags) == 0;
-                    below && libc::syscall(libc::SYS_close_range, keep + 1, u32::MAX, flags) == 0
+                    let range = |first: libc::c_uint, last: libc::c_uint| {
+                        first > last
+                            || libc::syscall(libc::SYS_close_range, first, last, flags) == 0
+                    };
+                    // `keep` is never below 3 in practice; the ranges skip stdio either way.
+                    match libc::c_uint::try_from(keep) {
+                        Ok(keep) if keep >= 3 => {
+                            range(3, keep - 1) && range(keep + 1, libc::c_uint::MAX)
+                        }
+                        _ => range(3, libc::c_uint::MAX),
+                    }
                 };
                 #[cfg(not(target_os = "linux"))]
                 let marked = false;
@@ -391,13 +399,13 @@ impl Child {
             }
         }
 
-        let mut events = self.read(text);
+        let mut events = self.read(text)?;
 
-        if self.ended() {
+        if self.ended()? {
             // Until reaped, the child is a zombie and its process group id stays reserved.
             self.kill_group()?;
             self.exit = Some(self.process.wait()?.into());
-            events.extend(self.read(text));
+            events.extend(self.read(text)?);
         }
 
         Ok(events)
@@ -423,16 +431,19 @@ impl Child {
         self.exit = Some(self.process.wait()?.into());
         self.events = None;
 
-        Ok(self.output.take().map(Tail::close).unwrap_or_default())
+        match self.output.take() {
+            Some(output) => output.close(),
+            None => Ok(String::new()),
+        }
     }
 
-    fn read(&mut self, text: &dyn PyText) -> Vec<EventLine> {
+    fn read(&mut self, text: &dyn PyText) -> Result<Vec<EventLine>, GradeError> {
         let Some(fd) = &self.events else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
 
         if self.error.is_some() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
 
         // Bounded, so a child that writes without end cannot keep the parent from its deadlines.
@@ -447,7 +458,8 @@ impl Child {
                 }
                 Ok(count) => self.buffer.extend_from_slice(&chunk[..count]),
                 Err(Errno::INTR) => {}
-                Err(_) => break,
+                Err(Errno::AGAIN) => break,
+                Err(errno) => return Err(errno.into()),
             }
         }
 
@@ -472,7 +484,7 @@ impl Child {
                 Ok(event) => events.push(event),
                 Err(error) => {
                     self.error = Some(error);
-                    return events;
+                    return Ok(events);
                 }
             }
         }
@@ -481,11 +493,11 @@ impl Child {
             self.error = Some(format!("an event line is longer than {LINE_LIMIT} bytes"));
         }
 
-        events
+        Ok(events)
     }
 
     /// Whether the child has ended, without reaping it.
-    fn ended(&self) -> bool {
+    fn ended(&self) -> Result<bool, GradeError> {
         ended(Pid::from_child(&self.process))
     }
 
@@ -516,12 +528,14 @@ fn open_fd_bound() -> i32 {
 }
 
 /// Whether the process `pid` has ended, without reaping it.
-fn ended(pid: Pid) -> bool {
+fn ended(pid: Pid) -> Result<bool, GradeError> {
     let options = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
 
     match waitid(WaitId::Pid(pid), options) {
-        Ok(found) => found.is_some(),
-        Err(_) => true,
+        Ok(found) => Ok(found.is_some()),
+        // Already reaped.
+        Err(Errno::CHILD) => Ok(true),
+        Err(errno) => Err(errno.into()),
     }
 }
 
@@ -532,7 +546,7 @@ fn kill_group_with(pid: Pid, kill: impl Fn(Pid) -> Result<(), Errno>) -> Result<
         // macOS answers EPERM, not ESRCH, when every process left in the group is a zombie,
         // as when the ended child is not reaped yet. While the child runs, EPERM is a real
         // problem: the parent may not signal a process in the group.
-        Err(Errno::PERM) if ended(pid) => Ok(()),
+        Err(Errno::PERM) if ended(pid)? => Ok(()),
         Err(errno) => Err(errno.into()),
     }
 }
@@ -571,7 +585,7 @@ fn set_nonblocking(fd: &impl AsFd) -> Result<(), GradeError> {
 /// Drains a pipe on a thread and keeps its last `OUTPUT_LIMIT` bytes.
 struct Tail {
     stop: Arc<AtomicBool>,
-    thread: JoinHandle<Vec<u8>>,
+    thread: JoinHandle<io::Result<Vec<u8>>>,
 }
 
 impl Tail {
@@ -585,15 +599,20 @@ impl Tail {
     }
 
     /// Stop draining, close the pipe and return what was kept.
-    fn close(self) -> String {
+    ///
+    /// A panic of the drain thread goes on in the caller.
+    fn close(self) -> Result<String, GradeError> {
         self.stop.store(true, Ordering::Relaxed);
-        let data = self.thread.join().unwrap_or_default();
+        let data = match self.thread.join() {
+            Ok(data) => data?,
+            Err(panic) => std::panic::resume_unwind(panic),
+        };
 
-        String::from_utf8_lossy(&data).into_owned()
+        Ok(String::from_utf8_lossy(&data).into_owned())
     }
 }
 
-fn drain(mut pipe: &File, stop: &AtomicBool) -> Vec<u8> {
+fn drain(mut pipe: &File, stop: &AtomicBool) -> io::Result<Vec<u8>> {
     let mut data = Vec::new();
     let mut chunk = vec![0; CHUNK];
     let timeout = Timespec::try_from(DRAIN_POLL).expect("a short timeout fits");
@@ -601,14 +620,24 @@ fn drain(mut pipe: &File, stop: &AtomicBool) -> Vec<u8> {
     while !stop.load(Ordering::Relaxed) {
         let mut fds = [PollFd::new(&pipe, PollFlags::IN)];
 
-        if !matches!(poll(&mut fds, Some(&timeout)), Ok(1..)) {
-            continue;
+        match poll(&mut fds, Some(&timeout)) {
+            Ok(0) | Err(Errno::INTR) => continue,
+            Ok(_) => {}
+            Err(errno) => return Err(errno.into()),
         }
 
         match pipe.read(&mut chunk) {
             Ok(0) => break,
             Ok(count) => data.extend_from_slice(&chunk[..count]),
-            Err(_) => continue,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error),
         }
 
         if data.len() > OUTPUT_LIMIT {
@@ -616,7 +645,7 @@ fn drain(mut pipe: &File, stop: &AtomicBool) -> Vec<u8> {
         }
     }
 
-    data
+    Ok(data)
 }
 
 #[cfg(test)]

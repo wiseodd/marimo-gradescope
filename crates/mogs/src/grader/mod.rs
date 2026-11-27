@@ -39,11 +39,15 @@ pub struct Submission {
 
 #[pymethods]
 impl Submission {
-    fn __repr__(&self) -> String {
-        format!(
-            "Submission(py={:?}, answers={:?}, error={:?})",
-            self.py, self.answers, self.error
-        )
+    /// As the v0.7 dataclass shows it: each field as Python's `repr`.
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        let py_repr = self.py.as_ref().into_pyobject(py)?.repr()?;
+        let answers = self.answers.as_ref().into_pyobject(py)?.repr()?;
+        let error = self.error.as_deref().into_pyobject(py)?.repr()?;
+
+        Ok(format!(
+            "Submission(py={py_repr}, answers={answers}, error={error})"
+        ))
     }
 }
 
