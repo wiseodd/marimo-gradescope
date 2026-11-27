@@ -1,6 +1,6 @@
 [package]
 name = "mogs-cli"
-description = "The command line of mogs: its commands, and `init` and `edit`."
+description = "The command line of mogs: its commands, and `init`."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

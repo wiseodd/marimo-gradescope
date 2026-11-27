@@ -1,12 +1,12 @@
 //! The `mogs` command line (`mogs-cli`) as `_native.main`.
 //!
-//! Only glue: argv goes to clap, `init` and `edit` run in Rust with Python's text and checks,
-//! and `build` and `grade` run their Python handlers in `mogs.cli`. Output goes through
-//! Python's `print`, so it lands in `sys.stdout` and `sys.stderr` in order with Python's own.
+//! Only glue: argv goes to clap, `init` runs in Rust with Python's text, checks and file
+//! operations, `edit` starts marimo through `subprocess`, and `build` and `grade` run their
+//! Python handlers in `mogs.cli`. Output goes through Python's `print`, so it lands in
+//! `sys.stdout` and `sys.stderr` in order with Python's own.
 
 mod edit;
 mod interpreter;
-mod os_error;
 mod scaffold;
 
 use std::ffi::OsString;
@@ -29,12 +29,7 @@ pub fn main(py: Python<'_>, argv: Option<Vec<OsString>>) -> PyResult<i64> {
     let command = match mogs_cli::parse(argv) {
         Ok(command) => command,
         Err(exit) => {
-            print(
-                py,
-                PyString::new(py, &exit.text),
-                stream(exit.to_stderr),
-                "",
-            )?;
+            print(py, PyString::new(py, &exit.text), exit.to_stderr, "")?;
             return Ok(exit.code.into());
         }
     };
@@ -53,27 +48,13 @@ pub fn main(py: Python<'_>, argv: Option<Vec<OsString>>) -> PyResult<i64> {
     }
 }
 
-/// Where `print` writes.
-#[derive(Clone, Copy)]
-enum Stream {
-    Stdout,
-    Stderr,
-}
-
-fn stream(to_stderr: bool) -> Stream {
-    if to_stderr {
-        Stream::Stderr
-    } else {
-        Stream::Stdout
-    }
-}
-
-/// `print(text, file=sys.stdout or sys.stderr, end=end)`.
-fn print(py: Python<'_>, text: Bound<'_, PyString>, to: Stream, end: &str) -> PyResult<()> {
+/// `print(text, file=sys.stderr if to_stderr else sys.stdout, end=end)`.
+fn print(py: Python<'_>, text: Bound<'_, PyString>, to_stderr: bool, end: &str) -> PyResult<()> {
     let sys = py.import("sys")?;
-    let file = match to {
-        Stream::Stdout => sys.getattr("stdout")?,
-        Stream::Stderr => sys.getattr("stderr")?,
+    let file = if to_stderr {
+        sys.getattr("stderr")?
+    } else {
+        sys.getattr("stdout")?
     };
     let kwargs = PyDict::new(py);
     kwargs.set_item("file", file)?;
@@ -90,7 +71,7 @@ fn fail(py: Python<'_>, what: &str, message: Bound<'_, PyString>) -> PyResult<i6
     let text = PyString::new(py, &format!("{what} failed.\n"))
         .add(message)?
         .cast_into::<PyString>()?;
-    print(py, text, Stream::Stderr, "\n")?;
+    print(py, text, true, "\n")?;
 
     Ok(1)
 }

@@ -13,43 +13,43 @@ use clap::Parser;
     about = "Build Gradescope autograders from marimo notebooks.",
     subcommand_required = true,
     arg_required_else_help = false,
-    disable_help_subcommand = true
+    disable_help_subcommand = true,
+    disable_version_flag = true
 )]
 pub struct Cli {
     /// The command to run.
     #[command(subcommand)]
     pub command: Command,
+    /// `--version`, without the `-V` of clap. clap prints the version and exits on it, so this
+    /// holds nothing.
+    #[arg(long, action = clap::ArgAction::Version, help = "Print version")]
+    pub version: (),
 }
 
 /// A `mogs` command and its arguments.
 #[derive(Debug, PartialEq, Eq, clap::Subcommand)]
 pub enum Command {
-    /// `mogs init DIR`.
     #[command(
         about = "start a new assignment",
         long_about = "Create DIR with one notebook, DIR/<name of DIR>.py, holding the assignment \
                       cell, a guide and two example questions."
     )]
     Init {
-        /// New assignment folder.
         #[arg(value_name = "DIR", help = "new assignment folder")]
         dir: PathBuf,
     },
-    /// `mogs edit PATH`.
     #[command(
         about = "open the source notebook in marimo's editor",
         long_about = "Run `marimo edit --sandbox` on the source notebook PATH, or the one in \
                       the assignment folder PATH, with the marimo installed next to mogs."
     )]
     Edit {
-        /// Source notebook, or the assignment folder with it.
         #[arg(
             value_name = "PATH",
             help = "source notebook, or the assignment folder with it"
         )]
         path: PathBuf,
     },
-    /// `mogs build DIR`.
     #[command(
         about = "build the student notebook and the autograder zip",
         long_about = "Build DIR/dist/student/ and DIR/dist/autograder/ (the autograder zip and \
@@ -57,27 +57,23 @@ pub enum Command {
                       solved and the blank student copy."
     )]
     Build {
-        /// Assignment folder with the source notebook.
         #[arg(
             value_name = "DIR",
             help = "assignment folder with the source notebook"
         )]
         dir: PathBuf,
     },
-    /// `mogs grade DIR SUBMISSION`.
     #[command(
         about = "grade one submission locally",
         long_about = "Grade SUBMISSION against the source notebook in DIR with the real grader, \
                       as Gradescope would, and list every failing test, hidden ones included."
     )]
     Grade {
-        /// Assignment folder with the source notebook.
         #[arg(
             value_name = "DIR",
             help = "assignment folder with the source notebook"
         )]
         dir: PathBuf,
-        /// The student's notebook, export zip or folder.
         #[arg(
             value_name = "SUBMISSION",
             help = "student notebook (.py), the zip a student exported, or a folder with one"
@@ -253,6 +249,7 @@ mod tests {
             &["init"],
             &["grade", "hw"],
             &["init", "a", "b"],
+            &["-V"],
         ] {
             let exit = parsed(args).unwrap_err();
 

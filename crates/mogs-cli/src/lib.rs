@@ -1,31 +1,31 @@
 //! The command line of mogs.
 //!
-//! [`parse`] reads the `mogs` command line ([`Cli`]). `mogs init` ([`scaffold`]) and
-//! `mogs edit` ([`edit`]) run here. Text that follows Python's rules, and the checks that live
-//! in Python, come from the caller through [`Interpreter`], so this crate never imitates
-//! CPython.
+//! [`parse`] reads the `mogs` command line ([`Cli`]), and [`scaffold`] runs `mogs init`. Text
+//! that follows Python's rules, the checks that live in Python, and the file operations whose
+//! errors Python words, come from the caller through [`Interpreter`], so this crate never
+//! imitates CPython.
 
 mod command;
-pub mod edit;
 pub mod scaffold;
 
-use std::ffi::OsStr;
-use std::io;
 use std::path::{Path, PathBuf};
 
 pub use command::{Cli, Command, Exit, parse};
 
 /// What the commands ask of Python.
+///
+/// Every method may fail with any Python exception, such as the `OSError` of a file
+/// operation.
 pub trait Interpreter {
     /// A Python exception.
     type Error;
 
-    /// `mogs.config.check_name(name)`: the name, or a `ConfigError`.
+    /// `mogs.config.check_name(Path(folder).resolve().name)`.
     ///
     /// # Errors
     ///
-    /// The `ConfigError` that names the rule `name` breaks.
-    fn check_name(&self, name: &OsStr) -> Result<String, Self::Error>;
+    /// The `ConfigError` that names the rule the name breaks.
+    fn check_name(&self, folder: &Path) -> Result<String, Self::Error>;
     /// `mogs.transform.python_literal(text)`.
     ///
     /// # Errors
@@ -50,42 +50,22 @@ pub trait Interpreter {
     ///
     /// `PackageNotFoundError` if marimo is not installed.
     fn marimo_version(&self) -> Result<String, Self::Error>;
-}
-
-/// A system call that failed.
-#[derive(Debug)]
-pub struct OsError {
-    /// The error.
-    pub error: io::Error,
-    /// The path that Python's error would name, if any.
-    pub path: Option<PathBuf>,
-    /// The kind of call, which decides how Python words the error on Windows.
-    pub call: Call,
-}
-
-impl OsError {
-    fn new(error: io::Error, path: Option<&Path>, call: Call) -> Self {
-        Self {
-            error,
-            path: path.map(Path::to_path_buf),
-            call,
-        }
-    }
-}
-
-/// The kind of system call that failed.
-///
-/// On Windows, Python shows a failed file open or write by its C runtime `errno`
-/// (`[Errno 13]`), and a failed call to the Windows API by its Windows error code
-/// (`[WinError 5]`). Elsewhere every error shows its `errno`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Call {
-    /// Opening or writing a file, as `open()` does: by `errno`, with the path.
-    File,
-    /// Making or listing a folder, as `os.mkdir` and `os.scandir` do: by Windows error code on
-    /// Windows, with the path.
-    Folder,
-    /// Starting a process, as `subprocess.Popen` does: by Windows error code and without the
-    /// path on Windows.
-    Spawn,
+    /// `any(Path(folder).iterdir())`.
+    ///
+    /// # Errors
+    ///
+    /// The `OSError` if the folder cannot be listed.
+    fn has_entries(&self, folder: &Path) -> Result<bool, Self::Error>;
+    /// `Path(folder).mkdir(parents=True, exist_ok=True)`.
+    ///
+    /// # Errors
+    ///
+    /// The `OSError` if the folder cannot be made.
+    fn make_folder(&self, folder: &Path) -> Result<(), Self::Error>;
+    /// `Path(path).write_text(text, encoding="utf-8")`.
+    ///
+    /// # Errors
+    ///
+    /// The `OSError` if the file cannot be written.
+    fn write_text(&self, path: &Path, text: &str) -> Result<(), Self::Error>;
 }

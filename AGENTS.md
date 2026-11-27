@@ -25,9 +25,9 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   it into one wheel per platform together with `src/mogs/`, and
   `src/mogs/_native.pyi` types it. The version is `[workspace.package] version`
   in `Cargo.toml`.
-- `crates/mogs-cli/`: the clap definition of the command line, plus
-  `mogs init` and `mogs edit`, plain Rust with cargo tests. Python's text and
-  checks come in through its `Interpreter` trait.
+- `crates/mogs-cli/`: the clap definition of the command line and
+  `mogs init`, plain Rust with cargo tests. Python's text, checks and file
+  operations come in through its `Interpreter` trait.
 - `crates/mogs-grader/`: the grading supervisor, plain Rust with cargo tests.
   It runs the Python grading child (`python -m mogs.grader.child <fd>`),
   enforces its deadlines and builds `results.json`. `crates/mogs/src/grader/`

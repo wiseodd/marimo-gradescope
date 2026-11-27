@@ -174,6 +174,22 @@ def test_init_refuses_a_name_unfit_for_windows(tmp_path, capsys):
     assert not (tmp_path / "con").exists()
 
 
+def test_init_names_a_dangling_link_after_its_target(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+
+    try:
+        Path("hw").symlink_to("con")
+    except OSError as error:
+        pytest.skip(f"cannot make a symlink: {error}")
+
+    code = main(["init", "hw"])
+
+    assert code == 1
+    assert capsys.readouterr().err.startswith(
+        "Init failed.\nAssignment name: `name` 'con' is not a valid file name on Windows."
+    )
+
+
 def test_init_reports_a_folder_it_cannot_make(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "f").write_text("", encoding="utf-8")
