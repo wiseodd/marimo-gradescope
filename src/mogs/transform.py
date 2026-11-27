@@ -59,11 +59,13 @@ class MarimoImport(StrEnum):
 type Edits = dict[int, list[tuple[int, str]]]
 
 
-def pinned_requirement(cfg: AssignmentConfig) -> str:
-    """Requirement on this exact package version, with the `pdf` extra if a question is manual."""
+def pinned_requirement() -> str:
+    """Requirement on this exact package version.
 
-    extra = "[pdf]" if any(question.manual for question in cfg.questions.values()) else ""
-    return f"mogs{extra}=={__version__}"
+    The written-answer PDF is part of mogs itself, so manual questions need no extra.
+    """
+
+    return f"mogs=={__version__}"
 
 
 def student_notebook(
@@ -108,7 +110,7 @@ def student_notebook(
         nb: The notebook parsed from `src`. It should pass `validate`.
         cfg: Assignment config of the notebook.
         tool_requirement: Requirement on this package for the header, such as
-            `pinned_requirement(cfg)`.
+            `pinned_requirement()`.
         solutions: Keep the solutions.
 
     Returns:

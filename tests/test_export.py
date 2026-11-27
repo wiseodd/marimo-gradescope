@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 import mogs
+from mogs._answers import PdfUnavailable
 from mogs._run import run_capped
 from mogs.config import read_config
 from mogs.export import (
@@ -27,7 +28,6 @@ from mogs.export import (
     package,
     panel,
 )
-from mogs.pdf import PdfUnavailable
 from mogs.source import parse_notebook
 from mogs.transform import public_test_files, student_notebook
 
@@ -120,7 +120,7 @@ def no_pdf(monkeypatch):
     """Make every PDF attempt fail fast."""
 
     def fail(*args, **kwargs):
-        raise PdfUnavailable("typst is not installed")
+        raise PdfUnavailable("Typst failed (TypstError: boom)")
 
     monkeypatch.setattr(export_module, "render_manual_pdf", fail)
 
@@ -184,7 +184,9 @@ def test_package_reports_disk_file_tests_and_download(tmp_path, no_pdf):
 
     assert lines[0] == "⚠ Public tests: 0/3 passed"
     assert item_texts(result.lines[0]) == ["✗ Question 1: 0/2 passed", "✗ Vowels: 0/1 passed"]
-    assert lines[1] == "⚠ PDF not created: typst is not installed; answers included as Markdown"
+    assert lines[1] == (
+        "⚠ PDF not created: Typst failed (TypstError: boom); answers included as Markdown"
+    )
     assert not any("Using" in line or "⬇" in line for line in lines)
     assert result.filename == "hw_submission.zip"
     assert result.note == f"Exported hw.py as saved at {saved}."

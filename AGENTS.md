@@ -12,10 +12,12 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   `config.py` reads the config from the notebook's `mogs.assignment(...)` and
   `mogs.grade(...)` calls (statically, from the AST) and edits the PEP 723
   header as text. `scaffold.py` is `mogs init`.
-- `src/mogs/_typst/`: the Typst packages cmarker and mitex,
-  vendored for the PDF of written answers (`pdf.py`). They need the Typst
-  version the `pdf` extra pins (`typst>=0.15,<0.16`): bump the pin and the
-  vendored versions together.
+- `crates/mogs-pdf/`: the PDF of written answers, plain Rust with cargo tests.
+  `src/mogs/_answers.py` builds the questions from the notebook; this crate
+  finds the formulas, runs Typst and falls back to LaTeX source or plain text.
+  The Typst packages cmarker and mitex are vendored in `typst/` and compiled
+  into the module. They need the pinned typst crate version (`=0.15.x`): bump
+  the crates and the vendored packages together.
 - `crates/mogs/`: the extension module `mogs._native`, in Rust (PyO3, abi3
   for Python 3.13 and newer). The `mogs` command is the console script
   `mogs._native:main`, which for now runs `mogs.cli.main()`. maturin builds

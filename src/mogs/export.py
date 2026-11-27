@@ -31,6 +31,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from mogs._answers import NO_ANSWER, PdfUnavailable, cell_markdown, quiet, render_manual_pdf
 from mogs._env import grading
 from mogs._run import run_capped
 from mogs.check import (
@@ -45,7 +46,6 @@ from mogs.check import (
     locate,
 )
 from mogs.config import default_title
-from mogs.pdf import NO_ANSWER, PdfUnavailable, cell_markdown, quiet, render_manual_pdf
 from mogs.runner import exception_summary, shorten
 from mogs.source import Notebook, SourceError, answer_text, parse_notebook, unanswered
 

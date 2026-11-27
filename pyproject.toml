@@ -5,6 +5,8 @@ dynamic = ["version"]
 description = "Build Gradescope autograders from marimo notebooks."
 authors = [{ name = "Agustinus Kristiadi", email = "agustinus@kristia.de" }]
 license = "MIT"
+# The vendored Typst packages are compiled into the extension module; their licenses ship too.
+license-files = ["LICENSE", "crates/mogs-pdf/typst/preview/*/*/LICENSE"]
 requires-python = ">=3.13"
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -17,10 +19,6 @@ dependencies = [
   "packaging>=24",
   "pytest",
 ]
-
-[project.optional-dependencies]
-# The vendored Typst packages in `_typst` need Typst 0.15.
-pdf = ["typst>=0.15,<0.16"]
 
 [project.scripts]
 mogs = "mogs._native:main"
@@ -44,8 +42,6 @@ dev = [
   "ty>=0.0.104",
   "ruff>=0.14",
   "pypdf>=5",
-  # The PDF tests need the pdf extra.
-  "mogs[pdf]",
   "jsonschema>=4",
 ]
 
@@ -92,6 +88,9 @@ cache-keys = [
   { file = "Cargo.lock" },
   { file = "rust-toolchain.toml" },
   { file = "crates/**/*.rs" },
+  # The Typst template and the vendored Typst packages are compiled into the module.
+  { file = "crates/**/*.typ" },
+  { file = "crates/mogs-pdf/typst/**/*" },
   { file = "crates/**/Cargo.toml" },
 ]
 # The lockfile must install on every CI platform: Linux, macOS and Windows.

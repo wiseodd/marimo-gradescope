@@ -423,7 +423,7 @@ def test_run_autograder_script(tmp_path):
 
 
 @pytest.mark.slow
-def test_wheel_ships_templates_and_typst_packages(tmp_path):
+def test_wheel_ships_templates_and_typst_licenses(tmp_path):
     uv = shutil.which("uv")
     assert uv is not None
 
@@ -439,10 +439,8 @@ def test_wheel_ships_templates_and_typst_packages(tmp_path):
     assert "mogs/grader/templates/setup.sh" in names
     assert "mogs/grader/templates/run_autograder" in names
 
-    # The Typst packages the PDF of written answers needs, with their licenses.
+    # The Typst packages the PDF of written answers needs are in the extension module; their
+    # licenses ship with the wheel's metadata.
+    assert "mogs/_typst/" not in names
     for package in ("cmarker/0.1.10", "mitex/0.2.7"):
-        folder = f"mogs/_typst/preview/{package}"
-        assert f"{folder}/typst.toml" in names
-        assert f"{folder}/lib.typ" in names
-        assert f"{folder}/LICENSE" in names
-        assert f"{folder}/README.md" not in names
+        assert f"crates/mogs-pdf/typst/preview/{package}/LICENSE" in names

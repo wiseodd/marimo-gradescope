@@ -18,6 +18,7 @@ doctest = false
 [dependencies]
 indexmap = "2"
 mogs-grader = { path = "../mogs-grader" }
+mogs-pdf = { path = "../mogs-pdf" }
 mogs-schema = { path = "../mogs-schema" }
 pyo3 = { version = "0.30", features = ["abi3-py313"] }
 serde = "1"
