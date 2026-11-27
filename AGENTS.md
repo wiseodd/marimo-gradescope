@@ -27,7 +27,7 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - `crates/mogs-schema/`: the JSON messages between the `mogs` executable and
   Python (job, events, bundle, inspect, `results.json`) as Rust types. Every
   message but `results.json` has `"schema": 1`: bump `SCHEMA` there and in
-  `src/mogs/grader/bundle.py` together. `schemas/` holds the JSON Schemas
+  `src/mogs/grader/wire.py` together. `schemas/` holds the JSON Schemas
   generated from the types. `MOGS_BLESS=1 cargo test` rewrites them, and
   `tests/test_schemas.py` checks what Python writes against them.
 - `tests/`: pytest suite. `cargo test` runs the Rust tests.

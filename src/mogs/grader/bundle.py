@@ -1,11 +1,8 @@
 """The tests the grader runs, cut from the source notebook and stored as JSON.
 
 A bundle holds the setup cell and every test cell. Each grading phase gets only its own cells,
-so the public phase never sees hidden test source.
-
-The JSON of a bundle, a job and an event carries `"schema": SCHEMA`, the version of its
-format. The Rust crate `mogs-schema` defines the formats; `schemas/` in the repo holds their
-JSON Schemas.
+so the public phase never sees hidden test source. Its JSON carries the format version; see
+`wire`.
 """
 
 import copy
@@ -15,9 +12,8 @@ from enum import StrEnum
 from typing import Self
 
 from mogs.config import AssignmentConfig, Question
+from mogs.grader.wire import SCHEMA, check_schema
 from mogs.source import Notebook, SourceError, cell_names, question_id
-
-SCHEMA = 1
 
 
 class Phase(StrEnum):
@@ -272,23 +268,6 @@ def bundle_from_notebook(nb: Notebook, cfg: AssignmentConfig) -> GradingBundle:
         cells.append(TestCell(qid, f"{qid}-tests", cell.hidden, source, cell.tests, uses, needs))
 
     return GradingBundle(cfg, nb.setup_source(), tuple(cells), tuple(helpers))
-
-
-def check_schema(data: object) -> None:
-    """Check that a decoded message is of format version `SCHEMA`.
-
-    Raises:
-        ValueError: If `data` has no `schema` key, or another version. The message names both
-            versions.
-    """
-
-    match data:
-        case {"schema": int() as version} if not isinstance(version, bool) and version == SCHEMA:
-            return
-        case {"schema": version}:
-            raise ValueError(f"schema version {json.dumps(version)}, expected {SCHEMA}")
-
-    raise ValueError(f"missing schema version, expected {SCHEMA}")
 
 
 def _strings(items: list) -> tuple[str, ...]:

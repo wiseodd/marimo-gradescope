@@ -17,12 +17,12 @@ Student code writes to stdout and stderr freely; neither carries events.
 """
 
 import json
-from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
-from mogs.grader.bundle import SCHEMA, GradingBundle, check_schema
+from mogs.grader.bundle import GradingBundle
+from mogs.grader.wire import SCHEMA, check_schema
 from mogs.runner import Outcome
 
 
@@ -98,12 +98,12 @@ class Loaded:
 
     Attributes:
         error: Why setup failed, `None` when it worked.
-        unavailable: Each name the tests use that the submission could not provide, with
-            why. The child leaves it empty for now.
+        unavailable: `(name, reason)` for each name the tests use that the submission could
+            not provide, in the order found. The child leaves it empty for now.
     """
 
     error: str | None
-    unavailable: Mapping[str, str] = field(default_factory=dict)
+    unavailable: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,7 +188,7 @@ def _decode(line: str) -> Event:
             "error": None | str() as error,
             "unavailable": dict() as unavailable,
         } if all(isinstance(reason, str) for reason in unavailable.values()):
-            return Loaded(error, unavailable)
+            return Loaded(error, tuple(unavailable.items()))
         case {"event": "loading", "tests": list() as tests} if all(
             isinstance(test, str) for test in tests
         ):

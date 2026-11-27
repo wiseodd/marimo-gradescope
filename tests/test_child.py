@@ -372,13 +372,17 @@ def test_outcome_from_bad_dict_raises():
 def test_event_encoding():
     outcome = Outcome("test_q1_a", False, "AssertionError", FailureReason.ASSERTION, 0.5)
 
-    loaded = {"schema": 1, "event": "loaded", "error": None, "unavailable": {"x": "it raised"}}
+    unavailable = (("y", "it raised"), ("x", "no cell defines it"))
+    loaded = {"schema": 1, "event": "loaded", "error": None, "unavailable": dict(unavailable)}
     start = {"schema": 1, "event": "start", "test": "test_q1_a"}
     loading = {"schema": 1, "event": "loading", "tests": ["a", "b"]}
     result = {"schema": 1, "event": "result", **outcome.to_dict()}
 
-    assert json.loads(encode(Loaded(None, {"x": "it raised"}))) == loaded
+    assert json.loads(encode(Loaded(None, unavailable))) == loaded
+    assert list(json.loads(encode(Loaded(None, unavailable)))["unavailable"]) == ["y", "x"]
+    assert decode(encode(Loaded(None, unavailable))) == Loaded(None, unavailable)
     assert json.loads(encode(Loaded(None)))["unavailable"] == {}
+    assert hash(Loaded(None, unavailable))
     assert json.loads(encode(Start("test_q1_a"))) == start
     assert json.loads(encode(Loading(("a", "b")))) == loading
     assert json.loads(encode(Result(outcome))) == result
@@ -386,7 +390,13 @@ def test_event_encoding():
     assert encode(Loaded("x")).endswith("\n")
     assert encode(Loaded("x")).count("\n") == 1
 
-    events = [Loaded(None), Loaded("bad", {"x": "y"}), Loading(("t",)), Start("t"), Result(outcome)]
+    events = [
+        Loaded(None),
+        Loaded("bad", (("x", "y"),)),
+        Loading(("t",)),
+        Start("t"),
+        Result(outcome),
+    ]
 
     for event in events:
         assert decode(encode(event)) == event
@@ -398,10 +408,11 @@ def test_event_encoding():
         "",
         "not json",
         "[]",
-        '{"event": "nope"}',
-        '{"event": "start"}',
-        '{"event": "loading", "tests": "t"}',
-        '{"event": "loading", "tests": [1]}',
+        '{"event": "start", "test": "t"}',
+        '{"schema": 1, "event": "nope"}',
+        '{"schema": 1, "event": "start"}',
+        '{"schema": 1, "event": "loading", "tests": "t"}',
+        '{"schema": 1, "event": "loading", "tests": [1]}',
         "[" * 200_000 + "]" * 200_000,
         '{"schema": 1, "event": "result", "name": "t", "passed": true, "message": "", '
         '"reason": "x", "seconds": 0}',
@@ -411,8 +422,12 @@ def test_event_encoding():
     ],
 )
 def test_decode_rejects_bad_lines(line):
-    with pytest.raises(ProtocolError):
+    with pytest.raises(ProtocolError) as error:
         decode(line)
+
+    # A line of the right version fails on its shape, not on the version check.
+    if line.startswith('{"schema": 1,'):
+        assert "schema version" not in str(error.value)
 
 
 def test_job_json_round_trip(tmp_path):
