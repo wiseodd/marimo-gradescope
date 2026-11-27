@@ -21,6 +21,7 @@ pub struct Job {
     pub skip: Vec<String>,
     /// Why an earlier child died while running the whole notebook. When set, the child does
     /// not run it again.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub run_failed: Option<String>,
     /// Whether the child times each test itself with an alarm.
     pub alarm: bool,

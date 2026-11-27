@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use mogs_schema::{
     Answer, Bundle, BundleConfig, BundleQuestion, Event, EventLine, FailureReason, HiddenHelper,
     Inspect, InspectConfig, InspectQuestion, Job, Outcome, Results, Row, SCHEMA, TestCell,
-    TestFile, decode, schemas,
+    TestFile, TestFileError, Utf8Reason, decode, schemas,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -33,6 +33,7 @@ fn bundle() -> Bundle {
         setup_code: "import math\n".into(),
         cells: vec![TestCell {
             qid: "q1".into(),
+            label: "q1-tests".into(),
             hidden: true,
             source: "def test_q1_a():\n    assert add(1, 1) == 2\n".into(),
             tests: vec!["test_q1_a".into()],
@@ -97,7 +98,18 @@ fn round_trips_each_type() {
         });
     }
 
-    round_trip(Inspect {
+    round_trip(inspect());
+}
+
+fn inspect() -> Inspect {
+    let failed = |error| TestFile {
+        qid: "q1".into(),
+        path: "tests/q1.py".into(),
+        tests: vec![],
+        error: Some(error),
+    };
+
+    Inspect {
         schema: SCHEMA,
         source_error: None,
         config_error: None,
@@ -118,14 +130,121 @@ fn round_trips_each_type() {
             text: Some("Because.".into()),
             source: "@app.cell\ndef answer_q2():\n    mo.md(\"Because.\")\n".into(),
         }],
-        test_files: vec![TestFile {
-            qid: "q1".into(),
-            path: "tests/q1.py".into(),
-            tests: vec!["test_q1_a".into()],
-            error: None,
-        }],
+        test_files: vec![
+            TestFile {
+                qid: "q1".into(),
+                path: "tests/q1.py".into(),
+                tests: vec!["test_q1_a".into()],
+                error: None,
+            },
+            failed(TestFileError::Missing),
+            failed(TestFileError::Unreadable { errno: 13 }),
+            failed(TestFileError::NotUtf8 {
+                start: 3,
+                bytes: vec![0xff],
+                reason: Utf8Reason::InvalidStartByte,
+            }),
+            failed(TestFileError::Syntax {
+                line: 2,
+                message: "invalid syntax".into(),
+            }),
+        ],
         public_job: Some(bundle()),
-    });
+    }
+}
+
+#[test]
+fn test_file_errors_carry_data_tagged_by_kind() {
+    let errors = [
+        (TestFileError::Missing, r#"{"kind":"missing"}"#),
+        (
+            TestFileError::Unreadable { errno: 13 },
+            r#"{"kind":"unreadable","errno":13}"#,
+        ),
+        (
+            TestFileError::NotUtf8 {
+                start: 3,
+                bytes: vec![0xe2, 0x28],
+                reason: Utf8Reason::InvalidContinuationByte,
+            },
+            r#"{"kind":"not_utf8","start":3,"bytes":[226,40],"reason":"invalid_continuation_byte"}"#,
+        ),
+        (
+            TestFileError::Syntax {
+                line: 2,
+                message: "invalid syntax".into(),
+            },
+            r#"{"kind":"syntax","line":2,"message":"invalid syntax"}"#,
+        ),
+    ];
+
+    for (error, text) in errors {
+        assert_eq!(serde_json::to_string(&error).unwrap(), text);
+        assert_eq!(serde_json::from_str::<TestFileError>(text).unwrap(), error);
+    }
+}
+
+/// Decoding `json` without the key at `path` fails, naming the key.
+fn rejects_without<T: DeserializeOwned + Debug>(value: &impl Serialize, path: &[&str], key: &str) {
+    let mut json = serde_json::to_value(value).unwrap();
+    let mut object = &mut json;
+
+    for step in path {
+        object = match step.parse::<usize>() {
+            Ok(index) => &mut object[index],
+            Err(_) => &mut object[*step],
+        };
+    }
+
+    let removed = object.as_object_mut().unwrap().remove(key);
+    assert!(removed.is_some(), "no key {key} at {path:?}");
+
+    let error = decode::<T>(&json.to_string()).unwrap_err().to_string();
+
+    assert!(error.contains(&format!("missing field `{key}`")), "{error}");
+}
+
+#[test]
+fn rejects_missing_nullable_keys() {
+    let job = Job {
+        schema: SCHEMA,
+        bundle: bundle(),
+        submission: PathBuf::from("s.py"),
+        skip: vec![],
+        run_failed: None,
+        alarm: true,
+    };
+    let loaded = EventLine {
+        schema: SCHEMA,
+        event: Event::Loaded {
+            error: None,
+            unavailable: BTreeMap::new(),
+        },
+    };
+    let result = EventLine {
+        schema: SCHEMA,
+        event: Event::Result(Outcome {
+            reason: None,
+            ..outcome()
+        }),
+    };
+    let inspect = Inspect {
+        config: None,
+        public_job: None,
+        ..inspect()
+    };
+
+    rejects_without::<Job>(&job, &[], "run_failed");
+    rejects_without::<EventLine>(&loaded, &[], "error");
+    rejects_without::<EventLine>(&result, &[], "reason");
+    rejects_without::<Bundle>(&bundle(), &["cells", "0"], "label");
+
+    for key in ["source_error", "config_error", "config", "public_job"] {
+        rejects_without::<Inspect>(&inspect, &[], key);
+    }
+
+    rejects_without::<Inspect>(&inspect, &["answers", "0"], "text");
+    rejects_without::<Inspect>(&inspect, &["test_files", "0"], "error");
 }
 
 #[test]

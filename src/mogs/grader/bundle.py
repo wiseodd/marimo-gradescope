@@ -33,6 +33,9 @@ class TestCell:
 
     Attributes:
         qid: Question id of the cell's tests.
+        label: File name the cell is compiled under, shown in tracebacks and syntax errors:
+            `<qid>-tests` for a notebook cell, the path relative to the notebook for a file of
+            public tests.
         hidden: Whether the cell is marked `# HIDDEN`.
         source: Cell body, run as a module.
         tests: Test function names, in file order.
@@ -43,6 +46,7 @@ class TestCell:
     __test__ = False
 
     qid: str
+    label: str
     hidden: bool
     source: str
     tests: tuple[str, ...]
@@ -54,6 +58,7 @@ class TestCell:
 
         return {
             "qid": self.qid,
+            "label": self.label,
             "hidden": self.hidden,
             "source": self.source,
             "tests": list(self.tests),
@@ -72,13 +77,15 @@ class TestCell:
         match data:
             case {
                 "qid": str() as qid,
+                "label": str() as label,
                 "hidden": bool() as hidden,
                 "source": str() as source,
                 "tests": list() as tests,
                 "uses": list() as uses,
                 "needs": list() as needs,
             }:
-                return cls(qid, hidden, source, _strings(tests), _strings(uses), _strings(needs))
+                strings = _strings(tests), _strings(uses), _strings(needs)
+                return cls(qid, label, hidden, source, *strings)
 
         raise ValueError(f"not a test cell: {data!r}")
 
@@ -261,7 +268,8 @@ def bundle_from_notebook(nb: Notebook, cfg: AssignmentConfig) -> GradingBundle:
         _, free = cell_names(source)
         uses = tuple(sorted(free & students))
         needs = tuple(sorted(free & provided)) if cell.hidden else ()
-        cells.append(TestCell(qids.pop(), cell.hidden, source, cell.tests, uses, needs))
+        qid = qids.pop()
+        cells.append(TestCell(qid, f"{qid}-tests", cell.hidden, source, cell.tests, uses, needs))
 
     return GradingBundle(cfg, nb.setup_source(), tuple(cells), tuple(helpers))
 

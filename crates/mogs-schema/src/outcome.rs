@@ -35,6 +35,7 @@ pub struct Outcome {
     /// Failure message, empty when passed.
     pub message: String,
     /// Why the test failed, `None` when passed.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub reason: Option<FailureReason>,
     /// Wall time spent in the test.
     pub seconds: f64,

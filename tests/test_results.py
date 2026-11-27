@@ -18,8 +18,8 @@ def bundle() -> GradingBundle:
         "q2": Question("q2", "Essay", 5, manual=True),
     }
     cells = (
-        TestCell("q1", False, "", PUBLIC, ()),
-        TestCell("q1", True, "", HIDDEN, ()),
+        TestCell("q1", "q1-tests", False, "", PUBLIC, ()),
+        TestCell("q1", "q1-tests", True, "", HIDDEN, ()),
     )
     return GradingBundle(AssignmentConfig("A", "hw.py", questions), "", cells)
 
@@ -60,7 +60,7 @@ def test_three_of_four_tests_give_three_quarters_of_the_points():
 
 
 def test_score_is_rounded():
-    cells = (TestCell("q1", False, "", ("test_q1_a", "test_q1_b", "test_q1_c"), ()),)
+    cells = (TestCell("q1", "q1-tests", False, "", ("test_q1_a", "test_q1_b", "test_q1_c"), ()),)
     grading = GradingBundle(
         AssignmentConfig("A", "hw.py", {"q1": Question("q1", "Q", 1)}), "", cells
     )
@@ -153,8 +153,8 @@ def test_question_with_only_hidden_tests_is_left_out_of_the_public_row():
         "q2": Question("q2", "Secret", 5),
     }
     cells = (
-        TestCell("q1", False, "", PUBLIC, ()),
-        TestCell("q2", True, "", ("test_q2_x",), ()),
+        TestCell("q1", "q1-tests", False, "", PUBLIC, ()),
+        TestCell("q2", "q2-tests", True, "", ("test_q2_x",), ()),
     )
     grading = GradingBundle(AssignmentConfig("A", "hw.py", questions), "", cells)
     result = {name: Outcome(name, True) for name in (*PUBLIC, "test_q2_x")}
@@ -166,7 +166,7 @@ def test_question_with_only_hidden_tests_is_left_out_of_the_public_row():
 
 
 def test_no_public_tests_means_no_public_row():
-    cells = (TestCell("q1", True, "", HIDDEN, ()),)
+    cells = (TestCell("q1", "q1-tests", True, "", HIDDEN, ()),)
     grading = GradingBundle(
         AssignmentConfig("A", "hw.py", {"q1": Question("q1", "Q", 1)}), "", cells
     )

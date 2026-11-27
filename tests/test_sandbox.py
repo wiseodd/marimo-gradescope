@@ -63,7 +63,7 @@ def cell(qid: str, source: str, *, hidden: bool = False, uses=("add", "misbehave
     tests = tuple(
         line[4:].split("(")[0] for line in source.splitlines() if line.startswith("def test_")
     )
-    return TestCell(qid, hidden, source, tests, tuple(uses))
+    return TestCell(qid, f"{qid}-tests", hidden, source, tests, tuple(uses))
 
 
 def bundle(*cells: TestCell, **kwargs) -> GradingBundle:

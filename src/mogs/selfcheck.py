@@ -67,8 +67,7 @@ def public_results(path: Path) -> Summary:
     # The bundle keeps the config but does not read it; a student copy has none.
     cfg = AssignmentConfig(name=path.stem, notebook=path.name, questions={})
     bundle = bundle_from_notebook(nb, cfg).for_phase(Phase.PUBLIC)
-    # Each cell with the name it reports a load failure under.
-    cells = [(cell, f"{cell.qid}-tests") for cell in bundle.cells]
+    cells = list(bundle.cells)
     outcomes: dict[str, list[Outcome]] = {}
     students = nb.student_names()
 
@@ -83,7 +82,7 @@ def public_results(path: Path) -> Summary:
             outcomes.setdefault(qid, []).append(outcome)
             continue
 
-        cells.append((TestCell(qid, False, source, names, uses), relative))
+        cells.append(TestCell(qid, relative, False, source, names, uses))
 
     base: dict[str, object] = {"__name__": "__mogs_selfcheck__"}
     setup_error = None
@@ -95,7 +94,7 @@ def public_results(path: Path) -> Summary:
         setup_error = cap(f"the setup cell failed ({exception_summary(exc)})")
 
     if setup_error is None:
-        uses = sorted({name for cell, _ in cells for name in cell.uses})
+        uses = sorted({name for cell in cells for name in cell.uses})
         bound = bind(path, uses)
         base.update(bound)
         missing = {
@@ -104,7 +103,7 @@ def public_results(path: Path) -> Summary:
             if (reason := unavailable(value)) is not None
         }
 
-    for cell, label in cells:
+    for cell in cells:
         results = outcomes.setdefault(cell.qid, [])
 
         if setup_error is not None:
@@ -112,7 +111,7 @@ def public_results(path: Path) -> Summary:
             results += [Outcome(name, False, setup_error, reason) for name in cell.tests]
             continue
 
-        results += run_test_source(cell.source, label, cell.tests, dict(base))
+        results += run_test_source(cell.source, cell.label, cell.tests, dict(base))
 
     questions: dict[str, dict[str, object]] = {
         qid: {

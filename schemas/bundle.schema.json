@@ -137,6 +137,10 @@
           "description": "Question id of the cell's tests.",
           "type": "string"
         },
+        "label": {
+          "description": "The file name the runner compiles the cell under, which tracebacks and syntax errors\nshow: `<qid>-tests` for a cell of the notebook, the path relative to the notebook for\na public test file (as `selfcheck` runs it).",
+          "type": "string"
+        },
         "hidden": {
           "description": "Whether the cell is marked `# HIDDEN`.",
           "type": "boolean"
@@ -169,6 +173,7 @@
       },
       "required": [
         "qid",
+        "label",
         "hidden",
         "source",
         "tests",

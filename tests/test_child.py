@@ -96,7 +96,7 @@ def config(timeout: float = 60) -> AssignmentConfig:
 
 
 def cell(source: str, tests: tuple[str, ...], uses: tuple[str, ...] = ()) -> TestCell:
-    return TestCell("q1", False, textwrap.dedent(source), tests, uses)
+    return TestCell("q1", "q1-tests", False, textwrap.dedent(source), tests, uses)
 
 
 def submission(tmp_path: Path, body: str = "") -> Path:
@@ -243,6 +243,16 @@ def test_bundle_json_holds_no_host_paths(tmp_path):
     assert str(tmp_path) not in text
     assert "requirements" not in json.loads(text)["config"]
     assert GradingBundle.from_json(text).config.requirements is None
+
+
+def test_bundle_labels_each_cell_after_its_question():
+    bundle = solution_bundle()
+
+    assert [(c.qid, c.label) for c in bundle.cells] == [
+        (c.qid, f"{c.qid}-tests") for c in bundle.cells
+    ]
+    assert {c.qid for c in bundle.cells} == {"q1", "q2"}
+    assert json.loads(bundle.to_json())["cells"][0]["label"] == "q1-tests"
 
 
 def test_for_phase_splits_cells():
@@ -522,6 +532,15 @@ def test_cell_that_fails_to_load_fails_only_its_tests(tmp_path):
     assert results["test_q1_b"].passed
     assert results["test_q1_c"].reason is FailureReason.LOAD_FAILED
     assert "SyntaxError" in results["test_q1_c"].message
+
+
+def test_cell_compiles_under_its_label(tmp_path):
+    broken = TestCell("q1", "tests/q1.py", False, "def test_q1_a(:\n", ("test_q1_a",), ())
+    bundle = GradingBundle(config(), "", (broken,))
+    results = by_name(run_child(tmp_path, Job(bundle, submission(tmp_path))))
+
+    assert results["test_q1_a"].reason is FailureReason.LOAD_FAILED
+    assert "q1.py" in results["test_q1_a"].message
 
 
 def test_test_missing_from_its_cell_fails(tmp_path):

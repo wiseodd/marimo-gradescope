@@ -20,7 +20,9 @@ use serde_json::Value;
 
 pub use bundle::{Bundle, BundleConfig, BundleQuestion, HiddenHelper, TestCell};
 pub use event::{Event, EventLine};
-pub use inspect::{Answer, Inspect, InspectConfig, InspectQuestion, TestFile};
+pub use inspect::{
+    Answer, Inspect, InspectConfig, InspectQuestion, TestFile, TestFileError, Utf8Reason,
+};
 pub use job::Job;
 pub use outcome::{FailureReason, Outcome};
 pub use results::{Results, Row};
@@ -80,7 +82,7 @@ pub fn decode<T: DeserializeOwned>(text: &str) -> Result<T, WireError> {
 /// The JSON Schema of each message, by the file stem it is checked in under.
 ///
 /// Every key of a versioned message is required, `null` ones included, as Python writes them
-/// all. `results.json` leaves out the keys Gradescope does not need.
+/// all and `decode` requires them. `results.json` leaves out the keys Gradescope does not need.
 pub fn schemas() -> Vec<(&'static str, Schema)> {
     vec![
         ("job", versioned::<Job>()),
@@ -91,6 +93,9 @@ pub fn schemas() -> Vec<(&'static str, Schema)> {
     ]
 }
 
+/// The schema of a versioned message. schemars lists `Option` fields as optional even when
+/// serde requires them (`deserialize_with = "Option::deserialize"`), so this marks every key
+/// required.
 fn versioned<T: JsonSchema>() -> Schema {
     let mut schema = schema_for!(T);
     RecursiveTransform(require_all).transform(&mut schema);

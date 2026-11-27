@@ -16,12 +16,15 @@ pub struct Inspect {
     /// Why the notebook does not parse (`SourceError`). `assignment.assignment` lists it as
     /// the problem; `export.package` warns that no answer could be read; `selfcheck.main`
     /// exits with it.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub source_error: Option<String>,
     /// Why the config calls are invalid (`ConfigError`). `assignment.assignment` lists it as
     /// the problem; `check._written_in_source` raises it.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub config_error: Option<String>,
     /// The config, `None` when `config_error` is set. `assignment.summary` titles the panel
     /// with it.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub config: Option<InspectConfig>,
     /// What the build would refuse: `source.validate` and the data-file check
     /// (`assignment._data_problems`). `assignment.assignment` lists them.
@@ -38,8 +41,9 @@ pub struct Inspect {
     /// unreadable ones.
     pub test_files: Vec<TestFile>,
     /// What `selfcheck.public_results` runs: the public phase of the notebook's bundle, then a
-    /// public cell for each readable test file, in `test_files` order. `None` when
+    /// public cell for each readable test file, labelled with its path. `None` when
     /// `source_error` is set.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub public_job: Option<Bundle>,
 }
 
@@ -82,6 +86,7 @@ pub struct Answer {
     pub cell: String,
     /// The Markdown of a cell that is just `mo.md("...")`, `None` for other code
     /// (`source.answer_text`). `export` checks it against the placeholder and writes it.
+    #[serde(deserialize_with = "Option::deserialize")]
     pub text: Option<String>,
     /// The cell's lines as written (`source.cell_source`). `export.answers_markdown` shows a
     /// code answer, one whose `text` is `None`, as this source.
@@ -100,5 +105,63 @@ pub struct TestFile {
     pub tests: Vec<String>,
     /// Why the file cannot be read or parsed, `None` when it can. `check.file_outcomes` shows
     /// it; `selfcheck.public_results` fails the file with it.
-    pub error: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub error: Option<TestFileError>,
+}
+
+/// Why a test file cannot be read or parsed, tagged by `"kind"`. It carries data, not text:
+/// each call site words it itself.
+///
+/// `selfcheck.public_results` fails the file with `cannot read <path> (<summary>)`, where the
+/// summary is `runner.exception_summary` of the exception Python would have raised, rebuilt
+/// from the variant as each variant says. `<file>` below is the notebook's folder joined with
+/// `path`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TestFileError {
+    /// The file does not exist. `check.file_outcomes`: `Cannot find <path> next to
+    /// <notebook>. Keep the `tests` folder of the assignment next to the notebook.`
+    /// `selfcheck`: the exception is `FileNotFoundError(ENOENT, os.strerror(ENOENT), <file>)`.
+    Missing,
+    /// The file exists but cannot be read. `check.file_outcomes`: `Cannot read <path>:
+    /// <exception>`. Both call sites rebuild the exception as
+    /// `OSError(errno, os.strerror(errno), <file>)`, which picks the subclass, such as
+    /// `PermissionError`.
+    Unreadable {
+        /// The C `errno`, as Python's `OSError.errno` gives it.
+        errno: i32,
+    },
+    /// The file is not UTF-8. `check.file_outcomes`: `Cannot read <path>: <exception>`. Both
+    /// call sites rebuild the exception as
+    /// `UnicodeDecodeError("utf-8", <bytes at start>, start, start + len(bytes), <reason>)`.
+    NotUtf8 {
+        /// Byte offset of the first byte that does not decode.
+        start: u64,
+        /// The bytes that do not decode, as Python's decoder reports them.
+        bytes: Vec<u8>,
+        /// Why they do not decode.
+        reason: Utf8Reason,
+    },
+    /// The file is not valid Python. `check.file_outcomes`: `<path> is not valid Python (line
+    /// <line>).` `selfcheck`: the exception is `SyntaxError(message, ("<unknown>", line, ...))`,
+    /// as `ast.parse` raises it.
+    Syntax {
+        /// Line of the error, from 1.
+        line: u32,
+        /// Python's message for it, `SyntaxError.msg`, such as `invalid syntax`.
+        message: String,
+    },
+}
+
+/// Why bytes are not UTF-8: the `reason` of Python's `UnicodeDecodeError`, with spaces as
+/// underscores.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Utf8Reason {
+    /// `invalid start byte`.
+    InvalidStartByte,
+    /// `invalid continuation byte`.
+    InvalidContinuationByte,
+    /// `unexpected end of data`.
+    UnexpectedEndOfData,
 }

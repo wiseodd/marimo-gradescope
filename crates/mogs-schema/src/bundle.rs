@@ -58,6 +58,10 @@ pub struct BundleQuestion {
 pub struct TestCell {
     /// Question id of the cell's tests.
     pub qid: String,
+    /// The file name the runner compiles the cell under, which tracebacks and syntax errors
+    /// show: `<qid>-tests` for a cell of the notebook, the path relative to the notebook for
+    /// a public test file (as `selfcheck` runs it).
+    pub label: String,
     /// Whether the cell is marked `# HIDDEN`.
     pub hidden: bool,
     /// Cell body, run as a module.

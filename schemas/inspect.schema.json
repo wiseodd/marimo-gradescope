@@ -65,7 +65,7 @@
       }
     },
     "public_job": {
-      "description": "What `selfcheck.public_results` runs: the public phase of the notebook's bundle, then a\npublic cell for each readable test file, in `test_files` order. `None` when\n`source_error` is set.",
+      "description": "What `selfcheck.public_results` runs: the public phase of the notebook's bundle, then a\npublic cell for each readable test file, labelled with its path. `None` when\n`source_error` is set.",
       "anyOf": [
         {
           "$ref": "#/$defs/Bundle"
@@ -206,9 +206,13 @@
         },
         "error": {
           "description": "Why the file cannot be read or parsed, `None` when it can. `check.file_outcomes` shows\nit; `selfcheck.public_results` fails the file with it.",
-          "type": [
-            "string",
-            "null"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TestFileError"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -217,6 +221,124 @@
         "path",
         "tests",
         "error"
+      ]
+    },
+    "TestFileError": {
+      "description": "Why a test file cannot be read or parsed, tagged by `\"kind\"`. It carries data, not text:\neach call site words it itself.\n\n`selfcheck.public_results` fails the file with `cannot read <path> (<summary>)`, where the\nsummary is `runner.exception_summary` of the exception Python would have raised, rebuilt\nfrom the variant as each variant says. `<file>` below is the notebook's folder joined with\n`path`.",
+      "oneOf": [
+        {
+          "description": "The file does not exist. `check.file_outcomes`: `Cannot find <path> next to\n<notebook>. Keep the `tests` folder of the assignment next to the notebook.`\n`selfcheck`: the exception is `FileNotFoundError(ENOENT, os.strerror(ENOENT), <file>)`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "missing"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "description": "The file exists but cannot be read. `check.file_outcomes`: `Cannot read <path>:\n<exception>`. Both call sites rebuild the exception as\n`OSError(errno, os.strerror(errno), <file>)`, which picks the subclass, such as\n`PermissionError`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "unreadable"
+            },
+            "errno": {
+              "description": "The C `errno`, as Python's `OSError.errno` gives it.",
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "required": [
+            "kind",
+            "errno"
+          ]
+        },
+        {
+          "description": "The file is not UTF-8. `check.file_outcomes`: `Cannot read <path>: <exception>`. Both\ncall sites rebuild the exception as\n`UnicodeDecodeError(\"utf-8\", <bytes at start>, start, start + len(bytes), <reason>)`.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "not_utf8"
+            },
+            "start": {
+              "description": "Byte offset of the first byte that does not decode.",
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            },
+            "bytes": {
+              "description": "The bytes that do not decode, as Python's decoder reports them.",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "format": "uint8",
+                "minimum": 0,
+                "maximum": 255
+              }
+            },
+            "reason": {
+              "description": "Why they do not decode.",
+              "$ref": "#/$defs/Utf8Reason"
+            }
+          },
+          "required": [
+            "kind",
+            "start",
+            "bytes",
+            "reason"
+          ]
+        },
+        {
+          "description": "The file is not valid Python. `check.file_outcomes`: `<path> is not valid Python (line\n<line>).` `selfcheck`: the exception is `SyntaxError(message, (\"<unknown>\", line, ...))`,\nas `ast.parse` raises it.",
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "syntax"
+            },
+            "line": {
+              "description": "Line of the error, from 1.",
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "message": {
+              "description": "Python's message for it, `SyntaxError.msg`, such as `invalid syntax`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "line",
+            "message"
+          ]
+        }
+      ]
+    },
+    "Utf8Reason": {
+      "description": "Why bytes are not UTF-8: the `reason` of Python's `UnicodeDecodeError`, with spaces as\nunderscores.",
+      "oneOf": [
+        {
+          "description": "`invalid start byte`.",
+          "type": "string",
+          "const": "invalid_start_byte"
+        },
+        {
+          "description": "`invalid continuation byte`.",
+          "type": "string",
+          "const": "invalid_continuation_byte"
+        },
+        {
+          "description": "`unexpected end of data`.",
+          "type": "string",
+          "const": "unexpected_end_of_data"
+        }
       ]
     },
     "Bundle": {
@@ -356,6 +478,10 @@
           "description": "Question id of the cell's tests.",
           "type": "string"
         },
+        "label": {
+          "description": "The file name the runner compiles the cell under, which tracebacks and syntax errors\nshow: `<qid>-tests` for a cell of the notebook, the path relative to the notebook for\na public test file (as `selfcheck` runs it).",
+          "type": "string"
+        },
         "hidden": {
           "description": "Whether the cell is marked `# HIDDEN`.",
           "type": "boolean"
@@ -388,6 +514,7 @@
       },
       "required": [
         "qid",
+        "label",
         "hidden",
         "source",
         "tests",

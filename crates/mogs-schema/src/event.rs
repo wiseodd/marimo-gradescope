@@ -25,6 +25,7 @@ pub enum Event {
     /// Once, after setup and binding: the child is ready, or failed to set up.
     Loaded {
         /// Why setup failed, `None` when it worked.
+        #[serde(deserialize_with = "Option::deserialize")]
         error: Option<String>,
         /// Each name the tests use that the submission could not provide, with why.
         unavailable: BTreeMap<String, String>,
