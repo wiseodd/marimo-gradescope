@@ -1,33 +1,74 @@
+import _thread
+import json
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
-from mogs import cli
+from mogs._native import main
 
 SOLUTION = Path(__file__).parent / "fixtures" / "solution.py"
 
+# Stands in for marimo: `python -m marimo` finds it first on PYTHONPATH. It records its
+# command line, then, if told to, waits for the test to let it go.
+FAKE_MARIMO = """\
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+folder = Path(os.environ["FAKE_MARIMO"])
+# On macOS a venv's python starts the framework binary, which then is `orig_argv[0]`, but
+# `sys.executable` stays the venv's python that was started.
+command = [sys.executable, *sys.orig_argv[1:]]
+(folder / "command.json").write_text(json.dumps(command), encoding="utf-8")
+
+if (folder / "hold").exists():
+    (folder / "started").touch()
+    deadline = time.monotonic() + 60
+    while not (folder / "go").exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+sys.exit(int((folder / "exit").read_text(encoding="utf-8")))
+"""
+
 
 class FakeMarimo:
-    """Stands in for `subprocess.Popen`; records the command and plays back `wait` results."""
+    """The folder of the fake marimo, which records its command and exits with `code`."""
 
-    def __init__(self, *waits: int | type[BaseException]) -> None:
-        self.waits = list(waits)
-        self.commands: list[list[str]] = []
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
 
-    def __call__(self, command: list[str]) -> "FakeMarimo":
-        self.commands.append(command)
-        return self
+    def exit_with(self, code: int) -> None:
+        (self.folder / "exit").write_text(str(code), encoding="utf-8")
 
-    def wait(self) -> int:
-        result = self.waits.pop(0)
+    def hold(self) -> None:
+        (self.folder / "hold").touch()
 
-        if isinstance(result, int):
-            return result
+    @property
+    def commands(self) -> list[list[str]]:
+        command = self.folder / "command.json"
 
-        raise result
+        return [json.loads(command.read_text(encoding="utf-8"))] if command.exists() else []
+
+
+@pytest.fixture
+def marimo(tmp_path, monkeypatch) -> FakeMarimo:
+    package = tmp_path / "fake" / "marimo"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "__main__.py").write_text(FAKE_MARIMO, encoding="utf-8")
+    monkeypatch.setenv("PYTHONPATH", str(package.parent))
+    monkeypatch.setenv("FAKE_MARIMO", str(package))
+    fake = FakeMarimo(package)
+    fake.exit_with(0)
+
+    return fake
 
 
 @pytest.fixture
@@ -39,11 +80,8 @@ def assignment(tmp_path, monkeypatch) -> Path:
     return Path("hw")
 
 
-def test_edit_runs_marimo_from_its_own_python(assignment, monkeypatch):
-    marimo = FakeMarimo(0)
-    monkeypatch.setattr(subprocess, "Popen", marimo)
-
-    code = cli.main(["edit", str(assignment)])
+def test_edit_runs_marimo_from_its_own_python(assignment, marimo):
+    code = main(["edit", str(assignment)])
 
     assert code == 0
     assert marimo.commands == [
@@ -51,51 +89,57 @@ def test_edit_runs_marimo_from_its_own_python(assignment, monkeypatch):
     ]
 
 
-def test_edit_returns_marimo_exit_code(assignment, monkeypatch):
-    monkeypatch.setattr(subprocess, "Popen", FakeMarimo(3))
+def test_edit_returns_marimo_exit_code(assignment, marimo):
+    marimo.exit_with(3)
 
-    assert cli.main(["edit", str(assignment)]) == 3
+    assert main(["edit", str(assignment)]) == 3
 
 
-def test_edit_leaves_ctrl_c_to_marimo(assignment, monkeypatch):
-    marimo = FakeMarimo(KeyboardInterrupt, KeyboardInterrupt, 0)
-    monkeypatch.setattr(subprocess, "Popen", marimo)
+def test_edit_leaves_ctrl_c_to_marimo(assignment, marimo):
+    marimo.hold()
 
-    code = cli.main(["edit", str(assignment)])
+    def press_ctrl_c_twice() -> None:
+        deadline = time.monotonic() + 60
+        while not (marimo.folder / "started").exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        for _ in range(2):
+            _thread.interrupt_main()
+            time.sleep(0.2)
+
+        (marimo.folder / "go").touch()
+
+    keys = threading.Thread(target=press_ctrl_c_twice)
+    keys.start()
+    code = main(["edit", str(assignment)])
+    keys.join()
 
     assert code == 0
-    assert marimo.waits == []
+    assert len(marimo.commands) == 1
 
 
-def test_edit_without_a_notebook_fails(tmp_path, monkeypatch, capsys):
+def test_edit_without_a_notebook_fails(tmp_path, monkeypatch, capsys, marimo):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "hw").mkdir()
-    marimo = FakeMarimo()
-    monkeypatch.setattr(subprocess, "Popen", marimo)
 
-    code = cli.main(["edit", "hw"])
+    code = main(["edit", "hw"])
 
     assert code == 1
     assert marimo.commands == []
     assert "No notebook in hw" in capsys.readouterr().err
 
 
-def test_edit_takes_the_notebook_itself(assignment, monkeypatch):
-    marimo = FakeMarimo(0)
-    monkeypatch.setattr(subprocess, "Popen", marimo)
-
-    code = cli.main(["edit", str(assignment / "hw.py")])
+def test_edit_takes_the_notebook_itself(assignment, marimo):
+    code = main(["edit", str(assignment / "hw.py")])
 
     assert code == 0
     assert marimo.commands[0][-1] == str(assignment / "hw.py")
 
 
-def test_edit_refuses_a_file_that_is_not_a_source_notebook(assignment, monkeypatch, capsys):
+def test_edit_refuses_a_file_that_is_not_a_source_notebook(assignment, marimo, capsys):
     (assignment / "helper.py").write_text("print('hi')\n", encoding="utf-8")
-    marimo = FakeMarimo()
-    monkeypatch.setattr(subprocess, "Popen", marimo)
 
-    code = cli.main(["edit", str(assignment / "helper.py")])
+    code = main(["edit", str(assignment / "helper.py")])
 
     assert code == 1
     assert marimo.commands == []
@@ -103,23 +147,23 @@ def test_edit_refuses_a_file_that_is_not_a_source_notebook(assignment, monkeypat
 
 
 @pytest.mark.parametrize("missing", ["nope", "nope.py"])
-def test_edit_names_a_missing_path(missing, tmp_path, monkeypatch, capsys):
+def test_edit_names_a_missing_path(missing, tmp_path, monkeypatch, capsys, marimo):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(subprocess, "Popen", FakeMarimo())
 
-    code = cli.main(["edit", missing])
-
-    assert code == 1
-    assert f"{missing} does not exist" in capsys.readouterr().err
-
-
-def test_edit_reports_a_failed_launch(assignment, monkeypatch, capsys):
-    def no_process(command: list[str]) -> None:
-        raise OSError("cannot start")
-
-    monkeypatch.setattr(subprocess, "Popen", no_process)
-
-    code = cli.main(["edit", str(assignment)])
+    code = main(["edit", missing])
 
     assert code == 1
-    assert capsys.readouterr().err == "Edit failed.\ncannot start\n"
+    assert capsys.readouterr().err == f"Edit failed.\n{missing} does not exist.\n"
+
+
+def test_edit_reports_a_failed_launch(assignment, tmp_path, monkeypatch, capsys):
+    missing = str(tmp_path / "no-python")
+
+    with pytest.raises(OSError) as python:
+        subprocess.Popen([missing])
+
+    monkeypatch.setattr(sys, "executable", missing)
+    code = main(["edit", str(assignment)])
+
+    assert code == 1
+    assert capsys.readouterr().err == f"Edit failed.\n{python.value}\n"

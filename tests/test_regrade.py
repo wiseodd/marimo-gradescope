@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from mogs import regrade
+from mogs._native import main
 from mogs.build import BuildError, build
-from mogs.cli import main
 from mogs.regrade import GradeResult, grade_submission
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"

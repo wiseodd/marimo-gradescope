@@ -1,13 +1,3 @@
-"""`mogs init`: a new assignment folder with a notebook to start from."""
-
-from importlib.metadata import version
-from pathlib import Path
-from string import Template
-
-from mogs.config import check_name
-from mogs.transform import python_literal
-
-NOTEBOOK = Template('''\
 # /// script
 # requires-python = ">=3.13"
 # dependencies = ["marimo", "mogs"]
@@ -115,41 +105,3 @@ def _():
 
 if __name__ == "__main__":
     app.run()
-''')
-
-
-class InitError(Exception):
-    """The assignment folder cannot be created."""
-
-
-def init(folder: Path) -> Path:
-    """Create `folder` with one notebook, `<folder name>.py`, to start an assignment from.
-
-    The notebook holds the assignment cell, a guide for the instructor and two example
-    questions. It builds as it is.
-
-    Args:
-        folder: The assignment folder. It may exist if it is empty.
-
-    Returns:
-        The notebook's path.
-
-    Raises:
-        InitError: If `folder` is a file or a folder with files in it.
-        ConfigError: If the folder name does not work as an assignment name.
-    """
-
-    name = check_name(folder.resolve().name)
-
-    if folder.exists() and not folder.is_dir():
-        raise InitError(f"{folder} is not a folder.")
-
-    if folder.is_dir() and any(folder.iterdir()):
-        raise InitError(f"{folder} is not empty. Pick a new folder for the assignment.")
-
-    folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"{name}.py"
-    text = NOTEBOOK.substitute(name=python_literal(name), marimo=python_literal(version("marimo")))
-    path.write_text(text, encoding="utf-8")
-
-    return path

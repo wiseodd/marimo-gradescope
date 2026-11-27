@@ -76,8 +76,13 @@ class TypstError(Exception):
 def version() -> str:
     """The version of mogs."""
 
-def main() -> int:
-    """Run the `mogs` command line on `sys.argv` and return its exit code."""
+def main(argv: list[str] | None = None) -> int:
+    """Run the `mogs` command line on `argv`, `sys.argv[1:]` when `None`.
+
+    Returns:
+        Exit code: 0 for success, `--help` and `--version`, 1 when the command fails, 2 for a
+        usage error, and marimo's exit code for `mogs edit`.
+    """
 
 def find_submission(sub_dir: Path, notebook: str, name: str | None = None) -> Submission:
     """Find the notebook and the written answers anywhere under `sub_dir`.

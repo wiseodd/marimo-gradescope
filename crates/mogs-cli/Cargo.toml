@@ -1,0 +1,15 @@
+[package]
+name = "mogs-cli"
+description = "The command line of mogs: its commands, and `init`."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+# clap's help and errors are taken as text and printed through Python, so no color.
+clap = { version = "4", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
+
+[dev-dependencies]
+tempfile = "3"

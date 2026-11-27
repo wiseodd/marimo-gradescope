@@ -1,5 +1,6 @@
 //! `mogs._native`: the Rust side of mogs, as a Python extension module.
 
+mod cli;
 mod grader;
 mod pdf;
 
@@ -29,11 +30,13 @@ mod _native {
         env!("CARGO_PKG_VERSION")
     }
 
-    /// Run the `mogs` command line on `sys.argv` and return its exit code.
+    /// Run the `mogs` command line on `argv`, `sys.argv[1:]` when `None`, and return its exit
+    /// code.
     ///
     /// The `mogs` console script calls this and passes the code to `sys.exit`.
     #[pyfunction]
-    fn main(py: Python<'_>) -> PyResult<i32> {
-        py.import("mogs.cli")?.call_method0("main")?.extract()
+    #[pyo3(signature = (argv=None))]
+    fn main(py: Python<'_>, argv: Option<Vec<std::ffi::OsString>>) -> PyResult<i64> {
+        super::cli::main(py, argv)
     }
 }
