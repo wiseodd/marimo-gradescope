@@ -1,9 +1,10 @@
 """The Rust side of mogs, built from crates/mogs."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import NotRequired, TypedDict, final
 
+from mogs._answers import Question
 from mogs.grader.bundle import GradingBundle
 from mogs.runner import Outcome
 
@@ -68,6 +69,9 @@ class Graded:
     def outcomes(self) -> dict[str, Outcome]: ...
     @property
     def load_error(self) -> str | None: ...
+
+class TypstError(Exception):
+    """Typst failed, even on the plain-text document. The message is Typst's."""
 
 def version() -> str:
     """The version of mogs."""
@@ -172,4 +176,17 @@ def autograde(source: Path, submission: Path, results: Path, workdir: Path) -> N
         submission: The unpacked upload.
         results: The `results.json` to write.
         workdir: Folder for the phase folders; replaced if it exists.
+    """
+
+def render_pdf(questions: Iterable[Question], status: Callable[[str], None]) -> bytes:
+    """The PDF of `questions`, one page or more per question, after calling `status`.
+
+    A Markdown part shows with LaTeX math, through the vendored Typst packages cmarker and
+    mitex. A part that breaks the document is rendered again with less: first with each
+    failing formula shown as LaTeX source, then as plain text, with a note under it. Typst
+    runs with the GIL released; Ctrl+C stops it and raises `KeyboardInterrupt`.
+
+    Raises:
+        TypstError: If Typst fails even on the plain-text document.
+        ValueError: If a part's role or style is not one of `Role` or `Style`.
     """

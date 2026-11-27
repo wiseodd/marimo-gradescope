@@ -60,10 +60,12 @@ type Edits = dict[int, list[tuple[int, str]]]
 
 
 def pinned_requirement(cfg: AssignmentConfig) -> str:
-    """Requirement on this exact package version, with the `pdf` extra if a question is manual."""
+    """Requirement on this exact package version, for every assignment `cfg`.
 
-    extra = "[pdf]" if any(question.manual for question in cfg.questions.values()) else ""
-    return f"mogs{extra}=={__version__}"
+    The written-answer PDF is part of mogs itself, so manual questions need no extra.
+    """
+
+    return f"mogs=={__version__}"
 
 
 def student_notebook(

@@ -1,0 +1,18 @@
+[package]
+name = "mogs-pdf"
+description = "The PDF of the written answers in mogs, rendered with Typst."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The vendored packages in `typst/` need this Typst version: bump the Typst crates and the
+# packages together.
+typst = "=0.15.1"
+typst-kit = { version = "=0.15.1", default-features = false, features = ["embedded-fonts", "scan-fonts"] }
+typst-layout = "=0.15.1"
+typst-pdf = "=0.15.1"

@@ -1,5 +1,8 @@
-import builtins
+import _thread
 import textwrap
+import threading
+import time
+import uuid
 from io import BytesIO
 from pathlib import Path
 
@@ -7,15 +10,17 @@ import pytest
 from pypdf import PdfReader
 from pypdf.generic import DictionaryObject
 
-from mogs import pdf
-from mogs.config import read_config
-from mogs.pdf import (
-    Formula,
+from mogs import _native
+from mogs._answers import (
+    Part,
     PdfUnavailable,
+    Question,
+    Role,
+    Style,
     cell_markdown,
-    find_formulas,
     render_manual_pdf,
 )
+from mogs.config import read_config
 from mogs.source import parse_notebook
 from mogs.transform import student_notebook
 
@@ -87,104 +92,6 @@ def render(tmp_path: Path, answers: dict[str, str], **kwargs) -> PdfReader:
 
 def text_of(reader: PdfReader) -> str:
     return " ".join(" ".join(page.extract_text() for page in reader.pages).split())
-
-
-# Finding formulas
-
-
-def spans(text: str) -> list[str]:
-    return [text[formula.start : formula.end] for formula in find_formulas(text)]
-
-
-def test_find_formulas_inline_and_display():
-    text = "a $x^2$ b $$\\int f$$ c\n\n$$\ny\n$$"
-
-    assert spans(text) == ["$x^2$", "$$\\int f$$", "$$\ny\n$$"]
-    assert [formula.display for formula in find_formulas(text)] == [False, True, True]
-    assert find_formulas("a $x^2$")[0] == Formula(start=2, end=7, source="x^2", display=False)
-
-
-def test_find_formulas_skips_code_and_escaped_dollars():
-    text = (
-        "Costs \\$5 and \\$6. `$not math$` and ``a ` $no$``.\n\n"
-        "```python\nprice = '$x$'\n```\n\n~~~\n$$y$$\n~~~\n\nBut $z$ is."
-    )
-
-    assert spans(text) == ["$z$"]
-
-
-def test_find_formulas_after_an_unclosed_backtick():
-    assert spans("Use the ` key.\n\nThen $\\foo$ and `x`.") == ["$\\foo$"]
-
-
-def test_find_formulas_ignores_an_unclosed_dollar():
-    assert spans("Unbalanced: $\\frac{1}{2 end.\n\nNext paragraph $x$.") == ["$x$"]
-
-
-def test_find_formulas_backslash_brackets():
-    text = "a \\(x^2\\) b \\[\\int f\\] c\n\n\\[\ny\n\\]"
-
-    assert spans(text) == ["\\(x^2\\)", "\\[\\int f\\]", "\\[\ny\n\\]"]
-    assert [formula.display for formula in find_formulas(text)] == [False, True, True]
-    assert find_formulas("a \\(x^2\\)")[0] == Formula(
-        start=2, end=9, source="x^2", display=False, bracket=True
-    )
-
-
-@pytest.mark.parametrize(
-    "text", ["`\\(x\\)` in code", "\\(x unclosed", "\\(x\n\ny\\)", "```\n\\[x\\]\n```"]
-)
-def test_find_formulas_skips_backslash_brackets_that_are_not_math(text):
-    assert spans(text) == []
-
-
-ALIGN = "\\begin{align}\na &= b \\\\\nc &= d\n\\end{align}"
-
-
-def test_find_formulas_bare_environment_paragraph():
-    text = f"Before.\n\n{ALIGN}\n\nAfter $x$."
-
-    assert spans(text) == [ALIGN, "$x$"]
-    assert find_formulas(text)[0] == Formula(
-        start=9, end=9 + len(ALIGN), source=ALIGN, display=True, environment=True
-    )
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        f"Before.\n{ALIGN}\n\nAfter.",
-        f"Before.\n\n{ALIGN}\nAfter.",
-        f"Before.\n\n   {ALIGN}\n\nAfter.",
-        "\\begin{align}\na &= b\n\nc\n\\end{align}",
-        "Text \\begin{equation}x\\end{equation} more.",
-        "\\begin{multline}\na\n\\end{multline}",
-        "\\begin{align}\na\n\\end{gather}",
-        f"```\n{ALIGN}\n```",
-        f"$$\n{ALIGN}\n$$",
-    ],
-)
-def test_find_formulas_skips_environments_marimo_shows_as_text(text):
-    assert not any(formula.environment for formula in find_formulas(text))
-
-
-class CountingStr(str):
-    """A `str` that counts the characters its slices copy."""
-
-    copied = 0
-
-    def __getitem__(self, key):
-        item = super().__getitem__(key)
-        CountingStr.copied += len(item)
-        return item
-
-
-def test_find_formulas_work_is_linear_in_backslashes(monkeypatch):
-    text = CountingStr("Some \\alpha and " * 2000 + "\n\n" + ALIGN)
-    monkeypatch.setattr(CountingStr, "copied", 0)
-
-    assert spans(text)[-1] == ALIGN
-    assert CountingStr.copied < 10 * len(text)
 
 
 # Markdown of a cell
@@ -537,12 +444,6 @@ def test_hash_that_mitex_escapes_is_text(tmp_path):
     assert "#𝑝𝑎𝑔𝑒𝑏𝑟𝑒𝑎𝑘()" in text_of(reader)
 
 
-def test_formula_check_does_not_run_typst():
-    inputs = {"formula": r"\iftypst #pagebreak() \fi", "display": "false"}
-
-    assert len(PdfReader(BytesIO(pdf._compile(pdf.FORMULA, inputs))).pages) == 1
-
-
 def test_typst_in_an_answer_is_shown_not_run(tmp_path):
     answer = "#pagebreak() #set page(width: 1cm) $#pagebreak()$\n\n<!--raw-typst #pagebreak()-->"
 
@@ -593,21 +494,6 @@ def test_status_is_reported(tmp_path):
 # Failures
 
 
-def test_missing_typst_names_the_extra(tmp_path, monkeypatch):
-    notebook = write_notebook(tmp_path, {"q1": "x"})
-    real = builtins.__import__
-
-    def no_typst(name, *args, **kwargs):
-        if name == "typst":
-            raise ImportError("No module named 'typst'")
-        return real(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", no_typst)
-
-    with pytest.raises(PdfUnavailable, match=r"mogs\[pdf\]"):
-        render_manual_pdf(notebook, ["q1"], {}, tmp_path / "out.pdf")
-
-
 def test_unreadable_notebook_gives_pdf_unavailable(tmp_path):
     with pytest.raises(PdfUnavailable, match="cannot be read"):
         render_manual_pdf(tmp_path / "missing.py", ["q1"], {}, tmp_path / "out.pdf")
@@ -628,10 +514,63 @@ def test_unwritable_output_gives_pdf_unavailable(tmp_path):
 
 def test_a_document_that_never_compiles_gives_pdf_unavailable(tmp_path, monkeypatch):
     notebook = write_notebook(tmp_path, {"q1": "x"})
-    monkeypatch.setattr(pdf, "TEMPLATE", pdf.TEMPLATE + "\n#panic()\n")
 
-    with pytest.raises(PdfUnavailable, match="Typst"):
+    def never(questions, status):
+        raise _native.TypstError("unknown variable: boom")
+
+    monkeypatch.setattr(_native, "render_pdf", never)
+
+    with pytest.raises(PdfUnavailable) as raised:
         render_manual_pdf(notebook, ["q1"], {}, tmp_path / "out.pdf")
+
+    assert str(raised.value) == "Typst failed (TypstError: unknown variable: boom)"
+    assert not (tmp_path / "out.pdf").exists()
+
+
+def test_typst_error_is_a_plain_exception():
+    assert issubclass(_native.TypstError, Exception)
+    assert str(_native.TypstError("boom")) == "boom"
+
+
+def test_unknown_role_names_the_value():
+    bogus = Part("x", "bogus", Style.MARKDOWN)  # ty: ignore[invalid-argument-type]  # on purpose
+
+    with pytest.raises(ValueError, match="'bogus'"):
+        _native.render_pdf([Question("Q", (bogus,))], lambda message: None)
+
+
+def test_render_pdf_gives_the_pdf_bytes():
+    question = Question("Title", (Part("Hello $x$.", Role.ANSWER),))
+
+    data = _native.render_pdf([question], lambda message: None)
+
+    assert data.startswith(b"%PDF")
+    assert "Title Hello 𝑥." in text_of(PdfReader(BytesIO(data)))
+
+
+def test_interrupt_stops_the_pdf(tmp_path):
+    # Every formula fails, so each part costs several Typst runs: over ten seconds in all. The
+    # run's own tag keeps Typst's caches of earlier runs from helping.
+    tag = uuid.uuid4().hex
+    answers = {f"q{at}": f"Bad $\\foo{tag}$, $\\bar{at}$ and $\\baz{at}$." for at in range(400)}
+    notebook = write_notebook(tmp_path, answers)
+    timer = threading.Timer(0.5, _thread.interrupt_main)
+    started = []
+
+    def status(message):
+        # Rust calls this just before Typst starts.
+        started.append(time.monotonic())
+        timer.start()
+
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            render_manual_pdf(notebook, list(answers), {}, tmp_path / "out.pdf", status=status)
+    finally:
+        timer.cancel()
+
+    assert started
+    assert time.monotonic() - started[0] < 2
+    assert not (tmp_path / "out.pdf").exists()
 
 
 # Fonts
@@ -670,68 +609,3 @@ def test_cjk_and_emoji_do_not_break_the_pdf(tmp_path):
     reader = render(tmp_path, {"q1": "中文答案 🙂 and Latin."})
 
     assert "and Latin." in text_of(reader)
-
-
-@pytest.fixture
-def font_sets(monkeypatch):
-    """The fonts each Typst compile gets, as (system font paths, embedded count)."""
-
-    import typst
-
-    seen = []
-    real = typst.compile
-
-    def spy(*args, font_paths, **kwargs):
-        fonts = font_paths.fonts()
-        paths = [info.path for info in fonts if info.path is not None]
-        seen.append((paths, len(fonts) - len(paths)))
-        return real(*args, font_paths=font_paths, **kwargs)
-
-    monkeypatch.setattr(typst, "compile", spy)
-    return seen
-
-
-def test_latin_answers_never_see_system_fonts(tmp_path, font_sets):
-    # A system font of the same family would replace the embedded one.
-    render(tmp_path, {"q1": "Text with `code`, Ünïcödé, Ελληνικά and $\\alpha$ — “quotes”."})
-
-    assert font_sets
-    assert all(paths == [] and embedded > 0 for paths, embedded in font_sets)
-
-
-def test_other_scripts_get_system_fonts_too(tmp_path, font_sets):
-    render(tmp_path, {"q1": "中文答案"})
-
-    assert font_sets
-    # Every CI runner has some system fonts.
-    assert any(paths for paths, _ in font_sets)
-    assert pdf._needs_system_fonts("中文答案")
-    assert pdf._needs_system_fonts("emoji 🙂")
-    assert pdf._needs_system_fonts("עברית")
-    assert not pdf._needs_system_fonts("Ünïcödé Ελληνικά Кириллица — “x” 𝛼 ∑ → ≤")
-
-
-def test_cells_failing_every_rescue_become_plain_text(tmp_path, monkeypatch):
-    real = pdf._document
-    calls = []
-
-    def flaky(questions):
-        calls.append(questions)
-        if len(calls) <= 2:
-            raise typst_error()
-        return real(questions)
-
-    monkeypatch.setattr(pdf, "_rescue", lambda part: part)
-    monkeypatch.setattr(pdf, "_document", flaky)
-
-    text = text_of(render(tmp_path, {"q1": "Some *answer*.", "q2": "Other."}))
-
-    assert len(calls) == 3
-    assert "Some *answer*." in text
-    assert text.count("shown as plain text") == 2
-
-
-def typst_error():
-    import typst
-
-    return typst.TypstError("boom", "")

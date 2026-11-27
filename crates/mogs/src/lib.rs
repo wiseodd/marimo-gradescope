@@ -1,6 +1,7 @@
 //! `mogs._native`: the Rust side of mogs, as a Python extension module.
 
 mod grader;
+mod pdf;
 
 use pyo3::prelude::*;
 
@@ -10,6 +11,9 @@ mod _native {
 
     #[pymodule_export]
     use super::grader::{Submission, build_results, data_files, failure_results, find_submission};
+
+    #[pymodule_export]
+    use super::pdf::{TypstError, render_pdf};
 
     #[cfg(unix)]
     #[pymodule_export]

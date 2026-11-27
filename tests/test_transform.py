@@ -791,12 +791,16 @@ def test_header_gets_no_runtime_flag():
 
 
 def test_pinned_requirement():
+    assert pinned_requirement(CONFIG) == f"mogs=={__version__}"
+
+
+def test_manual_question_pins_plain_mogs():
+    # The PDF renderer is part of mogs itself, so a manual question needs no extra.
     manual = AssignmentConfig(
         name="nb", notebook="nb.py", questions={"q1": Question("q1", "Q1", 1, manual=True)}
     )
 
-    assert pinned_requirement(CONFIG) == f"mogs=={__version__}"
-    assert pinned_requirement(manual) == f"mogs[pdf]=={__version__}"
+    assert pinned_requirement(manual) == f"mogs=={__version__}"
 
 
 # Export cells

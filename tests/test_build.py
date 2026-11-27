@@ -125,7 +125,7 @@ def test_bundle_has_hidden_tests_and_student_copy_does_not(demo):
     assert "def test_" not in student
     assert "# BEGIN SOLUTION" not in student
     assert "csv.DictReader" not in student
-    assert f'"mogs[pdf]=={__version__}"' in student
+    assert f'"mogs=={__version__}"' in student
     assert "mogs.assignment(" not in student
 
 
