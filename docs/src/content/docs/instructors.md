@@ -49,15 +49,15 @@ The build removes the cell from the student notebook.
 
 Available options are:
 
-| Argument       | Default   | Example                            | Description                                                                                                                          |
-| -------------- | --------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `name`         | file name | `name="HW1"`                       | Names the student zip `<name>.zip` and the autograder zip `<name>-autograder-<timestamp>.zip`. Must be a valid file name on Windows. |
-| `files`        | `[]`      | `files=["data/"]`                  | Data files and directories, relative to the notebook. `tests` is reserved for the public tests.                                      |
-| `timeout`      | `60`      | `timeout=120`                      | Seconds per test.                                                                                                                    |
-| `budget`       | `540`     | `budget=900`                       | Seconds for the whole grading run.                                                                                                   |
-| `memory`       | `4096`    | `memory=8192`                      | MB per grading process, at least 2048. Linux only.                                                                                   |
-| `python`       | `"3.13"`  | `python="3.14"`                    | Python version on Gradescope.                                                                                                        |
-| `requirements` | none      | `requirements="requirements.txt"`  | A requirements file for Gradescope, relative to the notebook. It's used instead of `dependencies`.                                   |
+| Argument       | Default   | Example                   | Description                                                                                                                          |
+| -------------- | --------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`         | file name | `"HW1"`                   | Names the student zip `<name>.zip` and the autograder zip `<name>-autograder-<timestamp>.zip`. Must be a valid file name on Windows. |
+| `files`        | `[]`      | `["data/", "labels.csv"]` | Data files and directories, relative to the notebook. `tests` is reserved for the public tests.                                      |
+| `timeout`      | `60`      | `120`                     | Seconds per test.                                                                                                                    |
+| `budget`       | `540`     | `900`                     | Seconds for the whole grading run.                                                                                                   |
+| `memory`       | `4096`    | `8192`                    | MB per grading process, at least 2048. Linux only.                                                                                   |
+| `python`       | `"3.13"`  | `"3.14"`                  | Python version on Gradescope.                                                                                                        |
+| `requirements` | none      | `"requirements.txt"`      | A requirements file for Gradescope, relative to the notebook. It's used instead of `dependencies`.                                   |
 
 The build reads the arguments without running the notebook.
 So they must be written out as literals: `timeout=120` works, `timeout=2 * LIMIT` doesn't.
@@ -67,11 +67,11 @@ Each question ends with a grade cell, `mogs.grade("q1", points=25)`.
 The questions appear on Gradescope in the order of these cells.
 `mogs.grade` takes:
 
-| Argument    | Default     | Example                    | Description                                                                               |
-| ----------- | ----------- | -------------------------- | ----------------------------------------------------------------------------------------- |
-| question id | required    | `"q1"`                     | The first argument.                                                                       |
-| `points`    | required    | `points=25`                | Points for the question. A written question can be worth 0.                               |
-| `title`     | from the id | `title="Gradient descent"` | Name on Gradescope and in the PDF. `q1` and `question1` become `Question 1`; other ids stay as they are. |
+| Argument    | Default     | Example              | Description                                                                                              |
+| ----------- | ----------- | -------------------- | -------------------------------------------------------------------------------------------------------- |
+| question id | required    | `"q1"`               | The first argument.                                                                                      |
+| `points`    | required    | `25`                 | Points for the question. A written question can be worth 0.                                              |
+| `title`     | from the id | `"Gradient descent"` | Name on Gradescope and in the PDF. `q1` and `question1` become `Question 1`; other ids stay as they are. |
 
 Question ids are letters and digits, and start with a letter, e.g., `q1` or `bonus`.
 They can't contain `_`: test names use `_` to separate the id from the rest of the name.

@@ -152,6 +152,12 @@ pre,
 	white-space: nowrap;
 }
 
+/* In tables, long code like `<name>-autograder-<timestamp>.zip` wraps at spaces and hyphens,
+   so the table fits the text column. */
+.sl-markdown-content td code {
+	white-space: normal;
+}
+
 /* In the argument tables (four columns), the argument and default columns stay on one line
    and the description column wraps. Two-column tables wrap both columns. */
 .sl-markdown-content table:has(th:nth-child(3)) td:nth-child(-n + 2) {
