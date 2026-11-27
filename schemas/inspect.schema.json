@@ -51,7 +51,7 @@
       }
     },
     "answers": {
-      "description": "The answer cells of each question a grade call names, in file order\n(`Notebook.answer_cells`). `export.unanswered_lines` and `export.answers_markdown`\nread them.",
+      "description": "Every cell whose name starts with `answer_`, in file order, whatever the grade calls\nand the config say. `export.unanswered_lines` and `export.answers_markdown` pick each\nmanual question's cells from them by name, as `Notebook.answer_cells` does.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/Answer"
@@ -76,6 +76,7 @@
       ]
     }
   },
+  "additionalProperties": false,
   "required": [
     "schema",
     "source_error",
@@ -87,6 +88,7 @@
     "test_files",
     "public_job"
   ],
+  "unevaluatedProperties": false,
   "$defs": {
     "InspectConfig": {
       "description": "The config fields the notebook functions use.",
@@ -97,9 +99,11 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "required": [
         "name"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "InspectQuestion": {
       "description": "One question of the config, with its tests and prompts.",
@@ -144,6 +148,7 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "id",
         "title",
@@ -152,18 +157,15 @@
         "public",
         "hidden",
         "prompts"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "Answer": {
-      "description": "One answer cell of a written question.",
+      "description": "One answer cell: a cell whose name starts with `answer_`.",
       "type": "object",
       "properties": {
-        "qid": {
-          "description": "Question id.",
-          "type": "string"
-        },
         "cell": {
-          "description": "Cell name, e.g. `answer_q3` or `answer_q3_2`, which `export` looks its placeholder up\nby.",
+          "description": "Cell name, e.g. `answer_q3` or `answer_q3_2`. `export` picks the cells of question\n`<qid>` as `Notebook.answer_cells` does, by the name `answer_<qid>` or a name starting\nwith `answer_<qid>_`, and looks each cell's placeholder up by its name. The name alone\ndoes not tell the question, since ids may hold `_`.",
           "type": "string"
         },
         "text": {
@@ -178,12 +180,13 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "required": [
-        "qid",
         "cell",
         "text",
         "source"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "TestFile": {
       "description": "A file of public tests that a grade call names as `test_file`.",
@@ -216,12 +219,14 @@
           ]
         }
       },
+      "additionalProperties": false,
       "required": [
         "qid",
         "path",
         "tests",
         "error"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "TestFileError": {
       "description": "Why a test file cannot be read or parsed, tagged by `\"kind\"`. It carries data, not text:\neach call site words it itself.\n\n`selfcheck.public_results` fails the file with `cannot read <path> (<summary>)`, where the\nsummary is `runner.exception_summary` of the exception Python would have raised, rebuilt\nfrom the variant as each variant says. `<file>` below is the notebook's folder joined with\n`path`.",
@@ -235,6 +240,7 @@
               "const": "missing"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind"
           ]
@@ -253,13 +259,14 @@
               "format": "int32"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind",
             "errno"
           ]
         },
         {
-          "description": "The file is not UTF-8. `check.file_outcomes`: `Cannot read <path>: <exception>`. Both\ncall sites rebuild the exception as\n`UnicodeDecodeError(\"utf-8\", <bytes at start>, start, start + len(bytes), <reason>)`.",
+          "description": "The file is not UTF-8. `check.file_outcomes`: `Cannot read <path>: <exception>`. Both\ncall sites rebuild the exception as\n`UnicodeDecodeError(\"utf-8\", bytes(start) + bytes, start, start + len(bytes), <reason>)`:\nthe zero padding puts `bytes` at `start`, so `str()` reads them where Python's decoder\nfound them.",
           "type": "object",
           "properties": {
             "kind": {
@@ -267,13 +274,13 @@
               "const": "not_utf8"
             },
             "start": {
-              "description": "Byte offset of the first byte that does not decode.",
+              "description": "Byte offset of the first byte that does not decode, `UnicodeDecodeError.start`.",
               "type": "integer",
               "format": "uint64",
               "minimum": 0
             },
             "bytes": {
-              "description": "The bytes that do not decode, as Python's decoder reports them.",
+              "description": "The bytes that do not decode, `object[start:end]` of the `UnicodeDecodeError`.",
               "type": "array",
               "items": {
                 "type": "integer",
@@ -287,6 +294,7 @@
               "$ref": "#/$defs/Utf8Reason"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind",
             "start",
@@ -295,15 +303,19 @@
           ]
         },
         {
-          "description": "The file is not valid Python. `check.file_outcomes`: `<path> is not valid Python (line\n<line>).` `selfcheck`: the exception is `SyntaxError(message, (\"<unknown>\", line, ...))`,\nas `ast.parse` raises it.",
+          "description": "The file is not valid Python. `check.file_outcomes`: `<path> is not valid Python (line\n<line>).` `selfcheck`: the exception is `<class>(message, (\"<unknown>\", line, None,\nNone))`, as `ast.parse` raises it.",
           "type": "object",
           "properties": {
             "kind": {
               "type": "string",
               "const": "syntax"
             },
+            "class": {
+              "description": "Which `SyntaxError` class `ast.parse` raised.",
+              "$ref": "#/$defs/SyntaxClass"
+            },
             "line": {
-              "description": "Line of the error, from 1.",
+              "description": "Line of the error, from 1, `SyntaxError.lineno`.",
               "type": "integer",
               "format": "uint32",
               "minimum": 0
@@ -313,13 +325,16 @@
               "type": "string"
             }
           },
+          "additionalProperties": false,
           "required": [
             "kind",
+            "class",
             "line",
             "message"
           ]
         }
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "Utf8Reason": {
       "description": "Why bytes are not UTF-8: the `reason` of Python's `UnicodeDecodeError`, with spaces as\nunderscores.",
@@ -338,6 +353,26 @@
           "description": "`unexpected end of data`.",
           "type": "string",
           "const": "unexpected_end_of_data"
+        }
+      ]
+    },
+    "SyntaxClass": {
+      "description": "The class of a `SyntaxError` that `ast.parse` raises.",
+      "oneOf": [
+        {
+          "description": "`SyntaxError`.",
+          "type": "string",
+          "const": "syntax_error"
+        },
+        {
+          "description": "`IndentationError`.",
+          "type": "string",
+          "const": "indentation_error"
+        },
+        {
+          "description": "`TabError`.",
+          "type": "string",
+          "const": "tab_error"
         }
       ]
     },
@@ -375,13 +410,15 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "schema",
         "config",
         "setup_code",
         "cells",
         "helpers"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "BundleConfig": {
       "description": "The assignment config, without the host path of `requirements`.",
@@ -430,6 +467,7 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "required": [
         "name",
         "notebook",
@@ -439,7 +477,8 @@
         "budget",
         "memory_mb",
         "python"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "BundleQuestion": {
       "description": "One question of the config.",
@@ -463,12 +502,14 @@
           "type": "boolean"
         }
       },
+      "additionalProperties": false,
       "required": [
         "id",
         "title",
         "points",
         "manual"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "TestCell": {
       "description": "One test cell of the source notebook.",
@@ -512,6 +553,7 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "qid",
         "label",
@@ -520,7 +562,8 @@
         "tests",
         "uses",
         "needs"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "HiddenHelper": {
       "description": "A `# HIDDEN` cell without tests, such as data or helpers for hidden tests.",
@@ -552,12 +595,14 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "source",
         "defines",
         "uses",
         "needs"
-      ]
+      ],
+      "unevaluatedProperties": false
     }
   }
 }

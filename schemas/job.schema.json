@@ -38,6 +38,7 @@
       "type": "boolean"
     }
   },
+  "additionalProperties": false,
   "required": [
     "schema",
     "bundle",
@@ -46,6 +47,7 @@
     "run_failed",
     "alarm"
   ],
+  "unevaluatedProperties": false,
   "$defs": {
     "Bundle": {
       "description": "Everything a grading child needs besides the submission.",
@@ -81,13 +83,15 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "schema",
         "config",
         "setup_code",
         "cells",
         "helpers"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "BundleConfig": {
       "description": "The assignment config, without the host path of `requirements`.",
@@ -136,6 +140,7 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "required": [
         "name",
         "notebook",
@@ -145,7 +150,8 @@
         "budget",
         "memory_mb",
         "python"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "BundleQuestion": {
       "description": "One question of the config.",
@@ -169,12 +175,14 @@
           "type": "boolean"
         }
       },
+      "additionalProperties": false,
       "required": [
         "id",
         "title",
         "points",
         "manual"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "TestCell": {
       "description": "One test cell of the source notebook.",
@@ -218,6 +226,7 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "qid",
         "label",
@@ -226,7 +235,8 @@
         "tests",
         "uses",
         "needs"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "HiddenHelper": {
       "description": "A `# HIDDEN` cell without tests, such as data or helpers for hidden tests.",
@@ -258,12 +268,14 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "source",
         "defines",
         "uses",
         "needs"
-      ]
+      ],
+      "unevaluatedProperties": false
     }
   }
 }

@@ -1,6 +1,6 @@
 //! The lines a grading child writes, as `mogs.grader.protocol.encode` writes them.
 
-use std::collections::BTreeMap;
+use indexmap::IndexMap;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -11,6 +11,7 @@ use crate::Outcome;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct EventLine {
     /// Format version, `SCHEMA`.
+    #[serde(deserialize_with = "crate::version")]
     #[schemars(extend("const" = crate::SCHEMA))]
     pub schema: u32,
     /// The event.
@@ -20,7 +21,7 @@ pub struct EventLine {
 
 /// What a grading child reports, tagged by `"event"`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "event", rename_all = "snake_case")]
+#[serde(tag = "event", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Event {
     /// Once, after setup and binding: the child is ready, or failed to set up.
     Loaded {
@@ -28,7 +29,7 @@ pub enum Event {
         #[serde(deserialize_with = "Option::deserialize")]
         error: Option<String>,
         /// Each name the tests use that the submission could not provide, with why.
-        unavailable: BTreeMap<String, String>,
+        unavailable: IndexMap<String, String>,
     },
     /// Before loading a test cell and the hidden helpers it needs.
     Loading {

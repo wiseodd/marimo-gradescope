@@ -17,31 +17,24 @@
     },
     "score": {
       "description": "The total, set only when `tests` is empty.",
-      "type": [
-        "number",
-        "null"
-      ],
+      "type": "number",
       "format": "double"
     },
     "output": {
       "description": "The score summary for students.",
-      "type": [
-        "string",
-        "null"
-      ]
+      "type": "string"
     },
     "output_format": {
       "description": "Format of `output`.",
-      "type": [
-        "string",
-        "null"
-      ]
+      "type": "string"
     }
   },
+  "additionalProperties": false,
   "required": [
     "tests",
     "stdout_visibility"
   ],
+  "unevaluatedProperties": false,
   "$defs": {
     "Row": {
       "description": "One entry of `tests` in `results.json`, with its keys in the order `results.row` adds them.",
@@ -75,19 +68,14 @@
         },
         "number": {
           "description": "Question id shown next to the title.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         },
         "status": {
           "description": "`failed` marks the row as failed.",
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string"
         }
       },
+      "additionalProperties": false,
       "required": [
         "name",
         "score",
@@ -95,7 +83,8 @@
         "output",
         "output_format",
         "visibility"
-      ]
+      ],
+      "unevaluatedProperties": false
     }
   }
 }

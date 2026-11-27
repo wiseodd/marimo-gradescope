@@ -5,8 +5,10 @@ use serde::{Deserialize, Serialize};
 
 /// Everything a grading child needs besides the submission.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Bundle {
     /// Format version, `SCHEMA`.
+    #[serde(deserialize_with = "crate::version")]
     #[schemars(extend("const" = crate::SCHEMA))]
     pub schema: u32,
     /// The assignment config the grader needs.
@@ -21,6 +23,7 @@ pub struct Bundle {
 
 /// The assignment config, without the host path of `requirements`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct BundleConfig {
     /// Assignment name.
     pub name: String,
@@ -42,6 +45,7 @@ pub struct BundleConfig {
 
 /// One question of the config.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct BundleQuestion {
     /// Question id, e.g. `q1`.
     pub id: String,
@@ -55,6 +59,7 @@ pub struct BundleQuestion {
 
 /// One test cell of the source notebook.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TestCell {
     /// Question id of the cell's tests.
     pub qid: String,
@@ -76,6 +81,7 @@ pub struct TestCell {
 
 /// A `# HIDDEN` cell without tests, such as data or helpers for hidden tests.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct HiddenHelper {
     /// Cell body, run as a module.
     pub source: String,

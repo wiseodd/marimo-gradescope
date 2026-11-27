@@ -9,8 +9,10 @@ use crate::Bundle;
 
 /// A saved notebook, source or student copy, as the Python notebook functions see it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Inspect {
     /// Format version, `SCHEMA`.
+    #[serde(deserialize_with = "crate::version")]
     #[schemars(extend("const" = crate::SCHEMA))]
     pub schema: u32,
     /// Why the notebook does not parse (`SourceError`). `assignment.assignment` lists it as
@@ -32,9 +34,9 @@ pub struct Inspect {
     /// The config's questions in notebook order, empty without a config. `assignment.summary`
     /// has a row per question; `check._written_in_source` reads `manual` by id.
     pub questions: Vec<InspectQuestion>,
-    /// The answer cells of each question a grade call names, in file order
-    /// (`Notebook.answer_cells`). `export.unanswered_lines` and `export.answers_markdown`
-    /// read them.
+    /// Every cell whose name starts with `answer_`, in file order, whatever the grade calls
+    /// and the config say. `export.unanswered_lines` and `export.answers_markdown` pick each
+    /// manual question's cells from them by name, as `Notebook.answer_cells` does.
     pub answers: Vec<Answer>,
     /// The public test files that grade calls name (`selfcheck.test_files`).
     /// `check.file_outcomes` and `selfcheck.public_results` run them; `selfcheck` fails the
@@ -49,6 +51,7 @@ pub struct Inspect {
 
 /// The config fields the notebook functions use.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct InspectConfig {
     /// Assignment name. `assignment.summary` and `assignment._problems` title the panel.
     pub name: String,
@@ -56,6 +59,7 @@ pub struct InspectConfig {
 
 /// One question of the config, with its tests and prompts.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct InspectQuestion {
     /// Question id, e.g. `q1`.
     pub id: String,
@@ -76,13 +80,14 @@ pub struct InspectQuestion {
     pub prompts: Vec<String>,
 }
 
-/// One answer cell of a written question.
+/// One answer cell: a cell whose name starts with `answer_`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Answer {
-    /// Question id.
-    pub qid: String,
-    /// Cell name, e.g. `answer_q3` or `answer_q3_2`, which `export` looks its placeholder up
-    /// by.
+    /// Cell name, e.g. `answer_q3` or `answer_q3_2`. `export` picks the cells of question
+    /// `<qid>` as `Notebook.answer_cells` does, by the name `answer_<qid>` or a name starting
+    /// with `answer_<qid>_`, and looks each cell's placeholder up by its name. The name alone
+    /// does not tell the question, since ids may hold `_`.
     pub cell: String,
     /// The Markdown of a cell that is just `mo.md("...")`, `None` for other code
     /// (`source.answer_text`). `export` checks it against the placeholder and writes it.
@@ -95,6 +100,7 @@ pub struct Answer {
 
 /// A file of public tests that a grade call names as `test_file`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TestFile {
     /// Question id of the grade call.
     pub qid: String,
@@ -117,12 +123,12 @@ pub struct TestFile {
 /// from the variant as each variant says. `<file>` below is the notebook's folder joined with
 /// `path`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum TestFileError {
     /// The file does not exist. `check.file_outcomes`: `Cannot find <path> next to
     /// <notebook>. Keep the `tests` folder of the assignment next to the notebook.`
     /// `selfcheck`: the exception is `FileNotFoundError(ENOENT, os.strerror(ENOENT), <file>)`.
-    Missing,
+    Missing {},
     /// The file exists but cannot be read. `check.file_outcomes`: `Cannot read <path>:
     /// <exception>`. Both call sites rebuild the exception as
     /// `OSError(errno, os.strerror(errno), <file>)`, which picks the subclass, such as
@@ -133,24 +139,40 @@ pub enum TestFileError {
     },
     /// The file is not UTF-8. `check.file_outcomes`: `Cannot read <path>: <exception>`. Both
     /// call sites rebuild the exception as
-    /// `UnicodeDecodeError("utf-8", <bytes at start>, start, start + len(bytes), <reason>)`.
+    /// `UnicodeDecodeError("utf-8", bytes(start) + bytes, start, start + len(bytes), <reason>)`:
+    /// the zero padding puts `bytes` at `start`, so `str()` reads them where Python's decoder
+    /// found them.
     NotUtf8 {
-        /// Byte offset of the first byte that does not decode.
+        /// Byte offset of the first byte that does not decode, `UnicodeDecodeError.start`.
         start: u64,
-        /// The bytes that do not decode, as Python's decoder reports them.
+        /// The bytes that do not decode, `object[start:end]` of the `UnicodeDecodeError`.
         bytes: Vec<u8>,
         /// Why they do not decode.
         reason: Utf8Reason,
     },
     /// The file is not valid Python. `check.file_outcomes`: `<path> is not valid Python (line
-    /// <line>).` `selfcheck`: the exception is `SyntaxError(message, ("<unknown>", line, ...))`,
-    /// as `ast.parse` raises it.
+    /// <line>).` `selfcheck`: the exception is `<class>(message, ("<unknown>", line, None,
+    /// None))`, as `ast.parse` raises it.
     Syntax {
-        /// Line of the error, from 1.
+        /// Which `SyntaxError` class `ast.parse` raised.
+        class: SyntaxClass,
+        /// Line of the error, from 1, `SyntaxError.lineno`.
         line: u32,
         /// Python's message for it, `SyntaxError.msg`, such as `invalid syntax`.
         message: String,
     },
+}
+
+/// The class of a `SyntaxError` that `ast.parse` raises.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SyntaxClass {
+    /// `SyntaxError`.
+    SyntaxError,
+    /// `IndentationError`.
+    IndentationError,
+    /// `TabError`.
+    TabError,
 }
 
 /// Why bytes are not UTF-8: the `reason` of Python's `UnicodeDecodeError`, with spaces as

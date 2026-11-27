@@ -27,6 +27,7 @@ pub enum FailureReason {
 
 /// The result of one test.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Outcome {
     /// Test name.
     pub name: String,

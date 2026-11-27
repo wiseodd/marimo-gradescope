@@ -1,16 +1,17 @@
 //! The wire types round trip, reject other versions, and match the checked-in schemas.
 
-use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
+use indexmap::IndexMap;
 use mogs_schema::{
     Answer, Bundle, BundleConfig, BundleQuestion, Event, EventLine, FailureReason, HiddenHelper,
-    Inspect, InspectConfig, InspectQuestion, Job, Outcome, Results, Row, SCHEMA, TestCell,
-    TestFile, TestFileError, Utf8Reason, decode, schemas,
+    Inspect, InspectConfig, InspectQuestion, Job, Outcome, Results, Row, SCHEMA, SyntaxClass,
+    TestCell, TestFile, TestFileError, Utf8Reason, decode, schemas,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde_json::{Map, Value};
 
 fn bundle() -> Bundle {
     Bundle {
@@ -80,7 +81,10 @@ fn round_trips_each_type() {
     let events = [
         Event::Loaded {
             error: None,
-            unavailable: BTreeMap::from([("x".into(), "it raised".into())]),
+            unavailable: IndexMap::from([
+                ("y".into(), "it raised".into()),
+                ("x".into(), "no cell defines it".into()),
+            ]),
         },
         Event::Loading {
             tests: vec!["test_q1_a".into()],
@@ -125,7 +129,6 @@ fn inspect() -> Inspect {
             prompts: vec!["Explain why.".into()],
         }],
         answers: vec![Answer {
-            qid: "q2".into(),
             cell: "answer_q2".into(),
             text: Some("Because.".into()),
             source: "@app.cell\ndef answer_q2():\n    mo.md(\"Because.\")\n".into(),
@@ -137,7 +140,7 @@ fn inspect() -> Inspect {
                 tests: vec!["test_q1_a".into()],
                 error: None,
             },
-            failed(TestFileError::Missing),
+            failed(TestFileError::Missing {}),
             failed(TestFileError::Unreadable { errno: 13 }),
             failed(TestFileError::NotUtf8 {
                 start: 3,
@@ -145,8 +148,9 @@ fn inspect() -> Inspect {
                 reason: Utf8Reason::InvalidStartByte,
             }),
             failed(TestFileError::Syntax {
+                class: SyntaxClass::TabError,
                 line: 2,
-                message: "invalid syntax".into(),
+                message: "inconsistent use of tabs and spaces in indentation".into(),
             }),
         ],
         public_job: Some(bundle()),
@@ -156,25 +160,35 @@ fn inspect() -> Inspect {
 #[test]
 fn test_file_errors_carry_data_tagged_by_kind() {
     let errors = [
-        (TestFileError::Missing, r#"{"kind":"missing"}"#),
+        (TestFileError::Missing {}, r#"{"kind":"missing"}"#),
         (
             TestFileError::Unreadable { errno: 13 },
             r#"{"kind":"unreadable","errno":13}"#,
         ),
+        // What `b"abc\xe2(".decode()` reports: the one byte at 3 that starts no valid sequence.
         (
             TestFileError::NotUtf8 {
                 start: 3,
-                bytes: vec![0xe2, 0x28],
+                bytes: vec![0xe2],
                 reason: Utf8Reason::InvalidContinuationByte,
             },
-            r#"{"kind":"not_utf8","start":3,"bytes":[226,40],"reason":"invalid_continuation_byte"}"#,
+            r#"{"kind":"not_utf8","start":3,"bytes":[226],"reason":"invalid_continuation_byte"}"#,
         ),
         (
             TestFileError::Syntax {
+                class: SyntaxClass::SyntaxError,
                 line: 2,
                 message: "invalid syntax".into(),
             },
-            r#"{"kind":"syntax","line":2,"message":"invalid syntax"}"#,
+            r#"{"kind":"syntax","class":"syntax_error","line":2,"message":"invalid syntax"}"#,
+        ),
+        (
+            TestFileError::Syntax {
+                class: SyntaxClass::IndentationError,
+                line: 2,
+                message: "unexpected indent".into(),
+            },
+            r#"{"kind":"syntax","class":"indentation_error","line":2,"message":"unexpected indent"}"#,
         ),
     ];
 
@@ -184,8 +198,12 @@ fn test_file_errors_carry_data_tagged_by_kind() {
     }
 }
 
-/// Decoding `json` without the key at `path` fails, naming the key.
-fn rejects_without<T: DeserializeOwned + Debug>(value: &impl Serialize, path: &[&str], key: &str) {
+/// The error of decoding `value` as a `T` after `edit` changes the object at `path`.
+fn decode_edited<T: DeserializeOwned + Debug>(
+    value: &impl Serialize,
+    path: &[&str],
+    edit: impl FnOnce(&mut Map<String, Value>),
+) -> String {
     let mut json = serde_json::to_value(value).unwrap();
     let mut object = &mut json;
 
@@ -196,30 +214,147 @@ fn rejects_without<T: DeserializeOwned + Debug>(value: &impl Serialize, path: &[
         };
     }
 
-    let removed = object.as_object_mut().unwrap().remove(key);
-    assert!(removed.is_some(), "no key {key} at {path:?}");
+    edit(object.as_object_mut().unwrap());
 
-    let error = decode::<T>(&json.to_string()).unwrap_err().to_string();
+    match decode::<T>(&json.to_string()) {
+        Ok(_) => panic!("decoded with the edit at {path:?}"),
+        Err(error) => error.to_string(),
+    }
+}
+
+/// Decoding `value` without the key at `path` fails, naming the key.
+fn rejects_without<T: DeserializeOwned + Debug>(value: &impl Serialize, path: &[&str], key: &str) {
+    let error = decode_edited::<T>(value, path, |object| {
+        assert!(object.remove(key).is_some(), "no key {key} at {path:?}");
+    });
 
     assert!(error.contains(&format!("missing field `{key}`")), "{error}");
 }
 
-#[test]
-fn rejects_missing_nullable_keys() {
-    let job = Job {
+/// Decoding `value` with an extra key at `path` fails, naming the key.
+fn rejects_extra<T: DeserializeOwned + Debug>(value: &impl Serialize, path: &[&str]) {
+    let error = decode_edited::<T>(value, path, |object| {
+        object.insert("bogus".into(), Value::Null);
+    });
+
+    assert!(error.contains("unknown field `bogus`"), "{path:?}: {error}");
+}
+
+fn job() -> Job {
+    Job {
         schema: SCHEMA,
         bundle: bundle(),
         submission: PathBuf::from("s.py"),
         skip: vec![],
         run_failed: None,
         alarm: true,
-    };
-    let loaded = EventLine {
-        schema: SCHEMA,
-        event: Event::Loaded {
+    }
+}
+
+fn events() -> Vec<EventLine> {
+    let events = [
+        Event::Loaded {
             error: None,
-            unavailable: BTreeMap::new(),
+            unavailable: IndexMap::new(),
         },
+        Event::Loading { tests: vec![] },
+        Event::Start { test: "t".into() },
+        Event::Result(outcome()),
+    ];
+
+    events
+        .into_iter()
+        .map(|event| EventLine {
+            schema: SCHEMA,
+            event,
+        })
+        .collect()
+}
+
+#[test]
+fn rejects_unknown_keys() {
+    for path in [
+        &[][..],
+        &["bundle"],
+        &["bundle", "config"],
+        &["bundle", "config", "questions", "0"],
+        &["bundle", "cells", "0"],
+        &["bundle", "helpers", "0"],
+    ] {
+        rejects_extra::<Job>(&job(), path);
+    }
+
+    for event in events() {
+        rejects_extra::<EventLine>(&event, &[]);
+    }
+
+    for path in [
+        &[][..],
+        &["config"],
+        &["questions", "0"],
+        &["answers", "0"],
+        &["test_files", "0"],
+        &["test_files", "1", "error"],
+        &["test_files", "2", "error"],
+        &["test_files", "3", "error"],
+        &["test_files", "4", "error"],
+        &["public_job"],
+    ] {
+        rejects_extra::<Inspect>(&inspect(), path);
+    }
+
+    let results = r#"{"tests": [], "stdout_visibility": "hidden", "bogus": 1}"#;
+    let error = serde_json::from_str::<Results>(results)
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("unknown field `bogus`"), "{error}");
+}
+
+#[test]
+fn rejects_nested_bundle_of_other_version() {
+    let other = |object: &mut Map<String, Value>| {
+        object.insert("schema".into(), 2.into());
+    };
+
+    let error = decode_edited::<Job>(&job(), &["bundle"], other);
+    assert!(error.contains("schema version 2, expected 1"), "{error}");
+
+    let error = decode_edited::<Inspect>(&inspect(), &["public_job"], other);
+    assert!(error.contains("schema version 2, expected 1"), "{error}");
+}
+
+#[test]
+fn keeps_the_order_of_unavailable_names() {
+    let line = r#"{"schema":1,"event":"loaded","error":null,"unavailable":{"b":"x","a":"y"}}"#;
+    let event = decode::<EventLine>(line).unwrap();
+
+    assert_eq!(serde_json::to_string(&event).unwrap(), line);
+}
+
+#[test]
+fn results_reject_null_for_left_out_keys() {
+    for key in ["score", "output", "output_format"] {
+        let text = format!(r#"{{"tests": [], "stdout_visibility": "hidden", "{key}": null}}"#);
+
+        assert!(serde_json::from_str::<Results>(&text).is_err(), "{key}");
+    }
+
+    for key in ["number", "status"] {
+        let row = format!(
+            r#"{{"name": "n", "score": 0, "max_score": 0, "output": "", "output_format": "md", "visibility": "visible", "{key}": null}}"#
+        );
+        let text = format!(r#"{{"tests": [{row}], "stdout_visibility": "hidden"}}"#);
+
+        assert!(serde_json::from_str::<Results>(&text).is_err(), "{key}");
+    }
+}
+
+#[test]
+fn rejects_missing_nullable_keys() {
+    let job = job();
+    let [loaded, ..] = &events()[..] else {
+        unreachable!()
     };
     let result = EventLine {
         schema: SCHEMA,
@@ -235,7 +370,7 @@ fn rejects_missing_nullable_keys() {
     };
 
     rejects_without::<Job>(&job, &[], "run_failed");
-    rejects_without::<EventLine>(&loaded, &[], "error");
+    rejects_without::<EventLine>(loaded, &[], "error");
     rejects_without::<EventLine>(&result, &[], "reason");
     rejects_without::<Bundle>(&bundle(), &["cells", "0"], "label");
 

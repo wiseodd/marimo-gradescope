@@ -91,14 +91,47 @@
         "event": {
           "type": "string",
           "const": "result"
+        },
+        "name": {
+          "description": "Test name.",
+          "type": "string"
+        },
+        "passed": {
+          "description": "Whether the test passed.",
+          "type": "boolean"
+        },
+        "message": {
+          "description": "Failure message, empty when passed.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Why the test failed, `None` when passed.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FailureReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "seconds": {
+          "description": "Wall time spent in the test.",
+          "type": "number",
+          "format": "double"
         }
       },
-      "$ref": "#/$defs/Outcome",
       "required": [
-        "event"
+        "event",
+        "name",
+        "passed",
+        "message",
+        "reason",
+        "seconds"
       ]
     }
   ],
+  "unevaluatedProperties": false,
   "$defs": {
     "FailureReason": {
       "description": "Why a test did not pass. The values are `mogs.runner.FailureReason`'s.",
@@ -143,47 +176,6 @@
           "type": "string",
           "const": "not_run"
         }
-      ]
-    },
-    "Outcome": {
-      "description": "The result of one test.",
-      "type": "object",
-      "properties": {
-        "name": {
-          "description": "Test name.",
-          "type": "string"
-        },
-        "passed": {
-          "description": "Whether the test passed.",
-          "type": "boolean"
-        },
-        "message": {
-          "description": "Failure message, empty when passed.",
-          "type": "string"
-        },
-        "reason": {
-          "description": "Why the test failed, `None` when passed.",
-          "anyOf": [
-            {
-              "$ref": "#/$defs/FailureReason"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "seconds": {
-          "description": "Wall time spent in the test.",
-          "type": "number",
-          "format": "double"
-        }
-      },
-      "required": [
-        "name",
-        "passed",
-        "message",
-        "reason",
-        "seconds"
       ]
     }
   }

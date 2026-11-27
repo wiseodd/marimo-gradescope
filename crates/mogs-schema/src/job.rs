@@ -9,8 +9,10 @@ use crate::Bundle;
 
 /// What one grading child runs. The parent writes it as JSON to the child's stdin.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Job {
     /// Format version, `SCHEMA`.
+    #[serde(deserialize_with = "crate::version")]
     #[schemars(extend("const" = crate::SCHEMA))]
     pub schema: u32,
     /// The bundle of one phase.

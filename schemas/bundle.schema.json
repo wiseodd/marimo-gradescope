@@ -34,6 +34,7 @@
       }
     }
   },
+  "additionalProperties": false,
   "required": [
     "schema",
     "config",
@@ -41,6 +42,7 @@
     "cells",
     "helpers"
   ],
+  "unevaluatedProperties": false,
   "$defs": {
     "BundleConfig": {
       "description": "The assignment config, without the host path of `requirements`.",
@@ -89,6 +91,7 @@
           "type": "string"
         }
       },
+      "additionalProperties": false,
       "required": [
         "name",
         "notebook",
@@ -98,7 +101,8 @@
         "budget",
         "memory_mb",
         "python"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "BundleQuestion": {
       "description": "One question of the config.",
@@ -122,12 +126,14 @@
           "type": "boolean"
         }
       },
+      "additionalProperties": false,
       "required": [
         "id",
         "title",
         "points",
         "manual"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "TestCell": {
       "description": "One test cell of the source notebook.",
@@ -171,6 +177,7 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "qid",
         "label",
@@ -179,7 +186,8 @@
         "tests",
         "uses",
         "needs"
-      ]
+      ],
+      "unevaluatedProperties": false
     },
     "HiddenHelper": {
       "description": "A `# HIDDEN` cell without tests, such as data or helpers for hidden tests.",
@@ -211,12 +219,14 @@
           }
         }
       },
+      "additionalProperties": false,
       "required": [
         "source",
         "defines",
         "uses",
         "needs"
-      ]
+      ],
+      "unevaluatedProperties": false
     }
   }
 }
