@@ -50,6 +50,18 @@ pub trait Interpreter {
     ///
     /// `PackageNotFoundError` if marimo is not installed.
     fn marimo_version(&self) -> Result<String, Self::Error>;
+    /// `Path(path).exists()`.
+    ///
+    /// # Errors
+    ///
+    /// The `OSError` that pathlib does not take as "no", such as EACCES.
+    fn exists(&self, path: &Path) -> Result<bool, Self::Error>;
+    /// `Path(path).is_dir()`.
+    ///
+    /// # Errors
+    ///
+    /// The `OSError` that pathlib does not take as "no", such as EACCES.
+    fn is_dir(&self, path: &Path) -> Result<bool, Self::Error>;
     /// `any(Path(folder).iterdir())`.
     ///
     /// # Errors

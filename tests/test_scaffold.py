@@ -190,6 +190,23 @@ def test_init_names_a_dangling_link_after_its_target(tmp_path, monkeypatch, caps
     )
 
 
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions")
+def test_init_reports_a_folder_it_cannot_look_at(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "locked").mkdir(mode=0o000)
+
+    try:
+        with pytest.raises(OSError) as python:
+            Path("locked", "hw").exists()
+
+        code = main(["init", str(Path("locked", "hw"))])
+    finally:
+        (tmp_path / "locked").chmod(0o755)
+
+    assert code == 1
+    assert capsys.readouterr().err == f"Init failed.\n{python.value}\n"
+
+
 def test_init_reports_a_folder_it_cannot_make(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "f").write_text("", encoding="utf-8")

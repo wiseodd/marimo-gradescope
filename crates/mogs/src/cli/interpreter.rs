@@ -61,6 +61,14 @@ impl Interpreter for PyInterpreter<'_> {
             .extract()
     }
 
+    fn exists(&self, path: &Path) -> PyResult<bool> {
+        self.pathlib(path)?.call_method0("exists")?.extract()
+    }
+
+    fn is_dir(&self, path: &Path) -> PyResult<bool> {
+        self.pathlib(path)?.call_method0("is_dir")?.extract()
+    }
+
     fn has_entries(&self, folder: &Path) -> PyResult<bool> {
         let entries = self.pathlib(folder)?.call_method0("iterdir")?;
 

@@ -68,11 +68,14 @@ pub fn init<P: Interpreter>(folder: &Path, python: &P) -> Result<Created, InitEr
     let folder = python.path(folder).map_err(InitError::Python)?;
     let name = python.check_name(&folder).map_err(InitError::Python)?;
 
-    if folder.exists() && !folder.is_dir() {
+    let exists = |path: &Path| python.exists(path).map_err(InitError::Python);
+    let is_dir = |path: &Path| python.is_dir(path).map_err(InitError::Python);
+
+    if exists(&folder)? && !is_dir(&folder)? {
         return Err(InitError::Refused(Refusal::NotAFolder(folder)));
     }
 
-    if folder.is_dir() && python.has_entries(&folder).map_err(InitError::Python)? {
+    if is_dir(&folder)? && python.has_entries(&folder).map_err(InitError::Python)? {
         return Err(InitError::Refused(Refusal::NotEmpty(folder)));
     }
 
@@ -112,8 +115,18 @@ mod tests {
     use super::*;
 
     /// Python as far as `init` needs it, on the real file system. Names must not start with
-    /// `-`, as a `ConfigError`.
+    /// `-`, as a `ConfigError`, and a folder named `locked` cannot be looked at, as on EACCES.
     struct FakePython;
+
+    const LOCKED: &str = "[Errno 13] Permission denied: 'locked'";
+
+    fn look(path: &Path) -> Result<(), String> {
+        if path.ends_with("locked") {
+            return Err(LOCKED.into());
+        }
+
+        Ok(())
+    }
 
     impl Interpreter for FakePython {
         type Error = String;
@@ -155,6 +168,28 @@ mod tests {
         fn write_text(&self, path: &Path, text: &str) -> Result<(), String> {
             fs::write(path, text).map_err(|error| error.to_string())
         }
+
+        fn exists(&self, path: &Path) -> Result<bool, String> {
+            look(path).map(|()| path.exists())
+        }
+
+        fn is_dir(&self, path: &Path) -> Result<bool, String> {
+            look(path).map(|()| path.is_dir())
+        }
+    }
+
+    #[test]
+    fn a_folder_it_cannot_look_at_fails_before_anything_is_made() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("locked");
+
+        let error = init(&folder, &FakePython).unwrap_err();
+
+        assert!(
+            matches!(&error, InitError::Python(message) if message == LOCKED),
+            "{error:?}"
+        );
+        assert!(!folder.exists());
     }
 
     #[test]
