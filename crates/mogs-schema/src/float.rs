@@ -3,9 +3,9 @@
 //! The config accepts infinity (such as `budget=1e999`), and a score can be infinite or NaN.
 //! Python's `json` writes these as `Infinity`, `-Infinity` and `NaN`, which JSON lacks:
 //! serde_json writes them as `null` and rejects them on reading. So every `f64` of a message
-//! is marked `serialize_with = "crate::float::number"` (or [`optional`] for an `Option`) and
-//! `deserialize_with` the same, and messages cross through [`encode`](crate::encode) and
-//! [`decode`](crate::decode). The test `tests/floats.rs` fails for an `f64` left unmarked.
+//! is marked `with = "crate::float::number"` (or [`optional`] for an `Option`), with
+//! `schemars(with = "f64")` for its schema, and messages cross through
+//! [`encode`](crate::encode) and [`decode`](crate::decode). The test `tests/floats.rs` fails for an `f64` left unmarked.
 //!
 //! Writing: [`number`] hands a non-finite value to serde_json, which calls the formatter's
 //! `write_null` for it at once; the value waits in a thread-local cell, and [`Python`] writes

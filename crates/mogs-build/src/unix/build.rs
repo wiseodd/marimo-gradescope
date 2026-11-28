@@ -21,7 +21,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use mogs_grader::GradeError;
 use mogs_schema::{Bundle, Outcome, Results};
 
 use crate::unix::environment::grading_python;
@@ -77,13 +76,12 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     let inputs = i.build_inputs(&assignment)?;
     let bundle = &inputs.grading.bundle;
     let config = &bundle.config;
-    let os = |error: io::Error, path: &Path| i.grade_error(GradeError::os(error, path));
 
-    let setup = setup_script(i, &config.python)?;
+    let setup = setup_script(&config.python);
     let mut data = Vec::new();
 
     for (rel, source) in &inputs.grading.data {
-        data.push((rel, fs::read(source).map_err(|e| os(e, source))?));
+        data.push((rel, fs::read(source).map_err(|e| i.os(e, source))?));
     }
 
     // Each data file goes into both zips, deflated once.
@@ -112,7 +110,7 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     let stage = tempfile::Builder::new()
         .prefix("mogs-build-")
         .tempdir()
-        .map_err(|error| i.grade_error(GradeError::from(error)))?;
+        .map_err(|error| i.io(error))?;
     let stage = stage.path();
 
     // Self-check, in an environment with what Gradescope installs.
@@ -125,15 +123,15 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     let check = stage.join("check");
     let student_path = check.join("student").join(&config.notebook);
     let solved_path = check.join("solved").join(&config.notebook);
-    fs::create_dir(&check).map_err(|e| os(e, &check))?;
+    fs::create_dir(&check).map_err(|e| i.os(e, &check))?;
 
     for (notebook, text) in [
         (&student_path, &inputs.student),
         (&solved_path, &inputs.solved),
     ] {
         let parent = notebook.parent().expect("the notebook is in a folder");
-        fs::create_dir(parent).map_err(|e| os(e, parent))?;
-        fs::write(notebook, text).map_err(|e| os(e, notebook))?;
+        fs::create_dir(parent).map_err(|e| i.os(e, parent))?;
+        fs::write(notebook, text).map_err(|e| i.os(e, notebook))?;
     }
 
     let mut warnings = inputs.warnings.clone();
@@ -148,18 +146,18 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
         &check.join("solution"),
         &python,
     )?;
-    let failed: Vec<Outcome> = solution
+    let failed: Vec<&Outcome> = solution
         .outcomes
         .values()
         .filter(|outcome| !outcome.passed)
-        .cloned()
         .collect();
 
     if !failed.is_empty() {
+        let listing = report::Listing::LoadFailuresCounted;
         let message = format!(
             "The solved copy of {} does not get full marks. Failing tests:\n{}",
             config.notebook,
-            report::failure_report(i, bundle, &failed, true)?.join("\n")
+            report::failure_report(i, bundle, &failed, listing)?.join("\n")
         );
         return Err(i.raise(Class::Build, message.into()));
     }
@@ -175,8 +173,9 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
 
     // Output, written in full before it replaces the old one.
     let out = stage.join(DIST);
-    let student_zip = out.join("student").join(format!("{}.zip", config.name));
-    fs::create_dir_all(out.join("student")).map_err(|e| os(e, &out))?;
+    let student_name = format!("{}.zip", config.name);
+    let student_zip = out.join("student").join(&student_name);
+    fs::create_dir_all(out.join("student")).map_err(|e| i.os(e, &out))?;
 
     let mut files: BTreeMap<&str, &[u8]> = data
         .iter()
@@ -213,27 +212,27 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     for (rel, content) in &files {
         let path = autograder.join(rel);
         let parent = path.parent().expect("the file is in a folder");
-        fs::create_dir_all(parent).map_err(|e| os(e, parent))?;
-        fs::write(&path, content).map_err(|e| os(e, &path))?;
+        fs::create_dir_all(parent).map_err(|e| i.os(e, parent))?;
+        fs::write(&path, content).map_err(|e| i.os(e, &path))?;
     }
 
     let requirements = autograder.join("requirements.txt");
-    fs::write(&requirements, &inputs.requirements).map_err(|e| os(e, &requirements))?;
+    fs::write(&requirements, &inputs.requirements).map_err(|e| i.os(e, &requirements))?;
     write_zip(i, &autograder.join(&zip_name), &entries)?;
 
     for part in PARTS {
         let target = dist.join(part);
 
         if target.exists() {
-            fs::remove_dir_all(&target).map_err(|e| os(e, &target))?;
+            fs::remove_dir_all(&target).map_err(|e| i.os(e, &target))?;
         }
 
-        fs::create_dir_all(&dist).map_err(|e| os(e, &dist))?;
-        move_folder(&out.join(part), &target).map_err(|e| os(e, &target))?;
+        fs::create_dir_all(&dist).map_err(|e| i.os(e, &dist))?;
+        move_folder(&out.join(part), &target).map_err(|e| i.os(e, &target))?;
     }
 
     Ok(Built {
-        student: dist.join("student").join(format!("{}.zip", config.name)),
+        student: dist.join("student").join(student_name),
         zip: dist.join("autograder").join(zip_name),
         solution: total(i, &solution.results)?,
         blank: total(i, &blank.results)?,

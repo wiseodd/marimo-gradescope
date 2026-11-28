@@ -165,9 +165,11 @@ fn for_phase(bundle: &Bundle, phase: Phase) -> Bundle {
     };
 
     Bundle {
+        schema: bundle.schema,
+        config: bundle.config.clone(),
+        setup_code: bundle.setup_code.clone(),
         cells,
         helpers,
-        ..bundle.clone()
     }
 }
 

@@ -273,6 +273,8 @@ pub struct Child {
     process: std::process::Child,
     user: Option<String>,
     events: Option<OwnedFd>,
+    /// What `read` reads into, kept between reads.
+    chunk: Vec<u8>,
     buffer: Vec<u8>,
     output: Option<Tail>,
     /// How the child ended, once it has.
@@ -374,6 +376,7 @@ impl Child {
             process,
             user: options.user.as_ref().map(|user| user.name.clone()),
             events: Some(read),
+            chunk: vec![0; CHUNK],
             buffer: Vec::new(),
             output: Some(Tail::start(OwnedFd::from(output))?),
             exit: None,
@@ -460,16 +463,15 @@ impl Child {
         }
 
         // Bounded, so a child that writes without end cannot keep the parent from its deadlines.
-        let mut chunk = vec![0; CHUNK];
         let mut closed = false;
 
         for _ in 0..LINE_LIMIT / CHUNK {
-            match rustix::io::read(fd, &mut chunk) {
+            match rustix::io::read(fd, &mut self.chunk) {
                 Ok(0) => {
                     closed = true;
                     break;
                 }
-                Ok(count) => self.buffer.extend_from_slice(&chunk[..count]),
+                Ok(count) => self.buffer.extend_from_slice(&self.chunk[..count]),
                 Err(Errno::INTR) => {}
                 Err(Errno::AGAIN) => break,
                 Err(errno) => return Err(errno.into()),
@@ -481,24 +483,27 @@ impl Child {
         }
 
         let mut events = Vec::new();
-        // The complete lines, without the newline that ends the last one.
-        let complete: Option<Vec<u8>> = self
-            .buffer
-            .iter()
-            .rposition(|&byte| byte == b'\n')
-            .map(|end| self.buffer.drain(..=end).take(end).collect());
-        let lines = complete
-            .iter()
-            .flat_map(|lines| lines.split(|&byte| byte == b'\n'));
 
-        // Events before a bad line still count, so blame goes to what the child was doing.
-        for line in lines {
-            match decode(&String::from_utf8_lossy(line), text) {
-                Ok(event) => events.push(event),
-                Err(error) => {
-                    self.error = Some(error);
-                    return Ok(events);
+        // The complete lines, without the newline that ends the last one. Events before a bad
+        // line still count, so blame goes to what the child was doing.
+        if let Some(end) = self.buffer.iter().rposition(|&byte| byte == b'\n') {
+            let mut bad = None;
+
+            for line in self.buffer[..end].split(|&byte| byte == b'\n') {
+                match decode(&String::from_utf8_lossy(line), text) {
+                    Ok(event) => events.push(event),
+                    Err(error) => {
+                        bad = Some(error);
+                        break;
+                    }
                 }
+            }
+
+            self.buffer.drain(..=end);
+
+            if bad.is_some() {
+                self.error = bad;
+                return Ok(events);
             }
         }
 

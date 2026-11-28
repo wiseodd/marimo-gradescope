@@ -85,7 +85,15 @@ pub fn encode<T: Serialize>(value: &T) -> Result<String, serde_json::Error> {
 ///
 /// If the text is not JSON, has no `schema` key or another version, or is not a `T`.
 pub fn decode<T: DeserializeOwned>(text: &str) -> Result<T, WireError> {
-    let value: Value = serde_json::from_str(&float::literals(text))?;
+    let text = float::literals(text);
+
+    // Straight into `T` first. Only a failure goes through `Value`, which gives the version
+    // errors and the texts of the errors that are not about the version.
+    if let Ok(read) = serde_json::from_str(&text) {
+        return Ok(read);
+    }
+
+    let value: Value = serde_json::from_str(&text)?;
 
     match value.get("schema") {
         None => return Err(WireError::MissingVersion),

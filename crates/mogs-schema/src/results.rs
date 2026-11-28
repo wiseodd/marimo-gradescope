@@ -15,8 +15,7 @@ pub struct Results {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        serialize_with = "crate::float::optional::serialize",
-        deserialize_with = "crate::float::optional::deserialize"
+        with = "crate::float::optional"
     )]
     #[schemars(with = "f64")]
     pub score: Option<f64>,
@@ -45,16 +44,12 @@ pub struct Row {
     /// Row title.
     pub name: String,
     /// Points earned.
-    #[serde(
-        serialize_with = "crate::float::number::serialize",
-        deserialize_with = "crate::float::number::deserialize"
-    )]
+    #[serde(with = "crate::float::number")]
+    #[schemars(with = "f64")]
     pub score: f64,
     /// Points possible.
-    #[serde(
-        serialize_with = "crate::float::number::serialize",
-        deserialize_with = "crate::float::number::deserialize"
-    )]
+    #[serde(with = "crate::float::number")]
+    #[schemars(with = "f64")]
     pub max_score: f64,
     /// Text under the row.
     pub output: String,

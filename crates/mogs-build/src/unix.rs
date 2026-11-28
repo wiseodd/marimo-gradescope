@@ -10,8 +10,8 @@ pub mod zipout;
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::{fs, io};
 
 use indexmap::IndexMap;
 use mogs_grader::sandbox::GradeOptions;
@@ -44,6 +44,16 @@ pub trait Interpreter {
     fn grade_error(&self, error: GradeError) -> Self::Error;
     /// `class(message)`.
     fn raise(&self, class: Class, message: OsString) -> Self::Error;
+
+    /// The `OSError` of `error` from an operation on `path`.
+    fn os(&self, error: io::Error, path: &Path) -> Self::Error {
+        self.grade_error(GradeError::os(error, path))
+    }
+
+    /// The `OSError` of `error`.
+    fn io(&self, error: io::Error) -> Self::Error {
+        self.grade_error(GradeError::from(error))
+    }
 
     /// `mogs._analysis.read_assignment(folder)`.
     ///
@@ -201,7 +211,7 @@ fn grade_locally<I: Interpreter>(
     python: &Path,
 ) -> Result<Graded, I::Error> {
     let bundle = &inputs.bundle;
-    fs::create_dir(workdir).map_err(|error| i.grade_error(GradeError::os(error, workdir)))?;
+    fs::create_dir(workdir).map_err(|error| i.os(error, workdir))?;
 
     let options = GradeOptions {
         user: None,
@@ -239,10 +249,7 @@ fn interrupted<I: Interpreter>(i: &I) -> Result<(), I::Error> {
 
 /// `parts` joined, as one text that may hold paths.
 fn text(parts: &[&std::ffi::OsStr]) -> OsString {
-    parts.iter().fold(OsString::new(), |mut out, part| {
-        out.push(part);
-        out
-    })
+    parts.iter().copied().collect()
 }
 
 #[cfg(test)]

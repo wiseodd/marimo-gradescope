@@ -5,12 +5,11 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use indexmap::{IndexMap, IndexSet};
-use mogs_grader::GradeError;
 use mogs_schema::{Bundle, FailureReason, Outcome};
 
 use crate::unix::build::Built;
 use crate::unix::regrade::Regraded;
-use crate::unix::{Interpreter, text};
+use crate::unix::{Interpreter, text, total};
 
 /// The files to upload and distribute, then the self-check scores and the warnings.
 ///
@@ -103,7 +102,7 @@ pub fn grade_report<I: Interpreter>(i: &I, regraded: &Regraded) -> Result<OsStri
         rows.push([title, fraction(i, row.score, row.max_score)]);
     }
 
-    let (score, max) = regraded.score;
+    let (score, max) = total(i, &regraded.graded.results)?;
     rows.push(["Total".into(), fraction(i, score, max)]);
     let width = width(rows.iter().map(|row| &row[0]));
     let mut lines: Vec<String> = rows
@@ -118,23 +117,17 @@ pub fn grade_report<I: Interpreter>(i: &I, regraded: &Regraded) -> Result<OsStri
         .filter(|cell| cell.hidden)
         .flat_map(|cell| cell.tests.iter().map(String::as_str))
         .collect();
-    let failed: Vec<Outcome> = regraded
+    let failed: Vec<&Outcome> = regraded
         .graded
         .outcomes
         .values()
         .filter(|outcome| !outcome.passed)
-        .map(|outcome| match hidden.contains(outcome.name.as_str()) {
-            true => Outcome {
-                name: format!("{} (hidden)", outcome.name),
-                ..outcome.clone()
-            },
-            false => outcome.clone(),
-        })
         .collect();
 
     if !failed.is_empty() {
+        let listing = Listing::Marked(&hidden);
         lines.extend(["".into(), "Failing tests:".into()]);
-        lines.extend(failure_report(i, &regraded.bundle, &failed, false)?);
+        lines.extend(failure_report(i, &regraded.bundle, &failed, listing)?);
     }
 
     Ok(text(&[
@@ -145,10 +138,17 @@ pub fn grade_report<I: Interpreter>(i: &I, regraded: &Regraded) -> Result<OsStri
     ]))
 }
 
-/// One line per distinct failure message, naming the tests that share it.
-///
-/// With `count_load_failures`, the tests that failed to load are counted and their questions
-/// named instead, since a failing setup cell fails every test.
+/// How [`failure_report`] names the failing tests.
+#[derive(Clone, Copy, Debug)]
+pub enum Listing<'a> {
+    /// Count the tests that failed to load and name their questions instead, since a failing
+    /// setup cell fails every test. For the build's self-check.
+    LoadFailuresCounted,
+    /// Name every test, with ` (hidden)` after the ones in this set.
+    Marked(&'a IndexSet<&'a str>),
+}
+
+/// One line per distinct failure message, naming the tests that share it, as `listing` says.
 ///
 /// # Errors
 ///
@@ -156,18 +156,24 @@ pub fn grade_report<I: Interpreter>(i: &I, regraded: &Regraded) -> Result<OsStri
 pub fn failure_report<I: Interpreter>(
     i: &I,
     bundle: &Bundle,
-    failed: &[Outcome],
-    count_load_failures: bool,
+    failed: &[&Outcome],
+    listing: Listing<'_>,
 ) -> Result<Vec<String>, I::Error> {
-    let mut by_message: IndexMap<(String, bool), Vec<&str>> = IndexMap::new();
+    let mut by_message: IndexMap<(String, bool), Vec<String>> = IndexMap::new();
 
     for outcome in failed {
-        let counted = count_load_failures && outcome.reason == Some(FailureReason::LoadFailed);
+        let (counted, name) = match listing {
+            Listing::LoadFailuresCounted => (
+                outcome.reason == Some(FailureReason::LoadFailed),
+                outcome.name.clone(),
+            ),
+            Listing::Marked(hidden) if hidden.contains(outcome.name.as_str()) => {
+                (false, format!("{} (hidden)", outcome.name))
+            }
+            Listing::Marked(_) => (false, outcome.name.clone()),
+        };
         let message = i.strip(&outcome.message)?;
-        by_message
-            .entry((message, counted))
-            .or_default()
-            .push(&outcome.name);
+        by_message.entry((message, counted)).or_default().push(name);
     }
 
     Ok(by_message
@@ -202,7 +208,7 @@ pub fn free_points_warnings(bundle: &Bundle, blank: &IndexMap<String, Outcome>) 
     )]
 }
 
-fn failed_tests(bundle: &Bundle, names: &[&str], load_failed: bool) -> String {
+fn failed_tests(bundle: &Bundle, names: &[String], load_failed: bool) -> String {
     if !load_failed {
         return names.join(", ");
     }
@@ -229,7 +235,7 @@ fn question_id<'a>(bundle: &'a Bundle, name: &str) -> &'a str {
 /// `path` as Python shows it, relative to the working directory when it is inside it.
 pub(crate) fn shown<I: Interpreter>(i: &I, path: &Path) -> Result<PathBuf, I::Error> {
     let path = i.path(path)?;
-    let cwd = env::current_dir().map_err(|error| i.grade_error(GradeError::from(error)))?;
+    let cwd = env::current_dir().map_err(|error| i.io(error))?;
 
     Ok(match path.strip_prefix(&cwd) {
         Ok(relative) => relative.to_path_buf(),
@@ -264,12 +270,14 @@ mod tests {
     use super::*;
     use crate::unix::build::Score;
     use crate::unix::fake::Fake;
+    use crate::unix::{Graded, Question};
+
+    const COUNTED: Listing<'static> = Listing::LoadFailuresCounted;
 
     /// `text`, which is UTF-8 in tests.
     fn utf8(text: &std::ffi::OsStr) -> &str {
         text.to_str().expect("UTF-8 in tests")
     }
-    use crate::unix::{Graded, Question};
 
     fn question(id: &str, title: &str, points: f64) -> Question {
         Question {
@@ -475,7 +483,8 @@ mod tests {
             ),
         ];
 
-        let lines = failure_report(&Fake::default(), &bundle, &failed, true).unwrap();
+        let failed: Vec<&Outcome> = failed.iter().collect();
+        let lines = failure_report(&Fake::default(), &bundle, &failed, COUNTED).unwrap();
 
         assert_eq!(
             lines,
@@ -517,9 +526,13 @@ mod tests {
             Some(FailureReason::LoadFailed),
         )];
 
-        let lines = failure_report(&Fake::default(), &bundle, &failed, true).unwrap();
-        let one = failure_report(&Fake::default(), &bundle, &single, true).unwrap();
-        let named = failure_report(&Fake::default(), &bundle, &single, false).unwrap();
+        let failed: Vec<&Outcome> = failed.iter().collect();
+        let single: Vec<&Outcome> = single.iter().collect();
+        let none = IndexSet::new();
+        let marked = Listing::Marked(&none);
+        let lines = failure_report(&Fake::default(), &bundle, &failed, COUNTED).unwrap();
+        let one = failure_report(&Fake::default(), &bundle, &single, COUNTED).unwrap();
+        let named = failure_report(&Fake::default(), &bundle, &single, marked).unwrap();
 
         assert_eq!(
             lines,
@@ -612,7 +625,6 @@ mod tests {
                     output_format: None,
                 },
             },
-            score: (8.0, 10.0),
         };
 
         let text = grade_report(&Fake::default(), &regraded).unwrap();

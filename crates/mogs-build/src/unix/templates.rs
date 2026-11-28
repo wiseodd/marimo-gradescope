@@ -1,11 +1,5 @@
 //! Gradescope's `setup.sh` and `run_autograder`, from the files in `templates/`.
 
-use std::sync::LazyLock;
-
-use regex::Regex;
-
-use crate::unix::{Class, Interpreter};
-
 /// The uv that `setup.sh` installs on Gradescope.
 pub const UV_VERSION: &str = "0.11.21";
 
@@ -15,28 +9,13 @@ pub const RUN_AUTOGRADER: &str = include_str!("../../templates/run_autograder");
 /// `setup.sh`, with `${uv_version}`, `${python}` and `${user}` to fill in.
 const SETUP: &str = include_str!("../../templates/setup.sh");
 
-/// A Python version such as `3.13` or `3.13.5`.
-static PYTHON_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\A3\.\d+(\.\d+)?\z").expect("the pattern is valid"));
-
-/// Render `setup.sh` for an assignment on Python `python`.
-///
-/// # Errors
-///
-/// `ConfigError` if `python` is not a version such as `3.13` or `3.13.5`.
-pub fn setup_script<I: Interpreter>(i: &I, python: &str) -> Result<String, I::Error> {
-    if !PYTHON_RE.is_match(python) {
-        let message = format!(
-            "mogs.assignment() `python` must be a version such as \"3.13\", got {}.",
-            i.host().repr(python)
-        );
-        return Err(i.raise(Class::Config, message.into()));
-    }
-
-    Ok(SETUP
+/// Render `setup.sh` for an assignment on Python `python`, a version such as `3.13`, which
+/// `mogs._analysis.build_inputs` checks.
+pub fn setup_script(python: &str) -> String {
+    SETUP
         .replace("${uv_version}", UV_VERSION)
         .replace("${python}", python)
-        .replace("${user}", mogs_grader::STUDENT_USER))
+        .replace("${user}", mogs_grader::STUDENT_USER)
 }
 
 #[cfg(test)]
@@ -44,7 +23,6 @@ mod tests {
     use std::process::Command;
 
     use super::*;
-    use crate::unix::fake::Fake;
 
     /// `bash -n` on `script`, and shellcheck when it is installed.
     fn bash_check(script: &str) {
@@ -63,7 +41,7 @@ mod tests {
 
     #[test]
     fn setup_script() {
-        let script = super::setup_script(&Fake::default(), "3.12").unwrap();
+        let script = super::setup_script("3.12");
 
         assert!(script.starts_with("#!/usr/bin/env bash\n"));
         assert!(script.contains("set -euo pipefail"));
@@ -96,24 +74,9 @@ mod tests {
 
     #[test]
     fn setup_script_takes_a_patch_version() {
-        let script = super::setup_script(&Fake::default(), "3.13.5").unwrap();
+        let script = super::setup_script("3.13.5");
 
         assert!(script.contains("--python 3.13.5 /opt/mogs-venv"));
-    }
-
-    #[test]
-    fn setup_script_rejects_bad_python() {
-        for python in ["3.13; rm -rf /", "latest", "3", "", "3.13\n"] {
-            let error = super::setup_script(&Fake::default(), python).unwrap_err();
-
-            assert_eq!(
-                error,
-                format!(
-                    "Config: mogs.assignment() `python` must be a version such as \"3.13\", \
-                     got '{python}'."
-                )
-            );
-        }
     }
 
     #[test]

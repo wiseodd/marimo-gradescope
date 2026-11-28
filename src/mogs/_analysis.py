@@ -59,6 +59,8 @@ OTTER_RE = re.compile(
 # The mogs line of Gradescope's `requirements.txt`, when not this exact version. The
 # end-to-end tests set it to a wheel of the checkout.
 TOOL_REQUIREMENT = "MOGS_TOOL_REQUIREMENT"
+# A Python version such as `3.13` or `3.13.5`, as `uv venv --python` takes it on Gradescope.
+PYTHON_RE = re.compile(r"3\.\d+(\.\d+)?")
 # Limits of a zipped submission.
 MAX_ZIP_MEMBERS = 5_000
 MAX_ZIP_BYTES = 500 * 1024 * 1024
@@ -144,7 +146,7 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
     Student notebooks always pin this version.
 
     Raises:
-        ConfigError: If a data file or a header edit is invalid.
+        ConfigError: If a data file, a header edit or `python` is invalid.
         SourceError: If the notebook cannot be transformed.
         RequirementsError: If the dependencies cannot be pinned.
     """
@@ -163,6 +165,12 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
         for q in cfg.questions.values()
         if q.manual
     }
+
+    # Last, as the build checked it after everything else in v0.7.
+    if not PYTHON_RE.fullmatch(cfg.python):
+        raise ConfigError(
+            f'{ASSIGNMENT} `python` must be a version such as "3.13", got {cfg.python!r}.'
+        )
 
     return {
         "bundle_json": bundle.to_json(),

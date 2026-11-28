@@ -6,7 +6,6 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use mogs_grader::GradeError;
 use mogs_grader::process::DROPPED;
 
 use crate::unix::{Interpreter, interrupted};
@@ -28,7 +27,7 @@ pub(crate) struct Output {
 /// returned.
 pub(crate) fn run<I: Interpreter>(i: &I, command: &mut Command) -> Result<Output, I::Error> {
     let program = PathBuf::from(command.get_program());
-    let os = |error| i.grade_error(GradeError::os(error, &program));
+    let os = |error| i.os(error, &program);
 
     for key in DROPPED {
         command.env_remove(key);
@@ -61,7 +60,7 @@ pub(crate) fn run<I: Interpreter>(i: &I, command: &mut Command) -> Result<Output
         reader
             .join()
             .expect("the pipe reader does not panic")
-            .map_err(|error| i.grade_error(GradeError::from(error)))
+            .map_err(|error| i.io(error))
     };
 
     Ok(Output {

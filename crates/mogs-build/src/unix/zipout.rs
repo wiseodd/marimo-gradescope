@@ -9,8 +9,6 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use mogs_grader::GradeError;
-
 use crate::unix::{Class, Interpreter};
 
 /// The entries that are executable.
@@ -67,7 +65,7 @@ pub fn write_zip<I: Interpreter>(
     path: &Path,
     entries: &BTreeMap<String, &Deflated>,
 ) -> Result<(), I::Error> {
-    let os = |error| i.grade_error(GradeError::os(error, path));
+    let os = |error| i.os(error, path);
     let mut out = BufWriter::new(File::create(path).map_err(os)?);
     let mut offset = 0;
     let mut central = Vec::new();
@@ -175,9 +173,11 @@ fn needs_zip64(size: usize, compressed: usize, offset: usize) -> bool {
 }
 
 fn too_large<I: Interpreter>(i: &I, path: &Path) -> I::Error {
-    let mut message = path.as_os_str().to_owned();
-    message.push(" would need zip64, which mogs does not write.");
-    i.raise(Class::Build, message)
+    let message = [
+        path.as_os_str(),
+        " would need zip64, which mogs does not write.".as_ref(),
+    ];
+    i.raise(Class::Build, message.into_iter().collect())
 }
 
 #[cfg(test)]

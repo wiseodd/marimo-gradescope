@@ -39,9 +39,7 @@ pub struct Outcome {
     #[serde(deserialize_with = "Option::deserialize")]
     pub reason: Option<FailureReason>,
     /// Wall time spent in the test.
-    #[serde(
-        serialize_with = "crate::float::number::serialize",
-        deserialize_with = "crate::float::number::deserialize"
-    )]
+    #[serde(with = "crate::float::number")]
+    #[schemars(with = "f64")]
     pub seconds: f64,
 }

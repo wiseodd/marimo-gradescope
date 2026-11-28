@@ -687,6 +687,16 @@ def test_bad_python_version_is_refused(tmp_path):
     assert not (folder / "dist").exists()
 
 
+@pytest.mark.parametrize("python", ["3.13; rm -rf /", "latest", "3", "", "3.13\n"])
+def test_python_must_be_a_plain_version(python):
+    assert _analysis.PYTHON_RE.fullmatch(python) is None
+
+
+@pytest.mark.parametrize("python", ["3.13", "3.13.5"])
+def test_python_takes_a_minor_or_patch_version(python):
+    assert _analysis.PYTHON_RE.fullmatch(python) is not None
+
+
 def test_windows_is_refused(tmp_path, monkeypatch, capsys):
     folder = demo_copy(tmp_path / "demo")
     monkeypatch.setattr(sys, "platform", "win32")
