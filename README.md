@@ -14,7 +14,7 @@
   <a href="https://mogs.kristia.de/instructors/"><img alt="Instructors" src="https://img.shields.io/badge/instructors-8f55e0?style=for-the-badge"></a>
   <a href="https://mogs.kristia.de/students/"><img alt="Students" src="https://img.shields.io/badge/students-8f55e0?style=for-the-badge"></a>
   <br>
-  <img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13%2B-3776ab?style=for-the-badge&logo=python&logoColor=white">
+  <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776ab?style=for-the-badge&logo=python&logoColor=white">
   <a href="https://github.com/wiseodd/mogs/blob/main/LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-555555?style=for-the-badge"></a>
 </p>
 
