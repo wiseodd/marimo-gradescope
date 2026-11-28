@@ -131,14 +131,6 @@ def _(n_missing):
     return
 ```
 
-The build stops with:
-
-```
-Build failed.
-hw/hw.py has 1 problem(s):
-- Question `q1`: `test_q1_count` (line 31) reads `n_missing`, which a plain `@app.cell` defines at line 25. The grader imports the functions the tests use without running the notebook, so it can't get that name. Write the answer as an `@app.function` that the test calls, and put data the tests need in the setup cell (`with app.setup:`) or load it in the test.
-```
-
 Write the answer as a function instead, and load the data in the setup cell:
 
 ```python
@@ -293,17 +285,6 @@ A written question can be worth 0 points, e.g., `mogs.grade("q5", points=0)`.
 Its answer goes into the PDF, but it doesn't count toward the total.
 Use this for a written exercise that you want to read but not grade.
 
-The PDF renders inline math in `$...$` or `\(...\)` and display math in `$$...$$` or `\[...\]`, as marimo does, including environments such as `aligned`, `cases` and `pmatrix`.
-A paragraph that is only an `align`, `equation` or `gather` environment (starred or not) is display math too, without the `$$`, as in marimo.
-The environment has to start the paragraph and end it, with no blank line inside.
-Other environments without `$$` show as source.
-A `$...$` formula on a line of its own is still inline math.
-[MiTeX](https://github.com/mitex-rs/mitex) converts the math to Typst.
-
-Some things can't be rendered.
-LaTeX that the PDF doesn't support (e.g., TikZ) shows as source, and so does question text that isn't plain `mo.md(...)`.
-Images show as their alt text.
-
 ### Notes for yourself
 
 A cell named `instructor` or `instructor_<anything>`, like the guide that `init` writes, is for you only.
@@ -355,52 +336,6 @@ examples/demo/
 
 Each build replaces both directories, and a failed build removes them.
 
-Before writing them, the build checks the assignment by grading two notebooks with the real grader: the solved notebook and the blank student notebook.
-It does this in a fresh environment with the same pinned requirements that Gradescope gets.
-That's why the build needs network access, and why the first build of an assignment takes a while: it has to download the dependencies.
-
-The solved notebook must get full marks, or the build fails.
-The blank student notebook should get zero.
-If a test passes on the blank notebook, it gives students free points, and the build warns you about it.
-
-When an error comes from one place in the notebook, the build shows that line, and a fix for some common mistakes:
-
-```
-Build failed.
-error: `points` must be a number >= 0, got '10'.
-  --> hw/hw.py:17:29
-   |
-17 |     mogs.grade("q1", points="10")
-   |                             ^^^^ a string
-   |
-help: drop the quotes: points=10
-```
-
-`build` runs on Linux and macOS.
-On Windows, use WSL.
-
-## Grade a single submission
-
-To grade one submission locally, run:
-
-```bash
-mogs grade examples/demo submission.py
-```
-
-This uses the same grader and the same requirements as Gradescope.
-Use it to try the autograder on a submission before you upload the zip.
-The submission can be the zip a student exported, a directory with the notebook (e.g., an upload downloaded from Gradescope), or the notebook's `.py` file.
-A zip is unpacked into a temporary directory and searched the same way Gradescope searches an upload.
-Any other file is refused.
-The command prints the score of each question and every failing test with its message, including the hidden tests.
-If the notebook fails to import, the command still lists every test, then exits with status 1.
-This is useful for answering regrade requests.
-
-:::caution
-This runs the student's code with your permissions.
-Use a container for untrusted submissions.
-:::
-
 ## Requirements
 
 Gradescope installs the packages in the header's `dependencies`.
@@ -436,9 +371,6 @@ To set up the assignment on Gradescope:
 
 Then, upload `dist/autograder/hw.py` as a test submission to check the autograder.
 It should get full marks.
-
-Students see their total, each question's score, and a "Public tests" row listing each public test with its failure message.
-Each question also gets a row, visible only to you, that lists all its tests and their messages, hidden ones included.
 
 ## Security
 
