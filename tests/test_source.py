@@ -9,6 +9,7 @@ from mogs.source import (
     Cell,
     CellKind,
     SourceError,
+    cell_names,
     module_tests,
     parse_notebook,
     prompt_previews,
@@ -1544,3 +1545,48 @@ def test_validate_pytest_import_with_the_dependency_ok():
     cell = "\n@app.cell\ndef _():\n    import pytest\n    return\n"
 
     assert errors(cell + PUBLIC + CHECK, header=header) == []
+
+
+# cell_names: `:=` in a comprehension binds in the scope that holds the comprehension (PEP 572)
+
+WALRUS_TOP = [
+    "[(w := v) for v in data]",
+    "[w for v in data if (w := v)]",
+    "[[(w := v) for v in r] for r in data]",
+    "y = list((w := v) for v in data)",
+    "y = {k: (w := k) for k in d}",
+    "@deco([(w := v) for v in data])\ndef f():\n    pass",
+    "def f(a=[(w := v) for v in data]):\n    pass",
+    "class C(*[(w := v) for v in data]):\n    pass",
+]
+
+
+@pytest.mark.parametrize("source", WALRUS_TOP)
+def test_cell_names_walrus_in_comprehension_binds_at_top_level(source):
+    bound, read = cell_names(source)
+
+    assert "w" in bound
+    assert "w" not in read
+    assert "v" not in read
+
+
+WALRUS_INNER = [
+    "def f():\n    return [(w := v) for v in data]",
+    "fs = [lambda: (w := v) for v in data]",
+    "class C:\n    def f(self):\n        return [(w := v) for v in data]",
+]
+
+
+@pytest.mark.parametrize("source", WALRUS_INNER)
+def test_cell_names_walrus_in_an_inner_scope_stays_there(source):
+    bound, read = cell_names(source)
+
+    assert "w" not in bound
+    assert "w" not in read
+
+
+def test_validate_hidden_cell_redefines_student_name_with_walrus():
+    shadow = hidden_cell("_ = [(add := v) for v in [1]]")
+    error = one_error(ADD + PUBLIC + CHECK + shadow)
+
+    assert "hidden cell defines `add`" in error
