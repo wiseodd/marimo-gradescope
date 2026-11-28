@@ -91,7 +91,7 @@ pub enum RenderError {
 }
 
 /// What `render` needs from its caller.
-pub trait Host {
+pub trait Signals {
     /// Whether to stop now, asked about every `POLL` while Typst works.
     fn interrupted(&self) -> bool;
 }
@@ -100,7 +100,7 @@ pub trait Host {
 ///
 /// Typst runs on its own thread, so the caller can stop waiting at once when `host` says so;
 /// the thread then ends after the Typst run it is in.
-pub fn render(questions: Vec<Question>, host: &dyn Host) -> Result<Vec<u8>, RenderError> {
+pub fn render(questions: Vec<Question>, host: &dyn Signals) -> Result<Vec<u8>, RenderError> {
     stoppable(host, move |stop| {
         let pdf = Typst { stop }.pdf(&questions);
 
@@ -113,7 +113,7 @@ pub fn render(questions: Vec<Question>, host: &dyn Host) -> Result<Vec<u8>, Rend
 
 /// Run `work` on a new thread until it ends or `host` says to stop.
 fn stoppable<T: Send + 'static>(
-    host: &dyn Host,
+    host: &dyn Signals,
     work: impl FnOnce(&AtomicBool) -> Result<T, Failure> + Send + 'static,
 ) -> Result<T, RenderError> {
     let stop = Arc::new(AtomicBool::new(false));
@@ -175,7 +175,7 @@ mod tests {
 
     struct Never;
 
-    impl Host for Never {
+    impl Signals for Never {
         fn interrupted(&self) -> bool {
             false
         }
@@ -187,7 +187,7 @@ mod tests {
         after: u32,
     }
 
-    impl Host for StopAfter {
+    impl Signals for StopAfter {
         fn interrupted(&self) -> bool {
             self.asked.set(self.asked.get() + 1);
             self.asked.get() >= self.after

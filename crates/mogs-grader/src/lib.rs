@@ -90,6 +90,14 @@ pub enum GradeError {
     Value(String),
     /// `KeyError` of this key.
     Key(String),
+    /// `ValueError` for a data file `name` that is not in `root`. The caller writes the text,
+    /// so the path shows as Python's `str` shows it, even when it is not UTF-8.
+    MissingData {
+        /// The entry of `files`.
+        name: String,
+        /// The notebook's folder.
+        root: PathBuf,
+    },
     /// `OSError` (a subclass by `errno`) from an operation on `path`.
     Os {
         /// The error.
@@ -133,7 +141,10 @@ impl fmt::Display for GradeError {
                 error,
                 path: Some(path),
             } => write!(f, "{error}: {}", path.display()),
-            GradeError::Host => write!(f, "the caller stopped the grader"),
+            GradeError::MissingData { name, root } => {
+                write!(f, "data file {name:?} not found in {}", root.display())
+            }
+            GradeError::Host => write!(f, "the grader stopped without an error"),
         }
     }
 }

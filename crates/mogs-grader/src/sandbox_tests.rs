@@ -860,7 +860,7 @@ fn data_error(files: &[&str]) -> String {
     );
 
     match graded {
-        Err(GradeError::Value(message)) => message,
+        Err(error @ (GradeError::Value(_) | GradeError::MissingData { .. })) => error.to_string(),
         other => panic!("a ValueError: {other:?}"),
     }
 }

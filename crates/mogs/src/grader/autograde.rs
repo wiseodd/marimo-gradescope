@@ -14,7 +14,9 @@ use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use super::{PyHost, bundle_from_py, os_error, results_to_py};
+use super::{bundle_from_py, results_to_py};
+use crate::host::PyHost;
+use crate::python::os_error;
 
 /// The logger of the autograder's crash report, as in v0.7.
 const MAIN_LOGGER: &str = "mogs.grader.main";
@@ -45,10 +47,10 @@ pub fn autograde(
     };
 
     if let Some(parent) = results.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| os_error(py, &e, Some(parent.into())))?;
+        std::fs::create_dir_all(parent).map_err(|e| os_error(py, &e, Some(parent)))?;
     }
 
-    std::fs::write(&results, text).map_err(|e| os_error(py, &e, Some(results.clone())))
+    std::fs::write(&results, text).map_err(|e| os_error(py, &e, Some(&results)))
 }
 
 /// `f`'s result, with a panic as a `PanicException`.

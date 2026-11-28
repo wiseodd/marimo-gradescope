@@ -27,12 +27,8 @@ use mogs_schema::{Outcome, Results};
 use crate::environment::grading_python;
 use crate::templates::{RUN_AUTOGRADER, setup_script};
 use crate::zipout::write_zip;
-use crate::{Class, Interpreter, Question, grade_locally, process, report, total};
+use crate::{Class, DIST, Interpreter, PARTS, Question, grade_locally, process, report, total};
 
-/// The output folder next to the source notebook.
-pub const DIST: &str = "dist";
-/// The parts of `DIST` a build replaces.
-pub const PARTS: [&str; 2] = ["student", "autograder"];
 /// Otter's timestamp in the zip name, e.g. 2026_09_30T12_30_41_890583.
 const STAMP: &str = "%Y_%m_%dT%H_%M_%S_%f";
 

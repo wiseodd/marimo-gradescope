@@ -8,26 +8,46 @@
 //! Python reads the source notebook and computes what follows from it: the student notebook,
 //! the bundle, the requirements and the warnings. That, text with Python's rules and Python's
 //! exceptions come from the caller through [`Interpreter`]. Text that may hold a path is an
-//! [`OsString`], since a path may hold bytes that are not UTF-8. Linux and macOS only.
-#![cfg(unix)]
+//! [`OsString`], since a path may hold bytes that are not UTF-8. Linux and macOS only, but for
+//! [`DIST`] and [`PARTS`], which a failed build removes on every platform.
 
+/// The output folder next to the source notebook.
+pub const DIST: &str = "dist";
+/// The parts of `DIST` a build replaces.
+pub const PARTS: [&str; 2] = ["student", "autograder"];
+
+#[cfg(unix)]
 pub mod build;
+#[cfg(unix)]
 pub mod environment;
+#[cfg(unix)]
 mod process;
+#[cfg(unix)]
 pub mod regrade;
+#[cfg(unix)]
 pub mod report;
+#[cfg(unix)]
 pub mod templates;
+#[cfg(unix)]
 pub mod zipout;
 
+#[cfg(unix)]
 use std::ffi::OsString;
+#[cfg(unix)]
 use std::fs;
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
 use indexmap::IndexMap;
+#[cfg(unix)]
 use mogs_grader::sandbox::GradeOptions;
+#[cfg(unix)]
 use mogs_grader::{GradeError, Host};
+#[cfg(unix)]
 use mogs_schema::{Bundle, Outcome, Results};
 
+#[cfg(unix)]
 /// The Python exception classes that Rust raises.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Class {
@@ -39,6 +59,7 @@ pub enum Class {
     Requirements,
 }
 
+#[cfg(unix)]
 /// What `build` and `grade` ask of Python.
 ///
 /// Every method may fail with any Python exception.
@@ -140,6 +161,7 @@ pub trait Interpreter {
     fn deflate(&self, data: &[u8]) -> Result<Vec<u8>, Self::Error>;
 }
 
+#[cfg(unix)]
 /// What grading needs from the source notebook.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GradeInputs {
@@ -149,6 +171,7 @@ pub struct GradeInputs {
     pub requirements: String,
 }
 
+#[cfg(unix)]
 /// What a build needs from the source notebook.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BuildInputs {
@@ -172,6 +195,7 @@ pub struct BuildInputs {
     pub questions: Vec<Question>,
 }
 
+#[cfg(unix)]
 /// One question of the config, with its tests counted.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Question {
@@ -189,6 +213,7 @@ pub struct Question {
     pub prompts: Vec<String>,
 }
 
+#[cfg(unix)]
 /// One notebook, graded on this machine.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Graded {
@@ -200,6 +225,7 @@ pub struct Graded {
     pub results: Results,
 }
 
+#[cfg(unix)]
 /// Grade `notebook` on `python` with the real grader, as the current user.
 ///
 /// `workdir` must not exist; data files are relative to `root`.
@@ -231,6 +257,7 @@ fn grade_locally<I: Interpreter>(
     })
 }
 
+#[cfg(unix)]
 /// Score and maximum, summed over the rows of `results`.
 fn total<I: Interpreter>(i: &I, results: &Results) -> Result<(f64, f64), I::Error> {
     let scores: Vec<f64> = results.tests.iter().map(|row| row.score).collect();
@@ -239,6 +266,7 @@ fn total<I: Interpreter>(i: &I, results: &Results) -> Result<(f64, f64), I::Erro
     Ok((i.sum(&scores)?, i.sum(&maxima)?))
 }
 
+#[cfg(unix)]
 /// Fail with the host's error, such as `KeyboardInterrupt` after Ctrl+C, if it has one.
 fn interrupted<I: Interpreter>(i: &I) -> Result<(), I::Error> {
     if i.host().interrupted() {
@@ -248,6 +276,7 @@ fn interrupted<I: Interpreter>(i: &I) -> Result<(), I::Error> {
     Ok(())
 }
 
+#[cfg(unix)]
 /// `parts` joined, as one text that may hold paths.
 fn text(parts: &[&std::ffi::OsStr]) -> OsString {
     parts.iter().fold(OsString::new(), |mut out, part| {
@@ -256,7 +285,7 @@ fn text(parts: &[&std::ffi::OsStr]) -> OsString {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) mod fake {
     //! An [`Interpreter`] for tests: plain Rust stand-ins for the inputs the tests use.
 

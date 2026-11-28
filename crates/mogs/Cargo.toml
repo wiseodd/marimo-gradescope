@@ -15,15 +15,14 @@ crate-type = ["cdylib"]
 test = false
 doctest = false
 
+# mogs-build is empty on Windows but for the output folders a failed build removes.
 [dependencies]
+mogs-build = { path = "../mogs-build" }
 mogs-cli = { path = "../mogs-cli" }
 mogs-grader = { path = "../mogs-grader" }
 mogs-pdf = { path = "../mogs-pdf" }
-mogs-schema = { path = "../mogs-schema" }
 pyo3 = { version = "0.30", features = ["abi3-py313"] }
-serde = "1"
-serde_json = "1"
 
-# `build` and `grade` need Linux or macOS, as the grader does.
+# `build`, `grade` and `autograde` need Linux or macOS, as the grader does.
 [target.'cfg(unix)'.dependencies]
-mogs-build = { path = "../mogs-build" }
+mogs-schema = { path = "../mogs-schema" }

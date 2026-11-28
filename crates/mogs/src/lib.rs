@@ -3,7 +3,9 @@
 mod build;
 mod cli;
 mod grader;
+mod host;
 mod pdf;
+mod python;
 
 use pyo3::prelude::*;
 

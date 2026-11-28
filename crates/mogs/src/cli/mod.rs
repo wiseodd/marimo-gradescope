@@ -3,7 +3,9 @@
 //! Only glue: argv goes to clap, `init` runs in Rust with Python's text, checks and file
 //! operations, `edit` starts marimo through `subprocess`, `build` and `grade` run in Rust
 //! (`crate::build`), and the hidden `autograde` runs the grader. Output goes through Python's
-//! `print`, so it lands in `sys.stdout` and `sys.stderr` in order with Python's own.
+//! `print`, so it lands in `sys.stdout` and `sys.stderr` in order with Python's own. A panic
+//! reaches the PyO3 boundary of `_native.main`, which raises it as `PanicException`, except in
+//! `autograde`, which turns it into failure results.
 
 mod edit;
 mod interpreter;

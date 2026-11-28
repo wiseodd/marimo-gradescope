@@ -77,11 +77,10 @@ pub fn data_files(
                 }
             }
         } else {
-            return Err(GradeError::Value(format!(
-                "data file {} not found in {}",
-                text.repr(name),
-                root.display()
-            )));
+            return Err(GradeError::MissingData {
+                name: name.clone(),
+                root: root.to_path_buf(),
+            });
         }
     }
 
@@ -203,7 +202,10 @@ mod tests {
         }
 
         let error = data_files(dir.path(), &names(&["nope.csv"]), &host).unwrap_err();
-        let expected = format!("data file 'nope.csv' not found in {}", dir.path().display());
-        assert_eq!(error.to_string(), expected);
+        assert!(
+            matches!(&error, GradeError::MissingData { name, root }
+                if name == "nope.csv" && root == dir.path()),
+            "{error:?}"
+        );
     }
 }

@@ -1,16 +1,18 @@
 //! The written-answer PDF (`mogs-pdf`) as a Python function.
 //!
 //! Only glue: the questions cross as the Python objects `mogs._answers` builds, Typst runs
-//! with the GIL released, and Ctrl+C stops the wait at once.
+//! with the GIL released, and Ctrl+C stops the wait at once. Typst runs on a worker thread
+//! that `mogs-pdf` watches, so its panic comes back as an error and is raised as
+//! `PanicException`; a panic in this module reaches the PyO3 boundary, which does the same.
 
-use std::sync::Mutex;
-
-use mogs_pdf::{Host, RenderError};
+use mogs_pdf::RenderError;
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
+
+use crate::host::PyHost;
 
 create_exception!(
     mogs._native,
@@ -35,15 +37,10 @@ pub fn render_pdf<'py>(
         .map(|question| Ok(question?.extract::<Question>()?.into()))
         .collect::<PyResult<Vec<mogs_pdf::Question>>>()?;
 
-    let host = SignalHost::default();
+    let host = PyHost::default();
     let rendered = py.detach(|| mogs_pdf::render(questions, &host));
 
-    if let Some(error) = host
-        .pending
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .take()
-    {
+    if let Some(error) = host.take() {
         return Err(error);
     }
 
@@ -122,25 +119,6 @@ impl From<Question> for mogs_pdf::Question {
         Self {
             title: question.title,
             parts,
-        }
-    }
-}
-
-/// Asks Python for pending signals, such as Ctrl+C, and keeps the first error they raise.
-#[derive(Default)]
-struct SignalHost {
-    pending: Mutex<Option<PyErr>>,
-}
-
-impl Host for SignalHost {
-    fn interrupted(&self) -> bool {
-        match Python::attach(|py| py.check_signals()) {
-            Ok(()) => false,
-            Err(error) => {
-                let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
-                pending.get_or_insert(error);
-                true
-            }
         }
     }
 }

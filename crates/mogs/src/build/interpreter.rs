@@ -11,7 +11,9 @@ use mogs_grader::{GradeError, Host};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyString, PyTuple};
 
-use crate::grader::{PyHost, bundle_from_dict};
+use crate::grader::bundle_from_dict;
+use crate::host::PyHost;
+use crate::python::{exception, pathlib};
 
 /// The running interpreter, as `mogs-build` sees it.
 #[derive(Default)]
@@ -80,14 +82,7 @@ impl Interpreter for PyBuild {
             Class::Requirements => ("mogs.requirements", "RequirementsError"),
         };
 
-        Python::attach(|py| {
-            let class = py.import(module).and_then(|module| module.getattr(name));
-
-            match class.and_then(|class| class.call1((message,))) {
-                Ok(error) => PyErr::from_value(error),
-                Err(error) => error,
-            }
-        })
+        Python::attach(|py| exception(py, module, name, message))
     }
 
     fn read(&self, folder: &Path) -> PyResult<Py<PyAny>> {
@@ -144,12 +139,7 @@ impl Interpreter for PyBuild {
     }
 
     fn path(&self, path: &Path) -> PyResult<PathBuf> {
-        Python::attach(|py| {
-            py.import("pathlib")?
-                .getattr("Path")?
-                .call1((path,))?
-                .extract()
-        })
+        Python::attach(|py| pathlib(py, path)?.extract())
     }
 
     fn now(&self, format: &str) -> PyResult<String> {

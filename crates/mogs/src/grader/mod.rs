@@ -1,25 +1,23 @@
 //! The grading supervisor (`mogs-grader`) for the rest of the extension.
 //!
-//! Only glue: `PyHost` gives the grader Python's text, users, signals and logs; `autograde`
-//! runs `mogs autograde` with the GIL released; `data_files` serves `mogs._analysis`; and
-//! bundles and results cross to and from Python. Every [`GradeError`] becomes the Python
-//! exception that v0.7 raised, with the same text.
+//! Only glue: `autograde` runs `mogs autograde` with the GIL released; `data_files` serves
+//! `mogs._analysis`; and bundles and results cross to and from Python. [`PyHost`] gives the
+//! grader Python's text, users, signals and logs. A panic here reaches the PyO3 boundary,
+//! which raises it as `PanicException`; `autograde` catches its own (see there).
 
 #[cfg(unix)]
 pub mod autograde;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
 
-use mogs_grader::{GradeError, GradingUser, Host, Level, PyText};
 #[cfg(unix)]
 use mogs_schema::Bundle;
-use pyo3::exceptions::{PyKeyError, PyOSError, PyRuntimeError, PyValueError};
+#[cfg(unix)]
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyString, PyTuple};
+use pyo3::types::PyDict;
 
-/// The logger of the supervisor's messages, as in v0.7.
-const SANDBOX_LOGGER: &str = "mogs.grader.sandbox";
+use crate::host::PyHost;
 
 /// The data files to ship, by `PurePosixPath` relative to `root`, with folders expanded.
 #[pyfunction]
@@ -69,172 +67,4 @@ pub(crate) fn results_to_py<'py>(
         mogs_schema::encode(results).map_err(|error| PyValueError::new_err(error.to_string()))?;
 
     py.import("json")?.call_method1("loads", (text,))
-}
-
-/// `OSError(errno, strerror, filename)`, which Python turns into the subclass for `errno`.
-pub(crate) fn os_error(py: Python<'_>, error: &std::io::Error, path: Option<PathBuf>) -> PyErr {
-    let Some(errno) = error.raw_os_error() else {
-        return PyOSError::new_err(error.to_string());
-    };
-
-    let made = (|| {
-        let strerror = py.import("os")?.call_method1("strerror", (errno,))?;
-        let filename = path.map(|path| path.to_string_lossy().into_owned());
-        let builtins = py.import("builtins")?;
-        let error = match filename {
-            Some(filename) => builtins
-                .getattr("OSError")?
-                .call1((errno, strerror, filename))?,
-            None => builtins.getattr("OSError")?.call1((errno, strerror))?,
-        };
-        PyResult::Ok(PyErr::from_value(error))
-    })();
-
-    made.unwrap_or_else(|error| error)
-}
-
-/// The grader's view of Python: text, users, signals and logs.
-///
-/// Every call attaches to Python for its own duration, so it works with the GIL released. The
-/// first Python error a call hits is kept, and `finish` raises it.
-#[derive(Default)]
-pub(crate) struct PyHost {
-    pending: Mutex<Option<PyErr>>,
-}
-
-impl PyHost {
-    /// Run `f` attached to Python; on error keep it and give `fallback`, which the caller
-    /// discards once `finish` raises the error.
-    fn call<T>(&self, fallback: T, f: impl FnOnce(Python<'_>) -> PyResult<T>) -> T {
-        Python::attach(|py| match f(py) {
-            Ok(value) => value,
-            Err(error) => {
-                let mut pending = self.pending.lock().unwrap_or_else(|e| e.into_inner());
-                pending.get_or_insert(error);
-                fallback
-            }
-        })
-    }
-
-    fn failed(&self) -> bool {
-        self.pending
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_some()
-    }
-
-    /// The result as Python sees it: the kept error first, then the grader's own.
-    pub(crate) fn finish<T>(&self, py: Python<'_>, result: Result<T, GradeError>) -> PyResult<T> {
-        let pending = self
-            .pending
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .take();
-
-        match (pending, result) {
-            (Some(error), _) => Err(error),
-            (None, Ok(value)) => Ok(value),
-            (None, Err(error)) => Err(to_py_err(py, error)),
-        }
-    }
-}
-
-/// The Python exception for `error`.
-fn to_py_err(py: Python<'_>, error: GradeError) -> PyErr {
-    match error {
-        GradeError::Value(message) => PyValueError::new_err(message),
-        GradeError::Key(key) => PyKeyError::new_err(key),
-        GradeError::Os { error, path } => os_error(py, &error, path),
-        GradeError::Host => PyRuntimeError::new_err("the grader stopped without an error"),
-    }
-}
-
-impl PyText for PyHost {
-    fn g(&self, x: f64) -> String {
-        self.call(String::new(), |py| {
-            let format = py.import("builtins")?.getattr("format")?;
-            format.call1((x, "g"))?.extract()
-        })
-    }
-
-    fn repr(&self, text: &str) -> String {
-        self.call(String::new(), |py| {
-            PyString::new(py, text).repr().map(|repr| repr.to_string())
-        })
-    }
-
-    fn round(&self, x: f64, digits: i32) -> f64 {
-        self.call(x, |py| {
-            py.import("builtins")?
-                .getattr("round")?
-                .call1((x, digits))?
-                .extract()
-        })
-    }
-
-    fn cap(&self, text: &str) -> String {
-        self.call(String::new(), |py| {
-            py.import("mogs.runner")?
-                .call_method1("cap", (text,))?
-                .extract()
-        })
-    }
-
-    fn casefold(&self, text: &str) -> String {
-        self.call(String::new(), |py| {
-            PyString::new(py, text).call_method0("casefold")?.extract()
-        })
-    }
-
-    fn signal_name(&self, number: i32) -> String {
-        self.call(String::new(), |py| {
-            match py.import("signal")?.getattr("Signals")?.call1((number,)) {
-                Ok(signal) => signal.getattr("name")?.extract(),
-                Err(error) if error.is_instance_of::<PyValueError>(py) => Ok(number.to_string()),
-                Err(error) => Err(error),
-            }
-        })
-    }
-}
-
-impl Host for PyHost {
-    fn user(&self, name: &str) -> Result<GradingUser, GradeError> {
-        let found = self.call(None, |py| {
-            let entry = py.import("pwd")?.call_method1("getpwnam", (name,))?;
-            let uid = entry.getattr("pw_uid")?.extract()?;
-            let gid = entry.getattr("pw_gid")?.extract()?;
-            Ok(Some(GradingUser {
-                name: name.into(),
-                uid,
-                gid,
-            }))
-        });
-
-        found.ok_or(GradeError::Host)
-    }
-
-    fn interrupted(&self) -> bool {
-        self.call((), |py| py.check_signals());
-        self.failed()
-    }
-
-    fn log(&self, level: Level, format: &str, args: &[&str]) {
-        let level: i32 = match level {
-            Level::Info => 20,
-            Level::Warning => 30,
-        };
-
-        self.call((), |py| {
-            let logger = py
-                .import("logging")?
-                .call_method1("getLogger", (SANDBOX_LOGGER,))?;
-            let mut call: Vec<Bound<'_, PyAny>> = vec![
-                level.into_pyobject(py)?.into_any(),
-                PyString::new(py, format).into_any(),
-            ];
-            call.extend(args.iter().map(|arg| PyString::new(py, arg).into_any()));
-            logger.call_method1("log", PyTuple::new(py, call)?)?;
-            Ok(())
-        });
-    }
 }

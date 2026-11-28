@@ -2,7 +2,8 @@
 //!
 //! Only glue: both run in Rust with the GIL released, and print v0.7's text. Their errors are
 //! Python exceptions, and `BuildError`, `ConfigError`, `SourceError`, `RequirementsError` and
-//! `OSError` fail the command with exit code 1.
+//! `OSError` fail the command with exit code 1. A panic reaches the PyO3 boundary, which
+//! raises it as `PanicException`: the command fails with a traceback, as for a bug.
 
 #[cfg(unix)]
 mod interpreter;
@@ -15,6 +16,7 @@ use pyo3::exceptions::{PyException, PyOSError};
 use pyo3::prelude::*;
 
 use crate::cli::{fail, is_instance, print};
+use crate::python::{exception, pathlib};
 
 /// The exceptions that fail a command with its message, by module and class.
 const FAILURES: [(&str, &str); 4] = [
@@ -28,7 +30,7 @@ const FAILURES: [(&str, &str); 4] = [
 ///
 /// A failed build removes `dist/student/` and `dist/autograder/`.
 pub(crate) fn build(py: Python<'_>, folder: &Path) -> PyResult<i64> {
-    let folder = pathlib(py, folder)?;
+    let folder: PathBuf = pathlib(py, folder)?.extract()?;
 
     match posix(py).and_then(|()| built(py, &folder)) {
         Ok(report) => {
@@ -49,8 +51,8 @@ pub(crate) fn build(py: Python<'_>, folder: &Path) -> PyResult<i64> {
 ///
 /// A submission that does not load fails the command after the scores.
 pub(crate) fn grade(py: Python<'_>, folder: &Path, submission: &Path) -> PyResult<i64> {
-    let folder = pathlib(py, folder)?;
-    let submission = pathlib(py, submission)?;
+    let folder: PathBuf = pathlib(py, folder)?.extract()?;
+    let submission: PathBuf = pathlib(py, submission)?.extract()?;
 
     match posix(py).and_then(|()| graded(py, &folder, &submission)) {
         Ok((report, None)) => {
@@ -133,15 +135,12 @@ fn posix(py: Python<'_>) -> PyResult<()> {
 }
 
 fn refusal(py: Python<'_>) -> PyErr {
-    let made = py
-        .import("mogs._analysis")
-        .and_then(|module| module.getattr("BuildError"))
-        .and_then(|class| class.call1(("Grading needs Linux or macOS (WSL on Windows).",)));
-
-    match made {
-        Ok(error) => PyErr::from_value(error),
-        Err(error) => error,
-    }
+    exception(
+        py,
+        "mogs._analysis",
+        "BuildError",
+        "Grading needs Linux or macOS (WSL on Windows).",
+    )
 }
 
 /// Print `<what> failed.` and the message of `error` if it is one that fails a command, or
@@ -162,15 +161,7 @@ fn failed(py: Python<'_>, what: &str, error: PyErr) -> PyResult<i64> {
 /// Remove what a failed build leaves, ignoring errors, as `shutil.rmtree(...,
 /// ignore_errors=True)`.
 fn remove_output(folder: &Path) {
-    for part in ["student", "autograder"] {
-        let _ = fs::remove_dir_all(folder.join("dist").join(part));
+    for part in mogs_build::PARTS {
+        let _ = fs::remove_dir_all(folder.join(mogs_build::DIST).join(part));
     }
-}
-
-/// `pathlib.Path(path)`, which shows `./a/` as `a`.
-fn pathlib(py: Python<'_>, path: &Path) -> PyResult<PathBuf> {
-    py.import("pathlib")?
-        .getattr("Path")?
-        .call1((path,))?
-        .extract()
 }

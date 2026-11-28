@@ -7,6 +7,8 @@ use mogs_cli::Interpreter;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
+use crate::python::pathlib;
+
 /// The running interpreter, as `mogs-cli` sees it.
 pub(super) struct PyInterpreter<'py> {
     pub(super) py: Python<'py>,
@@ -15,10 +17,7 @@ pub(super) struct PyInterpreter<'py> {
 impl<'py> PyInterpreter<'py> {
     /// `pathlib.Path(path)`.
     fn pathlib(&self, path: &Path) -> PyResult<Bound<'py, PyAny>> {
-        self.py
-            .import("pathlib")?
-            .getattr("Path")?
-            .call1((path.as_os_str(),))
+        pathlib(self.py, path)
     }
 }
 

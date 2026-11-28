@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from mogs import __version__, _analysis
+from mogs import __version__, _analysis, _native
 from mogs._analysis import BuildError, data_files, find_notebook, source_notebook
 from mogs._native import main
 from mogs.config import read_config
@@ -837,6 +837,20 @@ def test_written_question_without_prompt_text_says_so(tmp_path, monkeypatch):
     inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
 
     assert [q["prompts"] for q in inputs["questions"]] == [[], [], ["no question text"]]
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="needs a file system of bytes")
+def test_missing_data_file_names_a_folder_that_is_not_utf_8(tmp_path):
+    root = Path(os.fsdecode(bytes(tmp_path) + b"/\xff"))
+    try:
+        root.mkdir()
+    except OSError as error:
+        pytest.skip(f"the file system refuses the name: {error}")
+
+    with pytest.raises(ValueError) as error:
+        _native.data_files(root, ["nope.csv"])
+
+    assert str(error.value) == f"data file 'nope.csv' not found in {root}"
 
 
 def test_data_files_skip_junk(tmp_path):

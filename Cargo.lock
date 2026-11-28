@@ -1318,8 +1318,6 @@ dependencies = [
  "mogs-pdf",
  "mogs-schema",
  "pyo3",
- "serde",
- "serde_json",
 ]
 
 [[package]]
