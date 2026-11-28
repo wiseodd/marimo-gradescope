@@ -206,6 +206,40 @@ fn rejects_a_literal_in_a_text_field() {
     assert!(decode::<Bundle>(text).is_err());
 }
 
+/// A writer that panics when serde_json writes `null`, after `number` has parked its value.
+struct PanicOnNull;
+
+impl std::io::Write for PanicOnNull {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        assert_ne!(buf, b"null", "a writer that fails mid-number");
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_panic_while_writing_a_number_leaves_no_infinity_behind() {
+    let bundle = filled::<Bundle>();
+    let panicked = std::panic::catch_unwind(|| serde_json::to_writer(PanicOnNull, &bundle));
+    assert!(panicked.is_err());
+
+    // Every number finite, so nothing parks a value before `run_failed`.
+    let mut job = Job {
+        run_failed: None,
+        ..filled()
+    };
+    let config = &mut job.bundle.config;
+    config.timeout = 1.0;
+    config.budget = 1.0;
+    config.questions.iter_mut().for_each(|q| q.points = 1.0);
+    let text = encode(&job).unwrap();
+
+    assert!(text.contains(r#""run_failed":null"#), "{text}");
+}
+
 #[test]
 fn rejects_text_that_is_not_json_without_panicking() {
     for text in ["é", "éInfinity", "{\"a\": é NaN}"] {

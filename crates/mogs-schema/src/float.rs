@@ -116,10 +116,19 @@ pub mod number {
         }
 
         PENDING.set(Some(*x));
-        let written = serializer.serialize_f64(*x);
-        PENDING.set(None);
+        // Empties the cell on the way out, a panic in the serializer included.
+        let _clear = Clear;
 
-        written
+        serializer.serialize_f64(*x)
+    }
+
+    /// Empties [`PENDING`] when dropped.
+    struct Clear;
+
+    impl Drop for Clear {
+        fn drop(&mut self) {
+            PENDING.set(None);
+        }
     }
 
     /// Read a number, or a literal [`literals`] marked.

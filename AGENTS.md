@@ -112,7 +112,8 @@ make fix         # ruff fixes, then ruff format and cargo fmt
 - Logic lives in plain crates that `cargo test` covers. Only `crates/mogs`
   uses pyo3.
 - Long work releases the GIL and polls for signals.
-- A panic becomes a Python exception and never aborts.
+- A panic becomes a Python exception and never aborts. `autograde` turns it
+  into failure results instead.
 - `unsafe` appears only in `pre_exec`, with a `SAFETY:` comment.
 
 ## Style
