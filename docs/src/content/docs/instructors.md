@@ -8,6 +8,7 @@ An assignment is a directory with one source notebook and its data files, for ex
 ```text
 hw1/
 ├── hw1.py
+├── requirements.txt
 └── data/
     └── scores.csv
 ```
@@ -81,7 +82,7 @@ The source notebook is a regular marimo notebook with a few conventions.
 Put all imports in the setup cell (`with app.setup:`).
 This includes `import mogs` and any library the tests need.
 Tests don't need `import pytest`.
-If the notebook imports it, e.g., for `pytest.raises`, list `pytest` in `dependencies`.
+If the notebook imports it, e.g., for `pytest.raises`, list `pytest` in `requirements.txt`.
 
 ```python
 with app.setup:
@@ -240,6 +241,7 @@ It will create a `dist/` directory, e.g.:
 ```text
 examples/demo/
 ├── hw.py
+├── requirements.txt
 ├── data/
 │   └── scores.csv
 └── dist/
