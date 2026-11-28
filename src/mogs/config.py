@@ -32,8 +32,6 @@ HEADER_RE = re.compile(r"(?m)^# /// script$\s(?P<content>(^#(| .*)$\s)+)^# ///$"
 TABLE_RE = re.compile(r"^\[\[?\s*([A-Za-z0-9_-]+(?:\s*\.\s*[A-Za-z0-9_-]+)*)\s*\]\]?\s*(#.*)?$")
 NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 QID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
-# A number in quotes, such as `"10"` for `points=10`.
-NUMBER_RE = re.compile(r"\d+(\.\d*)?|\.\d+", re.ASCII)
 # Characters Windows forbids in file names.
 WINDOWS_FORBIDDEN = frozenset('<>:"|?*')
 # Device names Windows reserves in any case, with or without an extension.
@@ -603,16 +601,31 @@ def _points(where: Where, value: object) -> float:
         case int() | float() if value >= 0:
             return float(value)
     text = f"`points` must be a number >= 0, got {value!r}."
-    raise _number_error(where, "points", text, value, lambda text: float(text) >= 0)
+    raise _number_error(where, "points", text, value, lambda number: number >= 0)
 
 
 def _number_error(
-    where: Where, key: str, text: str, value: object, valid: Callable[[str], bool]
+    where: Where, key: str, text: str, value: object, valid: Callable[[int | float], bool]
 ) -> ConfigError:
-    """The error for a bad number, with a help line when `value` is a valid number in quotes."""
+    """The error for a bad number, with a help line when `value` is a valid number in quotes.
+
+    The quotes come off only when what is inside is a Python number literal, so `"010"` gets
+    no help.
+    """
 
     match value:
-        case str() if NUMBER_RE.fullmatch(value) and valid(value):
+        case str():
+            try:
+                number = ast.literal_eval(value)
+            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+                number = None
+        case _:
+            number = None
+
+    match number:
+        case bool():
+            return where.error(text)
+        case int() | float() if valid(number):
             return where.error(text, label="a string", help=f"drop the quotes: {key}={value}")
         case _:
             return where.error(text)
@@ -686,7 +699,7 @@ def _seconds(where: Where, key: str, value: object) -> float:
         case int() | float() if value > 0:
             return float(value)
     text = f"`{key}` must be a number of seconds > 0, got {value!r}."
-    raise _number_error(where, key, text, value, lambda text: float(text) > 0)
+    raise _number_error(where, key, text, value, lambda number: number > 0)
 
 
 def _memory(where: Where, value: object) -> int:
@@ -697,7 +710,11 @@ def _memory(where: Where, value: object) -> int:
             return value
     text = f"`memory` must be a whole number of MB >= {MIN_MEMORY_MB}, got {value!r}."
     raise _number_error(
-        where, "memory", text, value, lambda text: text.isdigit() and int(text) >= MIN_MEMORY_MB
+        where,
+        "memory",
+        text,
+        value,
+        lambda number: isinstance(number, int) and number >= MIN_MEMORY_MB,
     )
 
 

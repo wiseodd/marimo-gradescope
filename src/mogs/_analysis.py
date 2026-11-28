@@ -125,11 +125,12 @@ def read_assignment(assignment_dir: Path) -> Assignment:
     path = find_notebook(assignment_dir)
     src = path.read_text(encoding="utf-8")
 
+    # All three read only the source's lines, so their spans point into `path`.
     with located(path):
         cfg = read_config(src, path)
         nb = parse_notebook(src)
+        errors = validate(nb, cfg)
 
-    errors = validate(nb, cfg)
     if errors:
         listed = "\n".join("- " + error.replace("\n", "\n  ") for error in errors)
         raise BuildError(f"{path} has {len(errors)} problem(s):\n{listed}")

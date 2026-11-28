@@ -238,6 +238,31 @@ def test_read_assignment_names_the_notebook(tmp_path):
             None,
         ),
         (
+            'mogs.grade("q1", points="010")',
+            'name="hw"',
+            "mogs.grade() (line 17): `points` must be a number >= 0, got '010'.",
+            None,
+        ),
+        (
+            'mogs.grade("q1", points=10)',
+            'name="hw", timeout="007"',
+            "mogs.assignment() (line 11): `timeout` must be a number of seconds > 0, got '007'.",
+            None,
+        ),
+        (
+            'mogs.grade("q1", points=10)',
+            'name="hw", memory="00002048"',
+            "mogs.assignment() (line 11): `memory` must be a whole number of MB >= 2048, "
+            "got '00002048'.",
+            None,
+        ),
+        (
+            'mogs.grade("q1", points="1.5e1")',
+            'name="hw"',
+            "mogs.grade() (line 17): `points` must be a number >= 0, got '1.5e1'.",
+            "drop the quotes: points=1.5e1",
+        ),
+        (
             'mogs.grade("q_1", points=10)',
             'name="hw"',
             "mogs.grade() (line 17): question id `q_1` must be letters and digits, starting with "
@@ -380,6 +405,25 @@ error: `points` must be a number >= 0, got '10'.
    |                                           ^^^^ a string
    |
 help: drop the quotes: points=10
+"""
+    )
+
+
+def test_cli_draws_a_validation_error_with_its_file(tmp_path, monkeypatch):
+    src = notebook().replace("with app.setup:\n    import mogs", "with app.setup: import mogs")
+
+    code, err = build(tmp_path, monkeypatch, src)
+
+    assert code == 1
+    assert (
+        err
+        == """\
+Build failed.
+error: put the cell body on its own lines.
+ --> hw/hw.py:5:1
+  |
+5 | with app.setup: import mogs
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 """
     )
 
