@@ -1,4 +1,5 @@
 import ast
+import sys
 import textwrap
 from pathlib import Path
 
@@ -1598,3 +1599,57 @@ def test_validate_hidden_cell_redefines_student_name_with_walrus():
     error = one_error(ADD + PUBLIC + CHECK + shadow)
 
     assert "hidden cell defines `add`" in error
+
+
+# cell_names: the same names on every Python version mogs runs on
+
+# Comprehensions are inlined since Python 3.12 (PEP 709) and annotations are lazy since 3.14
+# (PEP 649), which changes what `symtable` reports.
+NAMES = [
+    ("y = [x for x in data]", {"y"}, {"data"}),
+    ("y = [x + z for x in range(n)]", {"y"}, {"n", "range", "z"}),
+    ("y = {x for x in data if x > lim}", {"y"}, {"data", "lim"}),
+    ("y = {k: v for k, v in d.items()}", {"y"}, {"d"}),
+    ("y = [[a for a in row] for row in m]", {"y"}, {"m"}),
+    ("y = list(x for x in data)", {"y"}, {"data", "list"}),
+    ("x = 1\ny = [x for x in data]", {"x", "y"}, {"data"}),
+    ("fs = [lambda: x for x in data]", {"fs"}, {"data"}),
+    ("class C:\n    k = 2\n    y = [k * x for x in data]", {"C"}, {"data", "k"}),
+    ("async def f():\n    return [x async for x in xs]", {"f"}, {"xs"}),
+    ("def f():\n    return [x for x in data]", {"f"}, {"data"}),
+    ("x: Foo = 1", {"x"}, {"Foo"}),
+    ("x: Foo", {"x"}, {"Foo"}),
+    ("if c:\n    x: Foo = 1", {"x"}, {"Foo", "c"}),
+    ("class C:\n    a: A\n    b: B = 1", {"C"}, {"A", "B"}),
+    ("def f(a: A) -> R:\n    return a", {"f"}, {"A", "R"}),
+    ("def f():\n    a: A = 1\n    return a", {"f"}, set()),
+    ("def f():\n    if c:\n        a: A\n    return a", {"f"}, {"c"}),
+    ("def f():\n    class K:\n        a: A\n    return K", {"f"}, {"A"}),
+]
+
+
+@pytest.mark.parametrize(("source", "bound", "read"), NAMES)
+def test_cell_names(source, bound, read):
+    assert cell_names(source) == (bound, read)
+
+
+NEW_SYNTAX = [
+    ("type T = list[U]", {"T"}, {"U", "list"}),
+    ("def f[T](a: T) -> T:\n    return a", {"f"}, set()),
+    ("class C[T](Base):\n    a: T", {"C"}, {"Base"}),
+]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 12), reason="syntax of Python 3.12")
+@pytest.mark.parametrize(("source", "bound", "read"), NEW_SYNTAX)
+def test_cell_names_type_parameters(source, bound, read):
+    assert cell_names(source) == (bound, read)
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 12), reason="Python 3.12 parses it")
+@pytest.mark.parametrize("source", [source for source, _, _ in NEW_SYNTAX])
+def test_newer_syntax_names_the_running_python(source):
+    cell = "\n@app.cell\ndef _():\n" + textwrap.indent(source, "    ") + "\n    return\n"
+
+    with pytest.raises(SourceError, match=r"not valid Python 3\.11 \(line \d+\)"):
+        parse_notebook(nb(cell))

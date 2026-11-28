@@ -9,7 +9,14 @@ import pytest
 
 from mogs._analysis import read_assignment
 from mogs._native import main
-from mogs.config import ConfigError, Span, UsageError, read_config, split_lines
+from mogs.config import (
+    RUNNING_PYTHON,
+    ConfigError,
+    Span,
+    UsageError,
+    read_config,
+    split_lines,
+)
 from mogs.source import SourceError, parse_notebook
 from mogs.transform import _name_written_cells, _rewrite_grade, student_notebook
 
@@ -126,8 +133,12 @@ def test_error_without_location_has_no_span():
 def test_syntax_error_has_line_and_column():
     error = config_error(notebook("x = (1 +"))
 
-    assert str(error) == "The notebook is not valid Python (line 17): '(' was never closed"
-    assert error.diagnostic.message == "The notebook is not valid Python: '(' was never closed"
+    assert str(error) == (
+        f"The notebook is not valid Python {RUNNING_PYTHON} (line 17): '(' was never closed"
+    )
+    assert error.diagnostic.message == (
+        f"The notebook is not valid Python {RUNNING_PYTHON}: '(' was never closed"
+    )
     assert error.diagnostic.span == Span(None, 17, 8, 17, 9)
 
 
@@ -323,9 +334,9 @@ def test_cli_draws_a_syntax_error(tmp_path, monkeypatch):
     assert code == 1
     assert (
         err
-        == """\
+        == f"""\
 Build failed.
-error: The notebook is not valid Python: '(' was never closed
+error: The notebook is not valid Python {RUNNING_PYTHON}: '(' was never closed
   --> hw/hw.py:17:9
    |
 17 |     x = (1 +

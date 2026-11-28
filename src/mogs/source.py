@@ -16,6 +16,7 @@ from enum import StrEnum
 
 from mogs.config import (
     ASSIGNMENT,
+    RUNNING_PYTHON,
     Api,
     AssignmentConfig,
     ConfigError,
@@ -334,10 +335,13 @@ def cell_names(source: str) -> tuple[set[str], set[str]]:
 
     Uses Python's scope analysis, so names local to a function, class body or comprehension
     are neither bound nor read. A name that `:=` binds inside a comprehension is bound in the
-    scope that holds the comprehension (PEP 572), so at top level it counts as bound here.
+    scope that holds the comprehension (PEP 572), so at top level it counts as bound here. The
+    names are the same on every Python version mogs runs on.
+
+    Raises:
+        SyntaxError: If `source` is not valid Python for the running version.
     """
 
-    top = symtable.symtable(source, "<cell>", "exec")
     tree = ast.parse(source)
     eager = not any(
         isinstance(node, ast.ImportFrom)
@@ -346,6 +350,7 @@ def cell_names(source: str) -> tuple[set[str], set[str]]:
         for node in tree.body
     )
     bound = _comprehension_walruses(tree, comprehension=False, annotations=eager)
+    top = symtable.symtable(ast.unparse(_same_scopes(tree, function=False)), "<cell>", "exec")
     read = set()
 
     for symbol in top.get_symbols():
@@ -360,6 +365,8 @@ def cell_names(source: str) -> tuple[set[str], set[str]]:
         table = tables.pop()
         tables += table.get_children()
         read |= {s.get_name() for s in table.get_symbols() if s.is_global() and s.is_referenced()}
+
+    read.discard(CONDITIONAL_ANNOTATIONS)
 
     return bound, read - bound
 
@@ -416,6 +423,55 @@ def _comprehension_walruses(node: ast.AST, comprehension: bool, annotations: boo
             names |= _comprehension_walruses(child, comprehension, annotations)
 
     return names
+
+
+# Python 3.14 reads this name in a module with annotations (PEP 649). Cell code never does.
+CONDITIONAL_ANNOTATIONS = "__conditional_annotations__"
+
+
+def _same_scopes(node: ast.AST, function: bool) -> ast.AST:
+    """`node` rewritten so that `symtable` reports the same scopes on every Python version.
+
+    Python 3.12 inlines list, set and dict comprehensions into the enclosing scope (PEP 709),
+    so `symtable` reports their variables there. They become generator expressions, which
+    keep their own scope and resolve names the same way. Python 3.14 skips the annotation of
+    a local variable in a function, which never runs (PEP 649), while earlier versions report
+    the names it reads, so such an annotation becomes `None`.
+
+    Args:
+        node: The node to rewrite. Its children are replaced in place.
+        function: Whether `node` is in the body of a function, outside any class body.
+    """
+
+    match node:
+        case (
+            ast.ListComp(elt=elt, generators=generators)
+            | ast.SetComp(elt=elt, generators=generators)
+        ):
+            node = ast.GeneratorExp(elt=elt, generators=generators)
+        case ast.DictComp(key=key, value=value, generators=generators):
+            pair = ast.Tuple(elts=[key, value], ctx=ast.Load())
+            node = ast.GeneratorExp(elt=pair, generators=generators)
+        case ast.AnnAssign() if function:
+            node.annotation = ast.Constant(value=None)
+
+    match node:
+        case ast.FunctionDef() | ast.AsyncFunctionDef():
+            inner = True
+        case ast.ClassDef():
+            inner = False
+        case _:
+            inner = function
+
+    for field, value in ast.iter_fields(node):
+        match value:
+            case list():
+                items = [_same_scopes(v, inner) if isinstance(v, ast.AST) else v for v in value]
+                setattr(node, field, items)
+            case ast.AST():
+                setattr(node, field, _same_scopes(value, inner))
+
+    return node
 
 
 def module_tests(source: str) -> tuple[str, ...]:
@@ -569,8 +625,8 @@ def parse_notebook(src: str) -> Notebook:
         tree = ast.parse(src)
     except SyntaxError as e:
         raise SourceError(
-            f"The notebook is not valid Python (line {e.lineno}): {e.msg}",
-            message=f"The notebook is not valid Python: {e.msg}",
+            f"The notebook is not valid Python {RUNNING_PYTHON} (line {e.lineno}): {e.msg}",
+            message=f"The notebook is not valid Python {RUNNING_PYTHON}: {e.msg}",
             span=syntax_span(src, e),
         ) from e
 

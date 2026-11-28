@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 import pytest
@@ -210,8 +211,10 @@ def test_works_without_a_header():
     assert read_config(src, NB).name == "HW1"
 
 
-def test_invalid_python():
-    with pytest.raises(ConfigError, match="not valid Python"):
+def test_invalid_python_names_the_running_python():
+    version = rf"{sys.version_info.major}\.{sys.version_info.minor}"
+
+    with pytest.raises(ConfigError, match=rf"not valid Python {version} \(line \d+\)"):
         read_config(cells(ASSIGNMENT) + "\ndef (:\n", NB)
 
 

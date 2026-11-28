@@ -12,6 +12,7 @@ import dataclasses
 import difflib
 import json
 import re
+import sys
 import tomllib
 import unicodedata
 from collections.abc import Callable, Generator, Iterable
@@ -26,6 +27,8 @@ ASSIGNMENT = "mogs.assignment()"
 # Folder next to the student notebook with its public tests, `tests/<qid>.py`.
 TESTS_FOLDER = "tests"
 MIN_MEMORY_MB = 2048
+# The Python mogs runs on, such as `3.11`. A notebook must parse with it.
+RUNNING_PYTHON = f"{sys.version_info.major}.{sys.version_info.minor}"
 
 # The reference regex from PEP 723, for the `script` block.
 HEADER_RE = re.compile(r"(?m)^# /// script$\s(?P<content>(^#(| .*)$\s)+)^# ///$")
@@ -288,8 +291,8 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
         tree = ast.parse(src)
     except SyntaxError as e:
         raise ConfigError(
-            f"The notebook is not valid Python (line {e.lineno}): {e.msg}",
-            message=f"The notebook is not valid Python: {e.msg}",
+            f"The notebook is not valid Python {RUNNING_PYTHON} (line {e.lineno}): {e.msg}",
+            message=f"The notebook is not valid Python {RUNNING_PYTHON}: {e.msg}",
             span=syntax_span(src, e),
         ) from e
 
