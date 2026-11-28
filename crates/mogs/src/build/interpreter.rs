@@ -63,6 +63,7 @@ impl Interpreter for PyHost {
                     .collect(),
                 student: inputs.get_item("student")?.extract()?,
                 solved: inputs.get_item("solved")?.extract()?,
+                checked: inputs.get_item("checked")?.extract()?,
                 tests: inputs.get_item("tests")?.extract()?,
                 requirements: inputs.get_item("requirements")?.extract()?,
                 warnings: inputs.get_item("warnings")?.extract()?,

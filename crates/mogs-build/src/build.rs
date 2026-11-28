@@ -112,7 +112,7 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
 
     for (notebook, text) in [
         (&student_path, &inputs.student),
-        (&solved_path, &inputs.solved),
+        (&solved_path, &inputs.checked),
     ] {
         let parent = notebook.parent().expect("the notebook is in a folder");
         fs::create_dir(parent).map_err(|e| i.os(e, parent))?;

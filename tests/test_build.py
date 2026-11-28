@@ -758,6 +758,24 @@ def test_both_copies_get_the_header_from_the_file(tmp_path):
     )
     assert inputs["student"].startswith(header)
     assert inputs["solved"].startswith(header)
+
+
+def test_checked_copy_leaves_mogs_to_the_running_one(tmp_path):
+    folder = requirements_file_copy(tmp_path / "demo", "numpy==2.0\n")
+
+    inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
+
+    # An unreleased version is not on PyPI; the check layers the running mogs instead.
+    header = (
+        "# /// script\n"
+        '# requires-python = "==3.13.*"\n'
+        "# dependencies = [\n"
+        '#     "numpy==2.0",\n'
+        "# ]\n"
+        "# ///\n"
+    )
+    assert inputs["checked"].startswith(header)
+    assert inputs["checked"].removeprefix(header) == inputs["solved"].split("# ///\n", 1)[1]
     assert "source" not in inputs
 
 

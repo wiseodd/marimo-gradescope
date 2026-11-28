@@ -32,7 +32,12 @@ from mogs.config import (
     read_config,
 )
 from mogs.grader.bundle import bundle_from_notebook
-from mogs.requirements import RequirementsError, gradescope_requirements, read_requirements
+from mogs.requirements import (
+    RequirementsError,
+    gradescope_requirements,
+    read_requirements,
+    with_header,
+)
 from mogs.source import (
     NO_TEXT,
     Notebook,
@@ -81,6 +86,8 @@ class BuildInputs(TypedDict):
 
     The bundle is JSON. `data` holds (path relative to the notebook, source) pairs, and
     `tests` holds (path relative to the notebook, text) pairs.
+    `checked` is the solved copy whose tests the build runs: its header leaves out mogs, which
+    the check layers from the running one.
     `prompts` has, for each manual question, the first line of each of its prompt cells, as
     `prompt_previews` gives it, or `NO_TEXT` when none has text.
     """
@@ -89,6 +96,7 @@ class BuildInputs(TypedDict):
     data: list[tuple[str, Path]]
     student: str
     solved: str
+    checked: str
     tests: list[tuple[str, str]]
     requirements: str
     warnings: list[str]
@@ -151,6 +159,8 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
         "bundle_json": bundle.to_json(),
         "student": student,
         "solved": solved,
+        # The check layers the running mogs, which may not be released yet.
+        "checked": with_header(solved, reqs, cfg.python, None),
         "tests": [(str(rel), text) for rel, text in tests.items()],
         "data": [(str(rel), source) for rel, source in data.items()],
         "requirements": requirements,

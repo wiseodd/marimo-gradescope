@@ -154,10 +154,13 @@ def _parse_line(line: str, path: Path) -> str | Index | None:
     return code
 
 
-def script_header(requirements: Requirements, python: str, tool_requirement: str) -> list[str]:
+def script_header(
+    requirements: Requirements, python: str, tool_requirement: str | None
+) -> list[str]:
     """The TOML lines of the notebook's PEP 723 header.
 
-    It requires `python`, and depends on the requirements, then on `tool_requirement`. Each
+    It requires `python`, and depends on the requirements, then on `tool_requirement` unless it
+    is `None`. Each
     index becomes a `[[tool.uv.index]]`, and with an extra index uv resolves across all of
     them, as pip does.
 
@@ -170,7 +173,8 @@ def script_header(requirements: Requirements, python: str, tool_requirement: str
             f'{ASSIGNMENT} `python` must be a version such as "3.13", got {python!r}.'
         )
 
-    dependencies = [*requirements.packages, tool_requirement]
+    tools = [] if tool_requirement is None else [tool_requirement]
+    dependencies = [*requirements.packages, *tools]
     lines = [f"requires-python = {json.dumps(f'=={python}.*')}", "dependencies = ["]
     lines += [f"    {json.dumps(dependency)}," for dependency in dependencies]
     lines += ["]"]
@@ -188,7 +192,9 @@ def script_header(requirements: Requirements, python: str, tool_requirement: str
     return lines
 
 
-def with_header(src: str, requirements: Requirements, python: str, tool_requirement: str) -> str:
+def with_header(
+    src: str, requirements: Requirements, python: str, tool_requirement: str | None
+) -> str:
     """`src` with the header that `script_header` gives, in place of its own.
 
     Raises:

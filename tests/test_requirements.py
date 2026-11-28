@@ -237,6 +237,14 @@ def test_header_of_an_empty_file():
     ]
 
 
+def test_header_without_the_tool_requirement():
+    assert script_header(Requirements(), "3.13", None) == [
+        'requires-python = "==3.13.*"',
+        "dependencies = [",
+        "]",
+    ]
+
+
 @pytest.mark.parametrize("python", ["latest", "3", "3.13; rm -rf /", ""])
 def test_header_needs_a_python_version(python):
     with pytest.raises(ConfigError, match="`python`"):
