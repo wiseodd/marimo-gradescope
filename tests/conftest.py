@@ -30,6 +30,40 @@ def mogs_script() -> Path:
     return Path(sysconfig.get_path("scripts")) / ("mogs.exe" if os.name == "nt" else "mogs")
 
 
+# Modules whose code runs on the student's or instructor's own computer, where the operating
+# system matters: the student side (config, checks, loader, export, PDF, selfcheck), processes
+# and paths, `edit` and `init`, and the native module. CI runs only these on macOS and Windows
+# (`-m platform`), and everything on Linux. The Rust tests cover the grading sandbox there.
+PLATFORM = frozenset(
+    {
+        "test_assertrewrite_guard.py",
+        "test_assignment.py",
+        "test_check.py",
+        "test_cli.py",
+        "test_config.py",
+        "test_edit.py",
+        "test_export.py",
+        "test_init.py",
+        "test_loader.py",
+        "test_main.py",
+        "test_native.py",
+        "test_pdf.py",
+        "test_runner.py",
+        "test_scaffold.py",
+        "test_selfcheck.py",
+        "test_source.py",
+        "test_transform.py",
+    }
+)
+
+
+def pytest_itemcollected(item: pytest.Item) -> None:
+    """Mark the tests of the `PLATFORM` modules `platform`."""
+
+    if item.path.name in PLATFORM:
+        item.add_marker(pytest.mark.platform)
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Deselect the `docker` tests unless the `-m` expression names them."""
 

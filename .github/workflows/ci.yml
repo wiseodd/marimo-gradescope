@@ -8,6 +8,8 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# The Rust caches are saved on main only. Runs of pull requests restore them; caches of
+# their own would push the total past the 10 GB limit, and GitHub would evict main's.
 jobs:
   # Ruff only, at the version in uv.lock: no project sync.
   lint:
@@ -24,7 +26,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: echo "RUFF=$(uv export --only-group dev --no-hashes --frozen | grep '^ruff==')" >> "$GITHUB_ENV"
       - run: uvx --from "$RUFF" ruff format --check
-  # rustfmt and clippy on each platform. `make test` and the Windows job run the Rust tests.
+  # rustfmt and clippy on each platform. `test-rust` and the Windows job run the Rust tests.
   # PyO3 builds against the Python on PATH, which `abi3-py313` needs at 3.13 or newer.
   rust:
     strategy:
@@ -41,19 +43,24 @@ jobs:
         with:
           components: clippy, rustfmt
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
+  # ty reads `mogs._native` from its stub, so the project is not installed and nothing compiles.
   typecheck:
     runs-on: ubuntu-latest
+    env:
+      UV_NO_SYNC: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: uv sync --frozen
+      - run: uv sync --frozen --no-install-project
       - run: make typecheck
+  # `make test` in two jobs that run at once: pytest here, the Rust tests in `test-rust`. The
+  # jobs of each OS share one Rust cache, which `test-rust` saves.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -63,9 +70,13 @@ jobs:
           enable-cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+          save-if: false
       - run: uv sync --frozen
-      - run: make test
-  # The build's self-check runs the sandbox, which must also work on an instructor's Mac.
+      - run: make test-python
+  # The build's self-check runs the sandbox, which must also work on an instructor's Mac. Linux
+  # runs every test; macOS runs the Rust tests and the `platform` ones (tests/conftest.py).
   test-macos:
     runs-on: macos-latest
     steps:
@@ -75,11 +86,33 @@ jobs:
           enable-cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+          save-if: false
       - run: uv sync --frozen
-      - run: make test
+      - run: make test-python ARGS="-m platform"
+  # The sandbox tests grade with the project's Python, so `uv sync` comes first.
+  test-rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: uv sync --frozen
+      - run: make test-rust
   # Students on Windows run the check panels, the export button, the selfcheck and the PDF,
-  # and instructors run `init` and `edit`. The grader and `build` need Linux or macOS, so
-  # their tests do not run here.
+  # and instructors run `init` and `edit`: the `platform` tests. The grader and `build` need
+  # Linux or macOS, so their tests do not run here.
   test-windows:
     runs-on: windows-latest
     steps:
@@ -89,15 +122,11 @@ jobs:
           enable-cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: uv sync --frozen
       - run: uv run cargo test --workspace -- --include-ignored
-      - run: >-
-          uv run pytest -q
-          tests/test_config.py tests/test_source.py tests/test_transform.py
-          tests/test_assertrewrite_guard.py tests/test_runner.py tests/test_check.py
-          tests/test_loader.py tests/test_selfcheck.py tests/test_export.py tests/test_pdf.py
-          tests/test_native.py tests/test_scaffold.py tests/test_init.py tests/test_edit.py
-          tests/test_cli.py tests/test_assignment.py
+      - run: uv run pytest -q -m platform
   # The autograder graded in Gradescope's base image. MOGS_REQUIRE_CONTAINER makes a missing
   # Docker fail the job instead of skipping the tests.
   docker:
@@ -105,6 +134,13 @@ jobs:
     timeout-minutes: 45
     env:
       MOGS_REQUIRE_CONTAINER: "1"
+      # The e2e tests build their wheel with `uv tool run --from 'maturin[zig]...'`, which uses
+      # this tool once it is installed. The zig wrappers contain the path of the tool's
+      # environment, and Cargo rebuilds everything when that path changes. An installed tool
+      # keeps its path from run to run, so the cached build stays valid. The Rust cache key
+      # includes both versions.
+      MATURIN_VERSION: "1.16.0"
+      ZIGLANG_VERSION: "0.17.1"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -112,5 +148,9 @@ jobs:
           enable-cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: maturin-${{ env.MATURIN_VERSION }}-ziglang-${{ env.ZIGLANG_VERSION }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: uv tool install "maturin[zig]==$MATURIN_VERSION" --with "ziglang==$ZIGLANG_VERSION"
       - run: uv sync --frozen
       - run: uv run pytest -m docker -v

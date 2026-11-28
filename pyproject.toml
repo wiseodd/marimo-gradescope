@@ -59,6 +59,10 @@ exclude = ["tests/fixtures"]
 
 [tool.ty.environment]
 python-version = "3.13"
+# `src` without installing the project, so CI type-checks without building `mogs._native`
+# (ty reads `_native.pyi`). Test modules with a `# /// script` block in a string get an
+# environment of their own, which would miss `src`.
+extra-paths = ["src"]
 
 [tool.ruff]
 line-length = 100
@@ -84,6 +88,7 @@ testpaths = ["tests"]
 markers = [
   "slow: runs marimo in a subprocess through `uv run --with` (network on a cold cache)",
   "network: resolves packages from PyPI through uv, or renders a PDF with Typst packages (fast with a warm cache)",
+  "platform: depends on the operating system; CI runs only these on macOS and Windows (tests/conftest.py)",
   "docker: grades in Gradescope's base image with docker or podman (deselected unless `-m` names `docker`)",
 ]
 
