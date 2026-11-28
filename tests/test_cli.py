@@ -22,18 +22,26 @@ def test_help_lists_the_commands(capsys):
         ("init", "start a new assignment"),
         ("edit", "open the source notebook in marimo's editor"),
         ("build", "build the student notebook and the autograder zip"),
-        ("grade", "grade one submission locally"),
     ]:
         assert any(line.split() == [command, *help.split()] for line in out.splitlines()), out
 
 
 def test_command_help_shows_its_description(capsys):
-    code = main(["grade", "--help"])
+    code = main(["build", "--help"])
     out = capsys.readouterr().out
 
     assert code == 0
-    assert "Usage: mogs grade <DIR> <SUBMISSION>" in out
-    assert "and list every failing test, hidden ones included." in out
+    assert "Usage: mogs build <DIR>" in out
+    assert "after running every test on the solved copy." in out
+
+
+def test_grade_is_an_unknown_subcommand(capsys):
+    code = main(["grade", "hw", "submission.py"])
+    captured = capsys.readouterr()
+
+    assert code == 2
+    assert captured.out == ""
+    assert captured.err.startswith("error: unrecognized subcommand 'grade'")
 
 
 def test_version(capsys):
@@ -45,7 +53,7 @@ def test_version(capsys):
 
 @pytest.mark.parametrize(
     "argv",
-    [[], ["nope"], ["init"], ["edit", "a", "b"], ["grade", "a"], ["build", "--nope", "a"]],
+    [[], ["nope"], ["init"], ["edit", "a", "b"], ["build"], ["build", "--nope", "a"]],
 )
 def test_usage_error_exits_2(argv, capsys):
     code = main(argv)
@@ -61,7 +69,7 @@ def test_help_hides_the_autograder_command(capsys):
     main(["--help"])
     out = capsys.readouterr().out
 
-    assert "  grade " in out
+    assert "  build " in out
     assert "  autograde " not in out
 
 

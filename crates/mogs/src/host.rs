@@ -7,13 +7,10 @@
 use std::sync::Mutex;
 
 use mogs_grader::{GradeError, GradingUser, Host, Level, PyText};
-#[cfg(unix)]
-use pyo3::exceptions::PyKeyError;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyString, PyTuple};
 
-#[cfg(unix)]
 use crate::python::os_error;
 
 /// The logger of the supervisor's messages, as in v0.7.
@@ -68,9 +65,7 @@ impl PyHost {
         }
     }
 
-    /// The Python exception for `error`, or the one a call kept. Linux and macOS, as the
-    /// build that asks for it.
-    #[cfg(unix)]
+    /// The Python exception for `error`, or the one a call kept.
     pub(crate) fn grade_error(&self, error: GradeError) -> PyErr {
         let made = Python::attach(|py| self.finish(Err::<(), _>(error), |e| grade_err(py, e)));
 
@@ -84,8 +79,7 @@ pub(crate) fn stopped() -> PyErr {
     PyRuntimeError::new_err(GradeError::Host.to_string())
 }
 
-/// The Python exception for `error`. Linux and macOS, as the grading that raises it.
-#[cfg(unix)]
+/// The Python exception for `error`.
 pub(crate) fn grade_err(py: Python<'_>, error: GradeError) -> PyErr {
     match error {
         GradeError::Value(message) => PyValueError::new_err(message),

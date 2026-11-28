@@ -4,10 +4,10 @@
 pub const UV_VERSION: &str = "0.11.21";
 
 /// The `run_autograder` script.
-pub const RUN_AUTOGRADER: &str = include_str!("../../templates/run_autograder");
+pub const RUN_AUTOGRADER: &str = include_str!("../templates/run_autograder");
 
 /// `setup.sh`, with `${uv_version}`, `${python}` and `${user}` to fill in.
-const SETUP: &str = include_str!("../../templates/setup.sh");
+const SETUP: &str = include_str!("../templates/setup.sh");
 
 /// Render `setup.sh` for an assignment on Python `python`, a version such as `3.13`, which
 /// `mogs._analysis.build_inputs` checks.
@@ -20,16 +20,18 @@ pub fn setup_script(python: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::process::Command;
 
     use super::*;
 
     /// `bash -n` on `script`, and shellcheck when it is installed.
+    #[cfg(unix)]
     fn bash_check(script: &str) {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("script.sh");
         std::fs::write(&path, script).unwrap();
-        let _spawning = crate::unix::fake::spawning();
+        let _spawning = crate::fake::spawning();
 
         let bash = Command::new("bash").arg("-n").arg(&path).output().unwrap();
         assert!(bash.status.success(), "{bash:?}");
@@ -69,6 +71,7 @@ mod tests {
             "runuser -u mogs-student -- /opt/mogs-venv/bin/python -c \"import mogs, marimo\""
         ));
         assert!(!script.contains("${"));
+        #[cfg(unix)]
         bash_check(&script);
     }
 
@@ -85,6 +88,7 @@ mod tests {
             RUN_AUTOGRADER,
             "#!/usr/bin/env bash\nset -euo pipefail\nexec /opt/mogs-venv/bin/mogs autograde\n"
         );
+        #[cfg(unix)]
         bash_check(RUN_AUTOGRADER);
     }
 }

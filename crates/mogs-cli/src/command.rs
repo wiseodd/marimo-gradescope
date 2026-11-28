@@ -53,8 +53,8 @@ pub enum Command {
     #[command(
         about = "build the student notebook and the autograder zip",
         long_about = "Build DIR/dist/student/ and DIR/dist/autograder/ (the autograder zip and \
-                      the solved student notebook) from the notebook in DIR, then grade the \
-                      solved and the blank student copy."
+                      the solved student notebook) from the notebook in DIR, after running \
+                      every test on the solved copy."
     )]
     Build {
         #[arg(
@@ -62,23 +62,6 @@ pub enum Command {
             help = "assignment folder with the source notebook"
         )]
         dir: PathBuf,
-    },
-    #[command(
-        about = "grade one submission locally",
-        long_about = "Grade SUBMISSION against the source notebook in DIR with the real grader, \
-                      as Gradescope would, and list every failing test, hidden ones included."
-    )]
-    Grade {
-        #[arg(
-            value_name = "DIR",
-            help = "assignment folder with the source notebook"
-        )]
-        dir: PathBuf,
-        #[arg(
-            value_name = "SUBMISSION",
-            help = "student notebook (.py), the zip a student exported, or a folder with one"
-        )]
-        submission: PathBuf,
     },
     /// Gradescope's entry point, which `run_autograder` runs: grade the submission and write
     /// `results.json`, whatever happens. Not in `--help`.
@@ -182,18 +165,9 @@ mod tests {
                 "build",
                 "build the student notebook and the autograder zip",
                 "Build DIR/dist/student/ and DIR/dist/autograder/ (the autograder zip and the \
-                 solved student notebook) from the notebook in DIR, then grade the solved and \
-                 the blank student copy.",
+                 solved student notebook) from the notebook in DIR, after running every test \
+                 on the solved copy.",
                 "DIR: assignment folder with the source notebook",
-            ],
-            vec![
-                "grade",
-                "grade one submission locally",
-                "Grade SUBMISSION against the source notebook in DIR with the real grader, as \
-                 Gradescope would, and list every failing test, hidden ones included.",
-                "DIR: assignment folder with the source notebook",
-                "SUBMISSION: student notebook (.py), the zip a student exported, or a folder \
-                 with one",
             ],
         ];
 
@@ -227,12 +201,19 @@ mod tests {
             parsed(&["build", "hw"]),
             Ok(Command::Build { dir: "hw".into() })
         );
-        assert_eq!(
-            parsed(&["grade", "hw", "sub.zip"]),
-            Ok(Command::Grade {
-                dir: "hw".into(),
-                submission: "sub.zip".into()
-            })
+    }
+
+    #[test]
+    fn grade_is_an_unknown_subcommand() {
+        let exit = parsed(&["grade", "hw", "sub.zip"]).unwrap_err();
+
+        assert!(exit.to_stderr);
+        assert_eq!(exit.code, 2);
+        assert!(
+            exit.text
+                .starts_with("error: unrecognized subcommand 'grade'"),
+            "{}",
+            exit.text
         );
     }
 
@@ -311,7 +292,7 @@ mod tests {
             &[][..],
             &["nope"],
             &["init"],
-            &["grade", "hw"],
+            &["build"],
             &["init", "a", "b"],
             &["-V"],
         ] {

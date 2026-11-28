@@ -1,7 +1,7 @@
 //! The `mogs` command line (`mogs-cli`) as `_native.main`.
 //!
 //! Only glue: argv goes to clap, `init` runs in Rust with Python's text, checks and file
-//! operations, `edit` starts marimo through `subprocess`, `build` and `grade` run in Rust
+//! operations, `edit` starts marimo through `subprocess`, `build` runs in Rust
 //! (`crate::build`), and the hidden `autograde` runs the grader. Output goes through Python's
 //! `print`, so it lands in `sys.stdout` and `sys.stderr` in order with Python's own. A panic
 //! reaches the PyO3 boundary of `_native.main`, which raises it as `PanicException`, except in
@@ -45,7 +45,6 @@ pub fn main(py: Python<'_>, argv: Option<Vec<OsString>>) -> PyResult<i64> {
         Command::Init { dir } => scaffold::init(py, &dir),
         Command::Edit { path } => edit::edit(py, &path),
         Command::Build { dir } => crate::build::build(py, &dir),
-        Command::Grade { dir, submission } => crate::build::grade(py, &dir, &submission),
         Command::Autograde {
             source,
             submission,

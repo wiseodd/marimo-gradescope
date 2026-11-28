@@ -2,17 +2,16 @@
 
 use std::path::Path;
 
-#[cfg(unix)]
 use pyo3::exceptions::PyOSError;
 use pyo3::prelude::*;
 
 pyo3::import_exception!(mogs.config, UsageError);
 pyo3::import_exception!(mogs.config, ConfigError);
 pyo3::import_exception!(mogs._analysis, BuildError);
-#[cfg(unix)]
 pyo3::import_exception!(mogs.requirements, RequirementsError);
 
-/// Why `build`, `grade` and `autograde` refuse to run elsewhere.
+/// Why `autograde` refuses to run off Linux and macOS.
+#[cfg(not(unix))]
 pub(crate) const REFUSAL: &str = "Grading needs Linux or macOS (WSL on Windows).";
 
 /// `pathlib.Path(path)`, which shows `./a/` as `a`.
@@ -23,8 +22,6 @@ pub(crate) fn pathlib<'py>(py: Python<'py>, path: &Path) -> PyResult<Bound<'py, 
 }
 
 /// `OSError(errno, strerror, filename)`, which Python turns into the subclass for `errno`.
-/// Linux and macOS, as the grading and the build that raise it.
-#[cfg(unix)]
 pub(crate) fn os_error(py: Python<'_>, error: &std::io::Error, path: Option<&Path>) -> PyErr {
     let Some(errno) = error.raw_os_error() else {
         return PyOSError::new_err(error.to_string());

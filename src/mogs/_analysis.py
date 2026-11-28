@@ -1,10 +1,9 @@
-"""What `mogs build` and `mogs grade` ask of the source notebook, as plain data.
+"""What `mogs build` asks of the source notebook, as plain data.
 
-`mogs._native` runs both commands in Rust. This module finds, reads and checks the source
+`mogs._native` runs the command in Rust. This module finds, reads and checks the source
 notebook, and computes from it what follows Python's rules: the student notebook and the
 solved copy, the public tests, the grading bundle, Gradescope's `requirements.txt`, the data
-files and the warnings. It also unpacks a zipped submission, since the texts of `zipfile`'s
-errors are part of the error messages.
+files and the warnings.
 """
 
 import ast
@@ -12,7 +11,6 @@ import importlib.metadata
 import io
 import json
 import re
-import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -31,7 +29,6 @@ from mogs.config import (
     UsageError,
     api_calls,
     located,
-    normalized_name,
     read_config,
 )
 from mogs.grader.bundle import bundle_from_notebook
@@ -58,10 +55,6 @@ OTTER_RE = re.compile(
 )
 # A Python version such as `3.13` or `3.13.5`, as `uv venv --python` takes it on Gradescope.
 PYTHON_RE = re.compile(r"3\.\d+(\.\d+)?")
-# Limits of a zipped submission.
-MAX_ZIP_MEMBERS = 5_000
-MAX_ZIP_BYTES = 500 * 1024 * 1024
-_CHUNK = 1024 * 1024
 
 
 class BuildError(UsageError):
@@ -85,26 +78,19 @@ class Assignment:
     nb: Notebook
 
 
-class GradeInputs(TypedDict):
-    """What grading needs: the bundle, its requirements and its data files.
-
-    The bundle is JSON. The requirements have no mogs line. The data files are (path relative
-    to the notebook, source) pairs.
-    """
-
-    bundle_json: str
-    grading_requirements: str
-    data: list[tuple[str, Path]]
-
-
-class BuildInputs(GradeInputs):
+class BuildInputs(TypedDict):
     """What a build writes and checks.
 
-    `tests` holds (path relative to the notebook, text) pairs.
+    `source` is the source notebook, whose own environment runs the check. The bundle is
+    JSON. `data` holds (path relative to the notebook, source) pairs, and `tests` holds (path
+    relative to the notebook, text) pairs.
     `prompts` has, for each manual question, the first line of each of its prompt cells, as
     `prompt_previews` gives it, or `NO_TEXT` when none has text.
     """
 
+    source: Path
+    bundle_json: str
+    data: list[tuple[str, Path]]
     student: str
     solved: str
     tests: list[tuple[str, str]]
@@ -172,8 +158,8 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
         )
 
     return {
+        "source": path,
         "bundle_json": bundle.to_json(),
-        "grading_requirements": _without_tool(requirements),
         "student": student,
         "solved": solved,
         "tests": [(str(rel), text) for rel, text in tests.items()],
@@ -182,33 +168,6 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
         "warnings": source_warnings(nb) + warnings,
         "prompts": prompts,
     }
-
-
-def grade_inputs(assignment: Assignment) -> GradeInputs:
-    """What grading a submission needs, from the notebook.
-
-    Raises:
-        ConfigError: If a data file is missing or invalid.
-        RequirementsError: If the dependencies cannot be pinned.
-    """
-
-    data = data_files(assignment.path.parent, assignment.cfg)
-    bundle = bundle_from_notebook(assignment.nb, assignment.cfg)
-    requirements, _ = gradescope_requirements(assignment.src, assignment.cfg, TOOL)
-
-    return {
-        "bundle_json": bundle.to_json(),
-        "grading_requirements": _without_tool(requirements),
-        "data": [(str(rel), source) for rel, source in data.items()],
-    }
-
-
-def _without_tool(requirements: str) -> str:
-    """`requirements` without its mogs line: the grading environment gets the running one."""
-
-    lines = [line for line in requirements.splitlines() if normalized_name(line) != TOOL]
-
-    return "".join(f"{line}\n" for line in lines)
 
 
 def find_notebook(assignment_dir: Path) -> Path:
@@ -407,85 +366,3 @@ def _fragment(info: dict[str, object]) -> str:
             return f"#subdirectory={subdirectory}"
         case _:
             return ""
-
-
-# Zipped submissions
-
-
-def unpack(archive: Path, target: Path) -> None:
-    """Unpack the zip `archive` into the new folder `target`.
-
-    The zip may hold at most `MAX_ZIP_MEMBERS` members and unpack to at most `MAX_ZIP_BYTES`
-    bytes. The sizes in the zip's headers are checked first, and the bytes are counted again
-    while unpacking, since the headers can lie.
-
-    Raises:
-        BuildError: If `archive` is not a readable zip (such as one with a password or an
-            unsupported compression method), holds too many members, unpacks to too many
-            bytes, or a member's path is absolute or leads outside `target`.
-    """
-
-    target.mkdir()
-    root = target.resolve()
-
-    try:
-        with zipfile.ZipFile(archive) as zipped:
-            members = zipped.infolist()
-
-            if len(members) > MAX_ZIP_MEMBERS:
-                raise BuildError(
-                    f"{archive} holds {len(members)} files; the limit is {MAX_ZIP_MEMBERS}."
-                )
-
-            if sum(member.file_size for member in members) > MAX_ZIP_BYTES:
-                raise _too_large(archive)
-
-            for member in members:
-                path = (root / member.filename).resolve()
-
-                if Path(member.filename).is_absolute() or not path.is_relative_to(root):
-                    raise BuildError(
-                        f"{archive}: {member.filename} would unpack outside the folder."
-                    )
-
-            written = 0
-
-            for member in members:
-                written = _extract(zipped, member, root, archive, written)
-    # `zipfile` raises `RuntimeError` for an encrypted member and `NotImplementedError` for an
-    # unsupported compression method.
-    except (zipfile.BadZipFile, zipfile.LargeZipFile, RuntimeError, NotImplementedError) as error:
-        raise BuildError(f"{archive} is not a readable zip ({error}).") from error
-
-
-def _extract(
-    zipped: zipfile.ZipFile, member: zipfile.ZipInfo, root: Path, archive: Path, written: int
-) -> int:
-    """Unpack `member` under `root`, given `written` bytes so far; returns the new total.
-
-    Raises:
-        BuildError: If the total passes `MAX_ZIP_BYTES`.
-    """
-
-    path = root / member.filename
-
-    if member.is_dir():
-        path.mkdir(parents=True, exist_ok=True)
-        return written
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    with zipped.open(member) as source, path.open("wb") as sink:
-        while chunk := source.read(_CHUNK):
-            written += len(chunk)
-
-            if written > MAX_ZIP_BYTES:
-                raise _too_large(archive)
-
-            sink.write(chunk)
-
-    return written
-
-
-def _too_large(archive: Path) -> BuildError:
-    return BuildError(f"{archive} unpacks to more than {MAX_ZIP_BYTES} bytes.")

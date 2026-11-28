@@ -1,4 +1,4 @@
-//! What `build` and `grade` print, and the failure lists of their errors.
+//! What `build` prints, and the failure lists of its errors.
 
 use std::env;
 use std::ffi::OsString;
@@ -7,11 +7,11 @@ use std::path::{Path, PathBuf};
 use indexmap::{IndexMap, IndexSet};
 use mogs_schema::{Bundle, FailureReason, Outcome};
 
-use crate::unix::build::Built;
-use crate::unix::regrade::Regraded;
-use crate::unix::{Interpreter, text, total};
+use crate::build::Built;
+use crate::{Interpreter, text};
 
-/// The files to upload and distribute, then the self-check scores and the warnings.
+/// The files to upload and distribute, then the questions with their tests and points, and
+/// the warnings.
 ///
 /// Each written question is listed with the first line of each of its prompt cells, so the
 /// instructor can check which text goes into the PDF.
@@ -20,13 +20,12 @@ use crate::unix::{Interpreter, text, total};
 ///
 /// Any Python exception.
 pub fn report<I: Interpreter>(i: &I, built: &Built) -> Result<OsString, I::Error> {
-    let mut rows = vec![["Question", "Public", "Hidden", "Solution", "Blank"].map(String::from)];
+    let mut rows = vec![["Question", "Public", "Hidden", "Points"].map(String::from)];
     let mut manual = Vec::new();
+    let mut graded = Vec::new();
 
-    for score in &built.scores {
-        let question = &score.question;
-
-        let (Some(solution), Some(blank)) = (score.solution, score.blank) else {
+    for question in &built.questions {
+        if question.manual {
             let how = if question.points == 0.0 {
                 "collected in the PDF, not graded".into()
             } else {
@@ -35,30 +34,24 @@ pub fn report<I: Interpreter>(i: &I, built: &Built) -> Result<OsString, I::Error
             manual.push(format!("- {} {}: {how}", question.id, question.title));
             manual.extend(question.prompts.iter().map(|line| format!("    {line}")));
             continue;
-        };
+        }
 
+        graded.push(question.points);
         rows.push([
             question.title.clone(),
             question.public.to_string(),
             question.hidden.to_string(),
-            fraction(i, solution, question.points),
-            fraction(i, blank, question.points),
+            i.host().g(question.points),
         ]);
     }
 
-    let (solution, blank) = (built.solution, built.blank);
-    rows.push([
-        "Total".into(),
-        String::new(),
-        String::new(),
-        fraction(i, solution.0, solution.1),
-        fraction(i, blank.0, blank.1),
-    ]);
+    let total = i.host().g(i.sum(&graded)?);
+    rows.push(["Total".into(), String::new(), String::new(), total]);
     let width = width(rows.iter().map(|row| &row[0]));
     let mut lines: Vec<String> = rows
         .iter()
-        .map(|[name, public, hidden, solution, blank]| {
-            format!("{name:<width$}  {public:>6}  {hidden:>6}  {solution:>9}  {blank:>9}")
+        .map(|[name, public, hidden, points]| {
+            format!("{name:<width$}  {public:>6}  {hidden:>6}  {points:>6}")
         })
         .collect();
 
@@ -82,73 +75,10 @@ pub fn report<I: Interpreter>(i: &I, built: &Built) -> Result<OsString, I::Error
     ]))
 }
 
-/// Per-question scores and the failing tests, hidden ones marked.
+/// One line per distinct failure message, naming the tests that share it.
 ///
-/// # Errors
-///
-/// Any Python exception.
-pub fn grade_report<I: Interpreter>(i: &I, regraded: &Regraded) -> Result<OsString, I::Error> {
-    let mut rows = vec![["Question".to_string(), "Score".to_string()]];
-
-    for row in &regraded.graded.results.tests {
-        let Some(number) = &row.number else {
-            continue;
-        };
-        let title = regraded
-            .bundle
-            .question(number)
-            .map(|question| question.title.clone())
-            .expect("each numbered row is a question of the bundle");
-        rows.push([title, fraction(i, row.score, row.max_score)]);
-    }
-
-    let (score, max) = total(i, &regraded.graded.results)?;
-    rows.push(["Total".into(), fraction(i, score, max)]);
-    let width = width(rows.iter().map(|row| &row[0]));
-    let mut lines: Vec<String> = rows
-        .iter()
-        .map(|[name, score]| format!("{name:<width$}  {score:>9}"))
-        .collect();
-
-    let hidden: IndexSet<&str> = regraded
-        .bundle
-        .cells
-        .iter()
-        .filter(|cell| cell.hidden)
-        .flat_map(|cell| cell.tests.iter().map(String::as_str))
-        .collect();
-    let failed: Vec<&Outcome> = regraded
-        .graded
-        .outcomes
-        .values()
-        .filter(|outcome| !outcome.passed)
-        .collect();
-
-    if !failed.is_empty() {
-        let listing = Listing::Marked(&hidden);
-        lines.extend(["".into(), "Failing tests:".into()]);
-        lines.extend(failure_report(i, &regraded.bundle, &failed, listing)?);
-    }
-
-    Ok(text(&[
-        "Graded:  ".as_ref(),
-        regraded.submission.as_os_str(),
-        "\n\n".as_ref(),
-        lines.join("\n").as_ref(),
-    ]))
-}
-
-/// How [`failure_report`] names the failing tests.
-#[derive(Clone, Copy, Debug)]
-pub enum Listing<'a> {
-    /// Count the tests that failed to load and name their questions instead, since a failing
-    /// setup cell fails every test. For the build's self-check.
-    LoadFailuresCounted,
-    /// Name every test, with ` (hidden)` after the ones in this set.
-    Marked(&'a IndexSet<&'a str>),
-}
-
-/// One line per distinct failure message, naming the tests that share it, as `listing` says.
+/// Tests that failed to load are counted, with their questions named, since a failing setup
+/// cell fails every test.
 ///
 /// # Errors
 ///
@@ -157,23 +87,16 @@ pub fn failure_report<I: Interpreter>(
     i: &I,
     bundle: &Bundle,
     failed: &[&Outcome],
-    listing: Listing<'_>,
 ) -> Result<Vec<String>, I::Error> {
     let mut by_message: IndexMap<(String, bool), Vec<String>> = IndexMap::new();
 
     for outcome in failed {
-        let (counted, name) = match listing {
-            Listing::LoadFailuresCounted => (
-                outcome.reason == Some(FailureReason::LoadFailed),
-                outcome.name.clone(),
-            ),
-            Listing::Marked(hidden) if hidden.contains(outcome.name.as_str()) => {
-                (false, format!("{} (hidden)", outcome.name))
-            }
-            Listing::Marked(_) => (false, outcome.name.clone()),
-        };
+        let counted = outcome.reason == Some(FailureReason::LoadFailed);
         let message = i.strip(&outcome.message)?;
-        by_message.entry((message, counted)).or_default().push(name);
+        by_message
+            .entry((message, counted))
+            .or_default()
+            .push(outcome.name.clone());
     }
 
     Ok(by_message
@@ -183,29 +106,6 @@ pub fn failure_report<I: Interpreter>(
             format!("- {tests}: {}", message.replace('\n', "\n    "))
         })
         .collect())
-}
-
-/// A warning naming the tests that pass on the blank notebook, in questions worth points.
-pub fn free_points_warnings(bundle: &Bundle, blank: &IndexMap<String, Outcome>) -> Vec<String> {
-    let passing: Vec<&str> = blank
-        .values()
-        .filter(|outcome| outcome.passed)
-        .filter(|outcome| {
-            let qid = question_id(bundle, &outcome.name);
-            let question = bundle.question(qid);
-            question.is_some_and(|question| question.points > 0.0)
-        })
-        .map(|outcome| outcome.name.as_str())
-        .collect();
-
-    if passing.is_empty() {
-        return Vec::new();
-    }
-
-    vec![format!(
-        "These tests pass on the blank student notebook, so they give points for no work: {}",
-        passing.join(", ")
-    )]
 }
 
 fn failed_tests(bundle: &Bundle, names: &[String], load_failed: bool) -> String {
@@ -248,10 +148,6 @@ fn width<'a>(names: impl Iterator<Item = &'a String>) -> usize {
     names.map(|name| name.chars().count()).max().unwrap_or(0)
 }
 
-fn fraction<I: Interpreter>(i: &I, score: f64, points: f64) -> String {
-    format!("{}/{}", i.host().g(score), i.host().g(points))
-}
-
 /// `25 pts`, `2.5 pts` or `1 pt`.
 fn points<I: Interpreter>(i: &I, points: f64) -> String {
     let shown = i.host().g(points);
@@ -265,14 +161,11 @@ fn points<I: Interpreter>(i: &I, points: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use mogs_schema::{BundleConfig, BundleQuestion, Results, Row, TestCell};
+    use mogs_schema::{BundleConfig, BundleQuestion, TestCell};
 
     use super::*;
-    use crate::unix::build::Score;
-    use crate::unix::fake::Fake;
-    use crate::unix::{Graded, Question};
-
-    const COUNTED: Listing<'static> = Listing::LoadFailuresCounted;
+    use crate::Question;
+    use crate::fake::Fake;
 
     /// `text`, which is UTF-8 in tests.
     fn utf8(text: &std::ffi::OsStr) -> &str {
@@ -286,38 +179,25 @@ mod tests {
             points,
             public: 0,
             hidden: 0,
+            manual: false,
             prompts: Vec::new(),
         }
     }
 
-    fn graded(question: Question) -> Score {
-        let points = question.points;
-        Score {
-            question,
-            solution: Some(points),
-            blank: Some(0.0),
+    fn by_hand(question: Question, prompts: &[&str]) -> Question {
+        Question {
+            manual: true,
+            prompts: prompts.iter().map(|line| (*line).into()).collect(),
+            ..question
         }
     }
 
-    fn by_hand(question: Question, prompts: &[&str]) -> Score {
-        Score {
-            question: Question {
-                prompts: prompts.iter().map(|line| (*line).into()).collect(),
-                ..question
-            },
-            solution: None,
-            blank: None,
-        }
-    }
-
-    fn built(dist: &Path, scores: Vec<Score>, warnings: &[&str]) -> Built {
+    fn built(dist: &Path, questions: Vec<Question>, warnings: &[&str]) -> Built {
         Built {
             student: dist.join("student/hw.zip"),
             zip: dist.join("autograder/hw-autograder-2026_09_30T12_30_41_890583.zip"),
-            solution: (4.0, 4.0),
-            blank: (0.0, 4.0),
             warnings: warnings.iter().map(|warning| (*warning).into()).collect(),
-            scores,
+            questions,
         }
     }
 
@@ -381,12 +261,15 @@ mod tests {
 
         let text = report_text(&built(&cwd.join("demo/dist"), Vec::new(), &[]));
 
+        let zip = native("demo/dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip");
+        let student = native("demo/dist/student/hw.zip");
+
         assert_eq!(
             text.lines().take(4).collect::<Vec<_>>(),
             [
                 "All done!",
-                "Upload to Gradescope  : demo/dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
-                "Distribute to students: demo/dist/student/hw.zip",
+                &format!("Upload to Gradescope  : {zip}"),
+                &format!("Distribute to students: {student}"),
                 "",
             ]
         );
@@ -396,27 +279,40 @@ mod tests {
     fn report_shows_absolute_paths_outside_the_working_directory() {
         let text = report_text(&built(Path::new("/elsewhere/demo/dist"), Vec::new(), &[]));
 
+        let student = native("/elsewhere/demo/dist/student/hw.zip");
+
         assert_eq!(
             text.lines().nth(2),
-            Some("Distribute to students: /elsewhere/demo/dist/student/hw.zip")
+            Some(format!("Distribute to students: {student}").as_str())
         );
     }
 
+    /// `path` with the separators of this platform, as the host shows paths.
+    fn native(path: &str) -> String {
+        Path::new(path)
+            .components()
+            .collect::<PathBuf>()
+            .display()
+            .to_string()
+    }
+
     #[test]
-    fn report_shows_scores_manual_questions_and_warnings() {
-        let scores = vec![
-            graded(question("q1", "Average", 4.0)),
+    fn report_shows_points_manual_questions_and_warnings() {
+        let questions = vec![
+            question("q1", "Average", 4.0),
+            question("q2", "Reading scores", 2.5),
             by_hand(question("q3", "Proof", 5.0), &["## Question 3", "(b) Then"]),
             by_hand(question("q4", "Essay", 1.0), &["no question text"]),
         ];
 
-        let text = report_text(&built(Path::new("/x/dist"), scores, &["careful"]));
+        let text = report_text(&built(Path::new("/x/dist"), questions, &["careful"]));
 
         assert_eq!(
             text.split_once("\n\n").unwrap().1,
-            "Question  Public  Hidden   Solution      Blank\n\
-             Average        0       0        4/4        0/4\n\
-             Total                           4/4        0/4\n\
+            "Question        Public  Hidden  Points\n\
+             Average              0       0       4\n\
+             Reading scores       0       0     2.5\n\
+             Total                              6.5\n\
              \n\
              Not in the autograder total:\n\
              - q3 Proof: 5 pts, graded by hand\n    ## Question 3\n    (b) Then\n\
@@ -429,9 +325,9 @@ mod tests {
 
     #[test]
     fn report_says_a_zero_point_manual_question_is_not_graded() {
-        let scores = vec![by_hand(question("q5", "Proof", 0.0), &["Prove it."])];
+        let questions = vec![by_hand(question("q5", "Proof", 0.0), &["Prove it."])];
 
-        let text = report_text(&built(Path::new("/x/dist"), scores, &[]));
+        let text = report_text(&built(Path::new("/x/dist"), questions, &[]));
 
         assert!(text.ends_with(
             "Not in the autograder total:\n- q5 Proof: collected in the PDF, not graded\n    \
@@ -441,13 +337,13 @@ mod tests {
 
     #[test]
     fn report_shows_public_and_hidden_test_counts() {
-        let scores = vec![graded(Question {
+        let questions = vec![Question {
             public: 2,
             hidden: 3,
             ..question("q1", "Average", 4.0)
-        })];
+        }];
 
-        let text = report_text(&built(Path::new("/x/dist"), scores, &[]));
+        let text = report_text(&built(Path::new("/x/dist"), questions, &[]));
         let row = text
             .lines()
             .find(|line| line.starts_with("Average"))
@@ -455,7 +351,7 @@ mod tests {
 
         assert_eq!(
             row.split_whitespace().collect::<Vec<_>>(),
-            ["Average", "2", "3", "4/4", "0/4"]
+            ["Average", "2", "3", "4"]
         );
     }
 
@@ -484,7 +380,7 @@ mod tests {
         ];
 
         let failed: Vec<&Outcome> = failed.iter().collect();
-        let lines = failure_report(&Fake::default(), &bundle, &failed, COUNTED).unwrap();
+        let lines = failure_report(&Fake::default(), &bundle, &failed).unwrap();
 
         assert_eq!(
             lines,
@@ -528,11 +424,8 @@ mod tests {
 
         let failed: Vec<&Outcome> = failed.iter().collect();
         let single: Vec<&Outcome> = single.iter().collect();
-        let none = IndexSet::new();
-        let marked = Listing::Marked(&none);
-        let lines = failure_report(&Fake::default(), &bundle, &failed, COUNTED).unwrap();
-        let one = failure_report(&Fake::default(), &bundle, &single, COUNTED).unwrap();
-        let named = failure_report(&Fake::default(), &bundle, &single, marked).unwrap();
+        let lines = failure_report(&Fake::default(), &bundle, &failed).unwrap();
+        let one = failure_report(&Fake::default(), &bundle, &single).unwrap();
 
         assert_eq!(
             lines,
@@ -542,104 +435,5 @@ mod tests {
             ]
         );
         assert_eq!(one, ["- 1 test of q3: x"]);
-        assert_eq!(named, ["- test_q3_a: x"]);
-    }
-
-    #[test]
-    fn free_points_warning_names_tests_that_pass_blank() {
-        let bundle = bundle(
-            &[("q1", "Q", 4.0), ("q2", "Practice", 0.0)],
-            vec![
-                cell("q1", false, &["test_q1_a", "test_q1_b", "test_q1_c"]),
-                cell("q2", false, &["test_q2_a"]),
-            ],
-        );
-        let outcomes: IndexMap<String, Outcome> = [
-            outcome("test_q1_a", true, "", None),
-            outcome("test_q1_b", false, "no", Some(FailureReason::Assertion)),
-            outcome("test_q1_c", true, "", None),
-            outcome("test_q2_a", true, "", None),
-        ]
-        .into_iter()
-        .map(|outcome| (outcome.name.clone(), outcome))
-        .collect();
-
-        assert_eq!(
-            free_points_warnings(&bundle, &outcomes),
-            [
-                "These tests pass on the blank student notebook, so they give points for no work: \
-              test_q1_a, test_q1_c"
-            ]
-        );
-        assert!(free_points_warnings(&bundle, &IndexMap::new()).is_empty());
-    }
-
-    #[test]
-    fn grade_report_marks_hidden_failures() {
-        let bundle = bundle(
-            &[("q1", "Average", 4.0), ("q2", "Reading scores", 6.0)],
-            vec![
-                cell("q1", false, &["test_q1_a"]),
-                cell("q1", true, &["test_q1_b"]),
-                cell("q2", false, &["test_q2_a"]),
-            ],
-        );
-        let row = |name: &str, number: Option<&str>, score: f64, max_score: f64| Row {
-            name: name.into(),
-            score,
-            max_score,
-            output: String::new(),
-            output_format: "md".into(),
-            visibility: "hidden".into(),
-            number: number.map(String::from),
-            status: None,
-        };
-        let outcomes = [
-            outcome("test_q1_a", true, "", None),
-            outcome(
-                "test_q1_b",
-                false,
-                "assert 0 == -2\n",
-                Some(FailureReason::Assertion),
-            ),
-            outcome("test_q2_a", true, "", None),
-        ];
-        let regraded = Regraded {
-            submission: "/up/hw.py".into(),
-            bundle,
-            graded: Graded {
-                outcomes: outcomes
-                    .into_iter()
-                    .map(|outcome| (outcome.name.clone(), outcome))
-                    .collect(),
-                load_error: None,
-                results: Results {
-                    tests: vec![
-                        row("Public tests", None, 0.0, 0.0),
-                        row("Average", Some("q1"), 2.0, 4.0),
-                        row("Reading scores", Some("q2"), 6.0, 6.0),
-                    ],
-                    stdout_visibility: "hidden".into(),
-                    score: None,
-                    output: None,
-                    output_format: None,
-                },
-            },
-        };
-
-        let text = grade_report(&Fake::default(), &regraded).unwrap();
-
-        assert_eq!(
-            utf8(&text),
-            "Graded:  /up/hw.py\n\
-             \n\
-             Question            Score\n\
-             Average               2/4\n\
-             Reading scores        6/6\n\
-             Total                8/10\n\
-             \n\
-             Failing tests:\n\
-             - test_q1_b (hidden): assert 0 == -2"
-        );
     }
 }

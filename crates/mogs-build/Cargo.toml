@@ -1,16 +1,20 @@
 [package]
 name = "mogs-build"
-description = "`mogs build` and `mogs grade`: the autograder zip, the self-check and local grading."
+description = "`mogs build`: the autograder zip and the solution check."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
 
-# Building and grading need Linux or macOS, as the grader does.
-[target.'cfg(unix)'.dependencies]
+[dependencies]
 crc32fast = "1"
 indexmap = "2"
 mogs-grader = { path = "../mogs-grader" }
 mogs-schema = { path = "../mogs-schema" }
+serde_json = "1"
 tempfile = "3"
+
+# `SIGTERM` for a check over its time limit.
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["process", "std"] }
