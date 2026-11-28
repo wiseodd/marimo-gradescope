@@ -55,15 +55,14 @@ jobs:
           manylinux: manylinux_2_17
           args: --release --out dist
       - uses: astral-sh/setup-uv@v6
-      # `mogs --version` imports nothing outside `mogs` and the standard library, so the wheel
-      # installs without its dependencies.
+      # The wheel installs with its dependencies, as a user's install would.
       # The one abi3 wheel runs on the oldest and the newest Python mogs supports.
       - env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           for python in 3.11 3.14; do
             uv venv --python "$python" "smoke-$python"
-            uv pip install --python "smoke-$python" --no-deps dist/*.whl
+            uv pip install --python "smoke-$python" dist/*.whl
             test "$("smoke-$python/bin/mogs" --version)" = "mogs $VERSION"
           done
       - uses: actions/upload-artifact@v4
@@ -91,7 +90,7 @@ jobs:
         run: |
           for python in 3.11 3.14; do
             uv venv --python "$python" "smoke-$python"
-            uv pip install --python "smoke-$python" --no-deps dist/*.whl
+            uv pip install --python "smoke-$python" dist/*.whl
             test "$("smoke-$python/bin/mogs" --version)" = "mogs $VERSION"
           done
       - uses: actions/upload-artifact@v4
@@ -128,7 +127,7 @@ jobs:
         run: |
           for python in 3.11 3.14; do
             uv venv --python "$python" "smoke-$python"
-            uv pip install --python "smoke-$python" --no-deps dist/*.whl
+            uv pip install --python "smoke-$python" dist/*.whl
             test "$("smoke-$python/Scripts/mogs.exe" --version | tr -d '\r')" = "mogs $VERSION"
           done
       - uses: actions/upload-artifact@v4
