@@ -331,11 +331,19 @@ def cell_names(source: str) -> tuple[set[str], set[str]]:
     """Names `source`, run as a module, binds at top level, and global names it reads otherwise.
 
     Uses Python's scope analysis, so names local to a function, class body or comprehension
-    are neither bound nor read.
+    are neither bound nor read. A name that `:=` binds inside a comprehension is bound in the
+    scope that holds the comprehension (PEP 572), so at top level it counts as bound here.
     """
 
     top = symtable.symtable(source, "<cell>", "exec")
-    bound = set()
+    tree = ast.parse(source)
+    eager = not any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "__future__"
+        and any(alias.name == "annotations" for alias in node.names)
+        for node in tree.body
+    )
+    bound = _comprehension_walruses(tree, comprehension=False, annotations=eager)
     read = set()
 
     for symbol in top.get_symbols():
@@ -352,6 +360,60 @@ def cell_names(source: str) -> tuple[set[str], set[str]]:
         read |= {s.get_name() for s in table.get_symbols() if s.is_global() and s.is_referenced()}
 
     return bound, read - bound
+
+
+def _comprehension_walruses(node: ast.AST, comprehension: bool, annotations: bool) -> set[str]:
+    """Names that `:=` inside a comprehension binds in the scope that holds `node`.
+
+    `symtable` reports such a name at top level as declared global but not assigned. The walk
+    stops at the bodies of functions, lambdas and classes, which are scopes of their own. Their
+    decorators, defaults, bases and keywords run in the holding scope, so it visits those.
+
+    Annotations run there too up to Python 3.13, the default grading Python, and never with
+    `from __future__ import annotations` or from 3.14 on (PEP 649). They count as run unless
+    the future import is there, so the names are the same on every Python version.
+
+    Args:
+        node: The node to search.
+        comprehension: Whether `node` is inside a comprehension of the holding scope.
+        annotations: Whether annotations run.
+    """
+
+    names = set()
+
+    match node:
+        case ast.FunctionDef() | ast.AsyncFunctionDef():
+            children = [*node.decorator_list, *node.args.defaults, *node.args.kw_defaults]
+            if annotations:
+                arguments = [
+                    *node.args.posonlyargs,
+                    *node.args.args,
+                    node.args.vararg,
+                    *node.args.kwonlyargs,
+                    node.args.kwarg,
+                ]
+                children += [arg.annotation for arg in arguments if arg is not None]
+                children.append(node.returns)
+        case ast.AnnAssign() if not annotations:
+            children = [node.target, node.value]
+        case ast.Lambda():
+            children = [*node.args.defaults, *node.args.kw_defaults]
+        case ast.ClassDef():
+            children = [*node.decorator_list, *node.bases, *node.keywords]
+        case ast.ListComp() | ast.SetComp() | ast.DictComp() | ast.GeneratorExp():
+            comprehension = True
+            children = list(ast.iter_child_nodes(node))
+        case ast.NamedExpr(target=ast.Name(id=name)) if comprehension:
+            names.add(name)
+            children = [node.value]
+        case _:
+            children = list(ast.iter_child_nodes(node))
+
+    for child in children:
+        if child is not None:
+            names |= _comprehension_walruses(child, comprehension, annotations)
+
+    return names
 
 
 def module_tests(source: str) -> tuple[str, ...]:
