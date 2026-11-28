@@ -35,8 +35,8 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - `crates/mogs-build/`: `mogs build`, plain Rust with cargo tests. It writes
   the zips after running every test of the solved copy with
   `python -m mogs.selfcheck --bundle`, in the notebook's own environment (the
-  one `mogs edit` opens), with no sandbox. The notebook's analysis and Python's text and exceptions come in through its
-  `Interpreter` trait. `templates/` holds `setup.sh` and `run_autograder`,
+  one `mogs edit` opens), with no sandbox. The notebook's analysis and
+  Python's text and exceptions come in through its `Interpreter` trait. `templates/` holds `setup.sh` and `run_autograder`,
   which runs the hidden command `mogs autograde`.
 - `crates/mogs-grader/`: the grading supervisor, plain Rust with cargo tests.
   Only `mogs autograde` on Gradescope uses its sandbox. It runs the Python

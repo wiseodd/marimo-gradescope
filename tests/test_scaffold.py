@@ -279,7 +279,6 @@ def test_cli_init_shows_paths_as_python_does(tmp_path, monkeypatch, capsys):
 
 
 @pytest.mark.network
-@pytest.mark.skipif(sys.platform == "win32", reason="build needs Linux or macOS")
 def test_init_notebook_builds(tmp_path, capsys):
     init(tmp_path / "A12", capsys)
 
