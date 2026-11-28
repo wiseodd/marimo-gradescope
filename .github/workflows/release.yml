@@ -1,12 +1,14 @@
 name: release
+# A manual run builds and smoke-tests every wheel and the sdist, and publishes nothing.
 on:
   release:
     types: [published]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
   # Tags look like `0.7`: the tag, padded with `.0` to three parts, must equal the version in
-  # Cargo.toml, which the wheels carry.
+  # Cargo.toml, which the wheels carry. A manual run has no tag and takes the version as is.
   version:
     runs-on: ubuntu-latest
     outputs:
@@ -18,6 +20,10 @@ jobs:
           TAG: ${{ github.event.release.tag_name }}
         run: |
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml)
+          if [ "$GITHUB_EVENT_NAME" != release ]; then
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           padded="$TAG"
           while [ "$(printf '%s' "$padded" | tr -cd . | wc -c)" -lt 2 ]; do
             padded="$padded.0"
@@ -159,6 +165,7 @@ jobs:
 
   # Trusted publishing: PyPI trusts this workflow in the `pypi` environment. No token.
   publish:
+    if: github.event_name == 'release'
     needs: [linux, macos, windows, sdist]
     runs-on: ubuntu-latest
     environment: pypi
