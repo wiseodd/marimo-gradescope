@@ -1,8 +1,9 @@
-//! The grading supervisor (`mogs-grader`) as Python functions.
+//! The grading supervisor (`mogs-grader`) for the rest of the extension.
 //!
-//! Only glue: values cross as JSON or as the Python objects mogs already has, grading runs
-//! with the GIL released, and every [`GradeError`] becomes the Python exception that v0.7
-//! raised, with the same text.
+//! Only glue: `PyHost` gives the grader Python's text, users, signals and logs; `autograde`
+//! runs `mogs autograde` with the GIL released; `data_files` serves `mogs._analysis`; and
+//! bundles and results cross to and from Python. Every [`GradeError`] becomes the Python
+//! exception that v0.7 raised, with the same text.
 
 #[cfg(unix)]
 pub mod autograde;
@@ -10,65 +11,17 @@ pub mod autograde;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use indexmap::IndexMap;
 use mogs_grader::{GradeError, GradingUser, Host, Level, PyText};
-use mogs_schema::{Bundle, Outcome};
+#[cfg(unix)]
+use mogs_schema::Bundle;
 use pyo3::exceptions::{PyKeyError, PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString, PyTuple};
+#[cfg(unix)]
 use serde::Serialize;
-use serde::de::DeserializeOwned;
 
 /// The logger of the supervisor's messages, as in v0.7.
 const SANDBOX_LOGGER: &str = "mogs.grader.sandbox";
-
-/// The files found in an upload.
-#[pyclass(frozen, eq, module = "mogs._native")]
-#[derive(PartialEq)]
-pub struct Submission {
-    /// The notebook to grade, or `None` when there is none or it is ambiguous.
-    #[pyo3(get)]
-    py: Option<PathBuf>,
-    /// The written answers, or `None`.
-    #[pyo3(get)]
-    answers: Option<PathBuf>,
-    /// Why `py` is `None`, ready to show the student.
-    #[pyo3(get)]
-    error: Option<String>,
-}
-
-#[pymethods]
-impl Submission {
-    /// As the v0.7 dataclass shows it: each field as Python's `repr`.
-    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
-        let py_repr = self.py.as_ref().into_pyobject(py)?.repr()?;
-        let answers = self.answers.as_ref().into_pyobject(py)?.repr()?;
-        let error = self.error.as_deref().into_pyobject(py)?.repr()?;
-
-        Ok(format!(
-            "Submission(py={py_repr}, answers={answers}, error={error})"
-        ))
-    }
-}
-
-/// Find the notebook and the written answers anywhere under `sub_dir`.
-#[pyfunction]
-#[pyo3(signature = (sub_dir, notebook, name=None))]
-pub fn find_submission(
-    py: Python<'_>,
-    sub_dir: PathBuf,
-    notebook: &str,
-    name: Option<&str>,
-) -> PyResult<Submission> {
-    let host = PyHost::default();
-    let found = mogs_grader::submission::find_submission(&sub_dir, notebook, name, &host);
-
-    host.finish(py, Ok(found)).map(|found| Submission {
-        py: found.py,
-        answers: found.answers,
-        error: found.error,
-    })
-}
 
 /// The data files to ship, by `PurePosixPath` relative to `root`, with folders expanded.
 #[pyfunction]
@@ -89,72 +42,51 @@ pub fn data_files<'py>(
     Ok(out)
 }
 
-/// Gradescope's `results.json` content for the outcomes of `bundle`'s tests.
-#[pyfunction]
-pub fn build_results<'py>(
-    py: Python<'py>,
-    bundle: &Bound<'py, PyAny>,
-    outcomes: &Bound<'py, PyAny>,
-    notices: Vec<String>,
-) -> PyResult<Bound<'py, PyAny>> {
-    let bundle = bundle_from_py(bundle)?;
-    let outcomes = outcomes_from_py(outcomes)?;
-    let host = PyHost::default();
-    let built = mogs_grader::results::build_results(&bundle, &outcomes, &notices, &host);
-
-    results_to_py(py, &host.finish(py, built)?)
-}
-
-/// Results for a grader crash, naming only the class of `error`.
-#[pyfunction]
-pub fn failure_results<'py>(
-    py: Python<'py>,
-    bundle: Option<&Bound<'py, PyAny>>,
-    error: &Bound<'py, PyAny>,
-) -> PyResult<Bound<'py, PyAny>> {
-    let bundle = bundle.map(bundle_from_py).transpose()?;
-    let name = error.get_type().name()?.to_string();
-
-    results_to_py(
-        py,
-        &mogs_grader::results::failure_results(bundle.as_ref(), &name),
-    )
-}
-
 /// A `mogs.grader.bundle.GradingBundle` as the Rust type, through its JSON.
-///
-/// The config's numbers come from the Python objects: the config accepts infinity (such as
-/// `budget=1e999`), which Python's JSON writes as `Infinity` and serde_json rejects.
+#[cfg(unix)]
 pub(crate) fn bundle_from_py(bundle: &Bound<'_, PyAny>) -> PyResult<Bundle> {
-    let config = bundle.getattr("config")?;
-    let data = bundle.call_method0("to_dict")?;
-    let data_config = data.get_item("config")?;
-    data_config.set_item("timeout", 0.0)?;
-    data_config.set_item("budget", 0.0)?;
+    bundle_from_dict(&bundle.call_method0("to_dict")?)
+}
 
-    for question in data_config.get_item("questions")?.try_iter()? {
-        question?.set_item("points", 0.0)?;
+/// The fields of a bundle, as `GradingBundle.to_dict` gives them, as the Rust type. It sets
+/// the numbers of `data` to 0.
+///
+/// The numbers go around JSON: the config accepts infinity (such as `budget=1e999`), which
+/// Python's JSON writes as `Infinity` and serde_json rejects.
+#[cfg(unix)]
+pub(crate) fn bundle_from_dict(data: &Bound<'_, PyAny>) -> PyResult<Bundle> {
+    let config = data.get_item("config")?;
+    let timeout: f64 = config.get_item("timeout")?.extract()?;
+    let budget: f64 = config.get_item("budget")?.extract()?;
+    let mut points: Vec<f64> = Vec::new();
+    config.set_item("timeout", 0.0)?;
+    config.set_item("budget", 0.0)?;
+
+    for question in config.get_item("questions")?.try_iter()? {
+        let question = question?;
+        points.push(question.get_item("points")?.extract()?);
+        question.set_item("points", 0.0)?;
     }
 
-    let text: String = bundle
+    let text: String = data
         .py()
         .import("json")?
-        .call_method1("dumps", (&data,))?
+        .call_method1("dumps", (data,))?
         .extract()?;
     let mut read: Bundle =
         mogs_schema::decode(&text).map_err(|error| PyValueError::new_err(error.to_string()))?;
-    read.config.timeout = config.getattr("timeout")?.extract()?;
-    read.config.budget = config.getattr("budget")?.extract()?;
-    let questions = config.getattr("questions")?.call_method0("values")?;
+    read.config.timeout = timeout;
+    read.config.budget = budget;
 
-    for (question, source) in read.config.questions.iter_mut().zip(questions.try_iter()?) {
-        question.points = source?.getattr("points")?.extract()?;
+    for (question, points) in read.config.questions.iter_mut().zip(points) {
+        question.points = points;
     }
 
     Ok(read)
 }
 
 /// `results` as Python values. Scores keep infinity and NaN, which JSON cannot carry.
+#[cfg(unix)]
 pub(crate) fn results_to_py<'py>(
     py: Python<'py>,
     results: &mogs_schema::Results,
@@ -171,31 +103,8 @@ pub(crate) fn results_to_py<'py>(
     Ok(out)
 }
 
-/// A mapping of names to `mogs.runner.Outcome`s as Rust outcomes, through their JSON.
-fn outcomes_from_py(outcomes: &Bound<'_, PyAny>) -> PyResult<IndexMap<String, Outcome>> {
-    let py = outcomes.py();
-    let dicts = PyDict::new(py);
-
-    for item in outcomes.call_method0("items")?.try_iter()? {
-        let (name, outcome): (Bound<'_, PyAny>, Bound<'_, PyAny>) = item?.extract()?;
-        dicts.set_item(name, outcome.call_method0("to_dict")?)?;
-    }
-
-    from_py(&dicts)
-}
-
-/// A JSON-like Python value as a Rust value, through `json.dumps`.
-fn from_py<T: DeserializeOwned>(value: &Bound<'_, PyAny>) -> PyResult<T> {
-    let text: String = value
-        .py()
-        .import("json")?
-        .call_method1("dumps", (value,))?
-        .extract()?;
-
-    serde_json::from_str(&text).map_err(|error| PyValueError::new_err(error.to_string()))
-}
-
 /// A Rust value as plain Python values, through `json.loads`.
+#[cfg(unix)]
 pub(crate) fn to_py<'py, T: Serialize>(py: Python<'py>, value: &T) -> PyResult<Bound<'py, PyAny>> {
     let text = serde_json::to_string(value).expect("the value is plain JSON");
 

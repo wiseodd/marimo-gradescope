@@ -55,3 +55,20 @@ def test_usage_error_exits_2(argv, capsys):
     assert captured.out == ""
     assert captured.err.startswith("error: ")
     assert "Usage: mogs" in captured.err
+
+
+def test_help_hides_the_autograder_command(capsys):
+    main(["--help"])
+    out = capsys.readouterr().out
+
+    assert "  grade " in out
+    assert "  autograde " not in out
+
+
+def test_autograder_command_takes_gradescope_paths(capsys):
+    code = main(["autograde", "--help"])
+    out = capsys.readouterr().out
+
+    assert code == 0
+    for option in ("--source", "--submission", "--results", "--workdir"):
+        assert option in out

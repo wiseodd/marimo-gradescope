@@ -13,8 +13,12 @@ pub mod files;
 #[cfg(unix)]
 pub mod process;
 pub mod results;
+#[cfg(test)]
+mod results_tests;
 #[cfg(unix)]
 pub mod sandbox;
+#[cfg(all(test, unix))]
+mod sandbox_tests;
 pub mod submission;
 #[cfg(unix)]
 mod watch;
@@ -141,8 +145,28 @@ pub(crate) mod fake {
     //! A [`Host`] for tests: plain Rust stand-ins for the few inputs the tests use.
 
     use std::sync::Mutex;
+    #[cfg(unix)]
+    use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
     use super::{GradeError, GradingUser, Host, Level, PyText};
+
+    /// Held to write a script that a test then runs, and shared to start processes. A process
+    /// started while a test writes a script keeps it open for writing until its `exec`, and
+    /// running the script then fails with "Text file busy".
+    #[cfg(unix)]
+    static SCRIPTS: RwLock<()> = RwLock::new(());
+
+    /// Hold while writing a script that a test runs.
+    #[cfg(unix)]
+    pub fn writing_script() -> RwLockWriteGuard<'static, ()> {
+        SCRIPTS.write().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Hold while a test starts processes.
+    #[cfg(unix)]
+    pub fn spawning() -> RwLockReadGuard<'static, ()> {
+        SCRIPTS.read().unwrap_or_else(|e| e.into_inner())
+    }
 
     /// Formats like Python for the values the tests pass, and records log messages.
     #[derive(Default)]
@@ -182,6 +206,26 @@ pub(crate) mod fake {
     }
 
     impl Host for FakeHost {
+        /// `root`, and `me` for the user running the tests; no one else.
+        #[cfg(unix)]
+        fn user(&self, name: &str) -> Result<GradingUser, GradeError> {
+            let (uid, gid) = match name {
+                "root" => (0, 0),
+                "me" => (
+                    rustix::process::getuid().as_raw(),
+                    rustix::process::getgid().as_raw(),
+                ),
+                _ => return Err(GradeError::Key(name.into())),
+            };
+
+            Ok(GradingUser {
+                name: name.into(),
+                uid,
+                gid,
+            })
+        }
+
+        #[cfg(not(unix))]
         fn user(&self, name: &str) -> Result<GradingUser, GradeError> {
             Err(GradeError::Key(name.into()))
         }

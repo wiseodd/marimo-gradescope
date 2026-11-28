@@ -32,15 +32,15 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from mogs._native import find_submission
-from mogs.build import build, write_zip
+from mogs._native import main
 from mogs.config import normalized_name, read_config
 from mogs.grader.bundle import bundle_from_notebook
-from mogs.grader.main import main as grader_main
 from mogs.source import BEGIN, parse_notebook
 from mogs.transform import pinned_requirement, student_notebook
 
 REPO = Path(__file__).parents[2]
+# The `mogs` command of this environment.
+MOGS = Path(sys.executable).with_name("mogs")
 DEMO = REPO / "examples" / "demo"
 DOCKERFILE = Path(__file__).with_name("Dockerfile")
 NOTEBOOK = "hw.py"
@@ -264,7 +264,12 @@ def find_runtime(
     raise Unavailable(f"no {' or '.join(names)} on PATH")
 
 
-def run(command: list[str], timeout: float, cwd: Path | None = None) -> str:
+def run(
+    command: list[str],
+    timeout: float,
+    cwd: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> str:
     """Run `command` and return its stdout.
 
     Raises:
@@ -273,7 +278,13 @@ def run(command: list[str], timeout: float, cwd: Path | None = None) -> str:
 
     try:
         result = subprocess.run(
-            command, capture_output=True, text=True, check=False, timeout=timeout, cwd=cwd
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout,
+            cwd=cwd,
+            env=env,
         )
     except subprocess.TimeoutExpired as error:
         raise CommandError(
@@ -484,14 +495,17 @@ def build_image(runtime: str, assignment: Assignment, context: Path) -> str:
     """Build the autograder image and return its tag."""
 
     wheel = build_wheel(context / "wheels")
-    result = build(assignment.folder, tool_requirement=wheel_requirement(wheel))
+    env = os.environ | {"MOGS_TOOL_REQUIREMENT": wheel_requirement(wheel)}
+    run([str(MOGS), "build", str(assignment.folder)], timeout=1800, env=env)
+    autograder = assignment.folder / "dist" / "autograder"
+    [archive] = autograder.glob("*.zip")
 
     # The "solution" case is the solved notebook an instructor uploads from dist/autograder/.
-    assert result.solved.read_bytes() == assignment.cases["solution"][NOTEBOOK]
+    assert (autograder / NOTEBOOK).read_bytes() == assignment.cases["solution"][NOTEBOOK]
     assert re.fullmatch(
-        r"hw-autograder-\d{4}_\d{2}_\d{2}T\d{2}_\d{2}_\d{2}_\d{6}\.zip", result.zip.name
+        r"hw-autograder-\d{4}_\d{2}_\d{2}T\d{2}_\d{2}_\d{2}_\d{6}\.zip", archive.name
     )
-    build_context(context, result.zip)
+    build_context(context, archive)
 
     tag = f"localhost/mogs-e2e:{uuid.uuid4().hex[:12]}"
     command = [runtime, "build", "--platform", PLATFORM, "--tag", tag, str(context)]
@@ -583,8 +597,9 @@ def grade_on_host(assignment: Assignment, root: Path, name: str) -> dict:
     shutil.copytree(assignment.folder / "data", source / "data")
     write_tree(submission, assignment.cases[name])
 
-    grader_main(
+    code = main(
         [
+            "autograde",
             "--source",
             str(source),
             "--submission",
@@ -595,6 +610,7 @@ def grade_on_host(assignment: Assignment, root: Path, name: str) -> dict:
             str(root / "work"),
         ]
     )
+    assert code == 0
 
     return json.loads(results.read_text(encoding="utf-8"))
 
@@ -735,9 +751,11 @@ def test_submission_files(assignment, tmp_path, name):
             else:
                 ast.parse(content)
 
-    found = find_submission(tmp_path, NOTEBOOK)
-    assert (found.py is None) == (name == "two_py")
-    assert (found.answers is None) == (name == "missing_pdf")
+    # Only `two_py` has more than one notebook, and only `missing_pdf` lacks the answers.
+    notebooks = [rel for rel in files if rel.endswith(".py") and not rel.startswith("__MACOSX")]
+    answers = [rel for rel in files if rel.endswith(".pdf") and not rel.startswith("__MACOSX")]
+    assert (len(notebooks) == 1) == (name != "two_py")
+    assert (answers == []) == (name == "missing_pdf")
 
 
 def test_wheel_requirement_names_the_tool():
@@ -757,7 +775,9 @@ def test_build_context_unpacks_the_zip_with_modes(tmp_path):
         "requirements.txt": b"x\n",
         "data/scores.csv": b"name,score\n",
     }
-    write_zip(archive, entries)
+    with zipfile.ZipFile(archive, "w") as zipped:
+        for name, content in entries.items():
+            zipped.writestr(name, content)
     context = tmp_path / "context"
 
     build_context(context, archive)

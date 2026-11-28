@@ -1,35 +1,36 @@
+import contextlib
+import io
 import json
+import os
 import re
 import shutil
 import stat
 import subprocess
 import sys
 import zipfile
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from mogs import __version__
-from mogs import build as build_module
+from mogs import __version__, _analysis
+from mogs._analysis import BuildError, data_files, find_notebook, source_notebook
 from mogs._native import main
-from mogs.build import (
-    BuildError,
-    BuildResult,
-    QuestionScore,
-    build,
-    data_files,
-    failure_report,
-    find_notebook,
-    free_points_warnings,
-    source_notebook,
-)
-from mogs.cli import report
-from mogs.config import AssignmentConfig, ConfigError, Question, read_config
-from mogs.runner import FailureReason, Outcome
+from mogs.config import read_config
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
 ZIP_RE = re.compile(r"hw-autograder-\d{4}_\d{2}_\d{2}T\d{2}_\d{2}_\d{2}_\d{6}\.zip")
 ZIP_NAMES = ["bundle.json", "data/scores.csv", "requirements.txt", "run_autograder", "setup.sh"]
+SCORES = """\
+Question        Public  Hidden   Solution      Blank
+Average              2       2        4/4        0/4
+Reading scores       2       2        6/6        0/6
+Total                               10/10       0/10
+
+Not in the autograder total:
+- q3 Empty lists: 5 pts, graded by hand
+    ## Question 3: Empty lists
+"""
 
 
 def demo_copy(target: Path) -> Path:
@@ -47,14 +48,46 @@ def tree(root: Path) -> list[str]:
     return sorted(str(path.relative_to(root)) for path in root.rglob("*") if path.is_file())
 
 
+@dataclass(frozen=True, slots=True)
+class Built:
+    """A `mogs build` run: its exit code, what it printed, and where its artifacts are."""
+
+    code: int
+    out: str
+    err: str
+    student: Path
+    solved: Path
+
+    @property
+    def zip(self) -> Path:
+        [archive] = self.solved.parent.glob("*.zip")
+        return archive
+
+
+def build(folder: Path) -> Built:
+    """Run `mogs build folder`."""
+
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        code = main(["build", str(folder)])
+
+    dist = folder / "dist"
+    student = dist / "student" / "hw.zip"
+
+    return Built(code, out.getvalue(), err.getvalue(), student, dist / "autograder" / "hw.py")
+
+
 @pytest.fixture(scope="module")
-def demo(tmp_path_factory) -> tuple[Path, BuildResult]:
+def demo(tmp_path_factory) -> tuple[Path, Built]:
     folder = demo_copy(tmp_path_factory.mktemp("build") / "demo")
     stale = folder / "dist" / "autograder" / "old-autograder.zip"
     stale.parent.mkdir(parents=True)
     stale.write_text("stale", encoding="utf-8")
 
-    return folder, build(folder)
+    result = build(folder)
+    assert result.code == 0, result.err
+
+    return folder, result
 
 
 # Demo build
@@ -64,10 +97,31 @@ def demo(tmp_path_factory) -> tuple[Path, BuildResult]:
 def test_artifact_paths(demo):
     folder, result = demo
 
-    assert result.student == folder / "dist" / "student" / "hw.zip"
-    assert result.solved == folder / "dist" / "autograder" / "hw.py"
-    assert result.zip.parent == folder / "dist" / "autograder"
+    assert result.student.is_file()
+    assert result.solved.is_file()
     assert ZIP_RE.fullmatch(result.zip.name), result.zip.name
+    assert result.out.splitlines()[:4] == [
+        "All done!",
+        f"Upload to Gradescope  : {result.zip}",
+        f"Distribute to students: {folder / 'dist' / 'student' / 'hw.zip'}",
+        "",
+    ]
+    assert result.err == ""
+
+
+@pytest.mark.network
+def test_report_paths_are_relative_to_the_working_directory(monkeypatch, tmp_path):
+    folder = demo_copy(tmp_path / "demo")
+    monkeypatch.chdir(tmp_path)
+
+    result = build(folder)
+
+    assert result.code == 0, result.err
+    archive = result.zip
+    assert result.out.splitlines()[1:3] == [
+        f"Upload to Gradescope  : demo/dist/autograder/{archive.name}",
+        "Distribute to students: demo/dist/student/hw.zip",
+    ]
 
 
 @pytest.mark.network
@@ -91,6 +145,8 @@ def test_zip_modes_and_timestamps(demo):
         name: 0o755 if name in ("setup.sh", "run_autograder") else 0o644 for name in ZIP_NAMES
     }
     assert {info.date_time for info in infos} == {(1980, 1, 1, 0, 0, 0)}
+    assert {info.create_system for info in infos} == {3}
+    assert {info.compress_type for info in infos} == {zipfile.ZIP_DEFLATED}
 
 
 @pytest.mark.network
@@ -101,10 +157,14 @@ def test_zip_contents(demo):
         requirements = archive.read("requirements.txt").decode()
         data = archive.read("data/scores.csv")
         setup = archive.read("setup.sh").decode()
+        run_autograder = archive.read("run_autograder").decode()
 
     assert requirements.endswith(f"\nmogs=={__version__}\n")
     assert data == (folder / "data" / "scores.csv").read_bytes()
     assert setup.startswith("#!")
+    assert run_autograder == (
+        "#!/usr/bin/env bash\nset -euo pipefail\nexec /opt/mogs-venv/bin/mogs autograde\n"
+    )
 
 
 @pytest.mark.network
@@ -182,22 +242,8 @@ def test_public_tests_sit_next_to_both_copies(demo):
 def test_solution_full_marks_and_blank_zero(demo):
     _, result = demo
 
-    assert result.solution == (10.0, 10.0)
-    assert result.blank == (0.0, 10.0)
-    assert [
-        (score.title, score.solution, score.blank, score.public, score.hidden)
-        for score in result.scores
-    ] == [
-        ("Average", 4, 0, 2, 2),
-        ("Reading scores", 6, 0, 2, 2),
-        ("Empty lists", None, None, 0, 0),
-    ]
-    assert [score.prompts for score in result.scores] == [
-        (),
-        (),
-        ("## Question 3: Empty lists",),
-    ]
-    assert not any("blank" in warning for warning in result.warnings)
+    assert result.out.split("\n", 4)[4] == SCORES
+    assert "blank" not in result.out
 
 
 @pytest.mark.network
@@ -223,6 +269,21 @@ def test_solved_copy_and_requirements_next_to_the_zip(demo):
 
 
 @pytest.mark.network
+def test_uv_installer_url_exists(demo):
+    # curl, as in setup.sh; the CDN refuses urllib's default user agent.
+    _, result = demo
+    with zipfile.ZipFile(result.zip) as archive:
+        setup = archive.read("setup.sh").decode()
+
+    [url] = re.findall(r"https://astral\.sh/uv/[^/]+/install\.sh", setup)
+    command = ["curl", "-fsSLI", "-o", "/dev/null", "-w", "%{http_code}", url]
+    found = subprocess.run(command, capture_output=True, text=True, timeout=60)
+
+    assert found.returncode == 0, found.stderr
+    assert found.stdout == "200"
+
+
+@pytest.mark.network
 def test_return_solution_line_grades_full_and_blank_zero(tmp_path):
     folder = demo_copy(tmp_path / "demo")
     edit(
@@ -237,8 +298,7 @@ def test_return_solution_line_grades_full_and_blank_zero(tmp_path):
         student = archive.read("hw/hw.py").decode()
 
     assert "def mean(xs):\n    return ...\n" in student
-    assert result.solution == (10.0, 10.0)
-    assert result.blank == (0.0, 10.0)
+    assert "Total                               10/10       0/10\n" in result.out
 
 
 # Failures through the CLI
@@ -253,6 +313,9 @@ def test_broken_solution_fails_naming_the_test(tmp_path, capsys):
     err = capsys.readouterr().err
 
     assert code == 1
+    assert err.startswith(
+        "Build failed.\nThe solved copy of hw.py does not get full marks. Failing tests:\n- "
+    )
     assert "test_q1_whole_numbers" in err
     assert "test_q1_negative" in err
     assert "test_q2_reads_scores" not in err
@@ -280,6 +343,40 @@ def test_self_check_installs_the_header_dependencies(tmp_path, capsys):
 
 
 @pytest.mark.network
+def test_self_check_grades_with_this_package(tmp_path, capsys):
+    # A hidden test checks the version of mogs that grades the solved copy.
+    folder = demo_copy(tmp_path / "demo")
+    edit(
+        folder / "hw.py",
+        "    def test_q1_negative():\n",
+        "    def test_q1_negative():\n        import importlib.metadata\n\n"
+        f"        assert importlib.metadata.version('mogs') == {__version__!r}\n",
+    )
+
+    code = main(["build", str(folder)])
+
+    assert code == 0, capsys.readouterr().err
+
+
+@pytest.mark.network
+def test_failed_install_names_the_requirements(tmp_path, capsys):
+    folder = demo_copy(tmp_path / "demo")
+    (folder / "requirements.txt").write_text("no-such-package-mogs-test==0.0.1\n", encoding="utf-8")
+    edit(folder / "hw.py", "mogs.assignment(", 'mogs.assignment(requirements="requirements.txt", ')
+
+    code = main(["build", str(folder)])
+    err = capsys.readouterr().err
+
+    assert code == 1
+    assert err.startswith(
+        "Build failed.\n`uv` could not install the requirements in the build's grading "
+        "environment:\n"
+    )
+    assert "no-such-package-mogs-test" in err
+    assert not (folder / "dist").exists()
+
+
+@pytest.mark.network
 def test_blank_score_warning_names_passing_tests(tmp_path, capsys):
     folder = demo_copy(tmp_path / "demo")
     edit(
@@ -292,7 +389,10 @@ def test_blank_score_warning_names_passing_tests(tmp_path, capsys):
     out = capsys.readouterr().out
 
     assert code == 0
-    assert "test_q1_trivial" in out
+    assert out.endswith(
+        "\n\nWarnings:\n- These tests pass on the blank student notebook, so they give points "
+        "for no work: test_q1_trivial\n"
+    )
     [archive] = (folder / "dist" / "autograder").glob("*.zip")
     assert f"Upload to Gradescope  : {archive}" in out
     assert f"Distribute to students: {folder / 'dist' / 'student' / 'hw.zip'}" in out
@@ -309,6 +409,7 @@ def test_validation_errors_all_listed_and_no_dist(tmp_path, capsys):
     err = capsys.readouterr().err
 
     assert code == 1
+    assert err.startswith(f"Build failed.\n{folder / 'hw.py'} has ")
     assert "Question `q7` has no tests" in err
     assert "test_q2_reads_scores" in err
     assert "test_q9_single" in err
@@ -323,8 +424,10 @@ def test_two_candidates_listed(tmp_path, capsys):
     err = capsys.readouterr().err
 
     assert code == 1
-    assert "hw.py" in err
-    assert "other.py" in err
+    assert err == (
+        f"Build failed.\nSeveral notebooks in {folder} call `mogs.assignment(...)`; keep "
+        "exactly one:\n  hw.py\n  other.py\n"
+    )
 
 
 def test_no_candidate(tmp_path):
@@ -332,6 +435,13 @@ def test_no_candidate(tmp_path):
 
     with pytest.raises(BuildError, match=r"No notebook.*`mogs init`"):
         find_notebook(tmp_path)
+
+
+def test_missing_folder_fails_the_build(tmp_path, capsys):
+    code = main(["build", str(tmp_path / "nope")])
+
+    assert code == 1
+    assert capsys.readouterr().err == f"Build failed.\n{tmp_path / 'nope'} does not exist.\n"
 
 
 # What `marimo convert` makes of an otter-assign notebook's raw cells.
@@ -490,9 +600,11 @@ def test_bad_data_files(tmp_path, files, message):
     (folder / "tests" / "x.txt").write_text("", encoding="utf-8")
     edit(folder / "hw.py", 'files=["data/scores.csv"]', f"files={files}")
 
-    with pytest.raises(ConfigError, match=message):
-        build(folder)
+    result = build(folder)
 
+    assert result.code == 1
+    assert result.err.startswith("Build failed.\nmogs.assignment() `files`")
+    assert message in result.err
     assert not (folder / "dist").exists()
 
 
@@ -503,8 +615,10 @@ def test_data_files_cannot_take_reserved_names_in_any_case(tmp_path, name):
     folder = demo_copy(tmp_path / "demo")
     edit(folder / "hw.py", 'files=["data/scores.csv"]', f'files=["{name}"]')
 
-    with pytest.raises(ConfigError, match="would replace"):
-        build(folder)
+    result = build(folder)
+
+    assert result.code == 1
+    assert "would replace" in result.err
 
 
 def test_help_is_short(capsys):
@@ -513,22 +627,21 @@ def test_help_is_short(capsys):
 
 
 @pytest.mark.network
-def test_failed_write_removes_the_old_dist(tmp_path, monkeypatch, capsys):
+def test_failed_self_check_removes_the_old_dist(tmp_path, capsys):
     folder = demo_copy(tmp_path / "demo")
     old = folder / "dist" / "student" / "old.txt"
     old.parent.mkdir(parents=True)
     old.write_text("old", encoding="utf-8")
+    (folder / "dist" / "autograder").mkdir()
     (folder / "dist" / "notes.txt").write_text("mine", encoding="utf-8")
+    edit(folder / "hw.py", "return sum(xs) / len(xs)", "return sum(xs) / (len(xs) + 1)")
 
-    def broken(path, entries):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(build_module, "write_zip", broken)
     code = main(["build", str(folder)])
 
     assert code == 1
-    assert "disk full" in capsys.readouterr().err
+    assert "does not get full marks" in capsys.readouterr().err
     assert tree(folder / "dist") == ["notes.txt"]
+    assert not (folder / "dist" / "autograder").exists()
 
 
 def test_invalid_notebook_removes_the_old_dist(tmp_path, capsys):
@@ -548,151 +661,57 @@ def test_name_cannot_escape_dist(tmp_path):
     folder = demo_copy(tmp_path / "demo")
     edit(folder / "hw.py", "mogs.assignment(", 'mogs.assignment(name="../../escaped", ')
 
-    with pytest.raises(ConfigError, match="`name`"):
-        build(folder)
+    result = build(folder)
 
+    assert result.code == 1
+    assert "`name`" in result.err
     assert not (folder / "dist").exists()
 
 
-def test_windows_is_refused(tmp_path, monkeypatch):
+def test_bad_python_version_is_refused(tmp_path):
     folder = demo_copy(tmp_path / "demo")
-    monkeypatch.setattr(build_module.sys, "platform", "win32")
+    (folder / "requirements.txt").write_text("", encoding="utf-8")
+    edit(
+        folder / "hw.py",
+        "mogs.assignment(",
+        'mogs.assignment(requirements="requirements.txt", python="latest", ',
+    )
 
-    with pytest.raises(BuildError, match="Linux or macOS"):
-        build(folder)
+    result = build(folder)
+
+    assert result.code == 1
+    assert result.err == (
+        'Build failed.\nmogs.assignment() `python` must be a version such as "3.13", got '
+        "'latest'.\n"
+    )
+    assert not (folder / "dist").exists()
+
+
+def test_windows_is_refused(tmp_path, monkeypatch, capsys):
+    folder = demo_copy(tmp_path / "demo")
+    monkeypatch.setattr(sys, "platform", "win32")
+
+    code = main(["build", str(folder)])
+
+    assert code == 1
+    assert capsys.readouterr().err == (
+        "Build failed.\nGrading needs Linux or macOS (WSL on Windows).\n"
+    )
 
 
 def test_cli_does_not_import_the_grader():
-    code = "import sys, mogs.cli; print(sorted(sys.modules))"
+    code = (
+        "import sys, mogs._analysis\n"
+        "from mogs._native import main\n"
+        "main(['--help'])\n"
+        "print(sorted(sys.modules))"
+    )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
 
     assert result.returncode == 0, result.stderr
-    assert "'mogs.build'" in result.stdout
-    assert "'mogs.grader.main'" not in result.stdout
+    assert "'mogs._analysis'" in result.stdout
+    assert "'mogs.grader.child'" not in result.stdout
     assert "'resource'" not in result.stdout
-
-
-def fake_result(dist: Path, **fields) -> BuildResult:
-    return BuildResult(
-        student=dist / "student" / "hw.zip",
-        zip=dist / "autograder" / "hw-autograder-2026_09_30T12_30_41_890583.zip",
-        solved=dist / "autograder" / "hw.py",
-        solution=(4.0, 4.0),
-        blank=(0.0, 4.0),
-        warnings=[],
-        **fields,
-    )
-
-
-def test_report_starts_with_what_to_do(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-
-    lines = report(fake_result(tmp_path / "demo" / "dist", scores=())).splitlines()
-
-    assert lines[:4] == [
-        "All done!",
-        "Upload to Gradescope  : demo/dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
-        "Distribute to students: demo/dist/student/hw.zip",
-        "",
-    ]
-
-
-def test_report_shows_absolute_paths_outside_the_working_directory(tmp_path, monkeypatch):
-    dist = tmp_path / "demo" / "dist"
-    elsewhere = tmp_path / "elsewhere"
-    elsewhere.mkdir()
-    monkeypatch.chdir(elsewhere)
-
-    lines = report(fake_result(dist, scores=())).splitlines()
-
-    assert lines[2] == f"Distribute to students: {dist / 'student' / 'hw.zip'}"
-
-
-def test_report_shows_manual_questions(tmp_path):
-    result = BuildResult(
-        student=tmp_path / "dist/student/hw.zip",
-        zip=tmp_path / "dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
-        solved=tmp_path / "dist/autograder/hw.py",
-        solution=(4.0, 4.0),
-        blank=(0.0, 4.0),
-        warnings=["careful"],
-        scores=(
-            QuestionScore("q1", "Average", 4, 4, 0),
-            QuestionScore("q3", "Proof", 5, None, None),
-        ),
-    )
-
-    text = report(result)
-
-    assert "Proof" in text
-    assert "graded by hand" in text
-    assert "5 pts" in text
-    assert "- careful" in text
-
-
-def test_report_previews_the_text_of_written_questions(tmp_path):
-    result = fake_result(
-        tmp_path / "dist",
-        scores=(
-            QuestionScore("q3", "Proof", 5, None, None, prompts=("## Question 3", "(b) Then")),
-            QuestionScore("q4", "Essay", 2, None, None),
-        ),
-    )
-
-    text = report(result)
-
-    assert (
-        "- q3 Proof: 5 pts, graded by hand\n    ## Question 3\n    (b) Then\n"
-        "- q4 Essay: 2 pts, graded by hand\n    no question text"
-    ) in text
-
-
-def test_report_says_a_zero_point_manual_question_is_not_graded(tmp_path):
-    result = fake_result(
-        tmp_path / "dist",
-        scores=(
-            QuestionScore("q1", "Average", 4, 4, 0),
-            QuestionScore("q5", "Proof", 0, None, None),
-        ),
-    )
-
-    text = report(result)
-
-    assert "Not in the autograder total:\n- q5 Proof: collected in the PDF, not graded" in text
-    assert "graded by hand" not in text
-    assert "graded on Gradescope" not in text
-
-
-def test_report_shows_public_and_hidden_test_counts(tmp_path):
-    result = BuildResult(
-        student=tmp_path / "dist/student/hw.zip",
-        zip=tmp_path / "dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
-        solved=tmp_path / "dist/autograder/hw.py",
-        solution=(4.0, 4.0),
-        blank=(0.0, 4.0),
-        warnings=[],
-        scores=(QuestionScore("q1", "Average", 4, 4, 0, public=2, hidden=3),),
-    )
-
-    lines = report(result).splitlines()
-    header = next(line for line in lines if line.startswith("Question"))
-    [row] = [line for line in lines if line.startswith("Average")]
-
-    assert header.split() == ["Question", "Public", "Hidden", "Solution", "Blank"]
-    assert row.split() == ["Average", "2", "3", "4/4", "0/4"]
-
-
-def test_failure_report_merges_identical_messages():
-    outcomes = [
-        Outcome("test_q1_a", False, "not run: crash", FailureReason.NOT_RUN),
-        Outcome("test_q1_b", False, "not run: crash", FailureReason.NOT_RUN),
-        Outcome("test_q2_a", False, "boom\nline two", FailureReason.ERROR),
-    ]
-
-    assert failure_report(outcomes) == [
-        "- test_q1_a, test_q1_b: not run: crash",
-        "- test_q2_a: boom\n    line two",
-    ]
 
 
 @pytest.mark.network
@@ -707,35 +726,117 @@ def test_zero_point_manual_question_builds_without_warnings(tmp_path):
 
     result = build(folder)
 
-    assert result.warnings == []
-    assert [(score.id, score.points) for score in result.scores][-1] == ("q3", 0)
+    assert result.code == 0, result.err
+    assert "Warnings:" not in result.out
+    assert result.out.endswith(
+        "Not in the autograder total:\n- q3 Empty lists: collected in the PDF, not graded\n"
+        "    ## Question 3: Empty lists\n"
+    )
 
 
-def test_failure_report_names_questions_for_load_failures():
-    setup = "the grader's setup code failed (ModuleNotFoundError: No module named 'torch')"
-    outcomes = [
-        *(Outcome(f"test_q1_{i}", False, setup, FailureReason.LOAD_FAILED) for i in range(20)),
-        *(Outcome(f"test_q2_{i}", False, setup, FailureReason.LOAD_FAILED) for i in range(10)),
-        Outcome("test_q3_a", False, "boom", FailureReason.ERROR),
+def requirements_file_copy(target: Path, requirements: str) -> Path:
+    """The demo, with its requirements from a file instead of the header, so no `uv export`."""
+
+    folder = demo_copy(target)
+    (folder / "requirements.txt").write_text(requirements, encoding="utf-8")
+    edit(folder / "hw.py", "mogs.assignment(", 'mogs.assignment(requirements="requirements.txt", ')
+
+    return folder
+
+
+def test_tool_requirement_comes_from_the_environment(tmp_path, monkeypatch):
+    folder = requirements_file_copy(tmp_path / "demo", "numpy==2.0\n")
+    monkeypatch.setenv("MOGS_TOOL_REQUIREMENT", "mogs @ file:///wheels/mogs.whl")
+
+    inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
+
+    assert inputs["requirements"] == "numpy==2.0\nmogs @ file:///wheels/mogs.whl\n"
+    assert inputs["grading_requirements"] == "numpy==2.0\n"
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_tool_requirement_defaults_to_this_version(tmp_path, monkeypatch, value):
+    folder = requirements_file_copy(tmp_path / "demo", "numpy==2.0\n")
+    if value is None:
+        monkeypatch.delenv("MOGS_TOOL_REQUIREMENT", raising=False)
+    else:
+        monkeypatch.setenv("MOGS_TOOL_REQUIREMENT", value)
+
+    inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
+
+    assert inputs["requirements"] == f"numpy==2.0\nmogs=={__version__}\n"
+
+
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="root reads any file")
+def test_bad_python_version_comes_before_an_unreadable_data_file(tmp_path):
+    folder = requirements_file_copy(tmp_path / "demo", "")
+    edit(folder / "hw.py", "mogs.assignment(", 'mogs.assignment(python="latest", ')
+    (folder / "data" / "scores.csv").chmod(0)
+
+    result = build(folder)
+
+    assert result.code == 1
+    assert result.err == (
+        'Build failed.\nmogs.assignment() `python` must be a version such as "3.13", got '
+        "'latest'.\n"
+    )
+
+
+@pytest.mark.network
+def test_os_error_names_dist_as_python_shows_it(tmp_path, monkeypatch):
+    # `dist` is a file, so it cannot be made: v0.7 named it `dist`, not `./dist`.
+    folder = demo_copy(tmp_path / "demo")
+    (folder / "dist").write_text("", encoding="utf-8")
+    monkeypatch.chdir(folder)
+
+    result = build(Path("."))
+
+    assert result.code == 1
+    assert result.err == "Build failed.\n[Errno 17] File exists: 'dist'\n"
+
+
+def test_build_inputs_describe_the_questions(tmp_path):
+    folder = requirements_file_copy(tmp_path / "demo", "")
+
+    inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
+
+    assert inputs["questions"] == [
+        {
+            "id": "q1",
+            "title": "Average",
+            "points": 4,
+            "public": 2,
+            "hidden": 2,
+            "prompts": [],
+        },
+        {
+            "id": "q2",
+            "title": "Reading scores",
+            "points": 6,
+            "public": 2,
+            "hidden": 2,
+            "prompts": [],
+        },
+        {
+            "id": "q3",
+            "title": "Empty lists",
+            "points": 5,
+            "public": 0,
+            "hidden": 0,
+            "prompts": ["## Question 3: Empty lists"],
+        },
     ]
-
-    assert failure_report(outcomes) == [
-        f"- 30 tests of q1, q2: {setup}",
-        "- test_q3_a: boom",
-    ]
+    assert [rel for rel, _ in inputs["data"]] == ["data/scores.csv"]
+    assert [rel for rel, _ in inputs["tests"]] == ["tests/q1.py", "tests/q2.py"]
 
 
-def test_marimo_check_warnings_are_passed_through(tmp_path, monkeypatch):
-    def fake_run(command, **kwargs):
-        return subprocess.CompletedProcess(command, 0, "warning: something odd", "")
+def test_written_question_without_prompt_text_says_so(tmp_path, monkeypatch):
+    folder = requirements_file_copy(tmp_path / "demo", "")
+    monkeypatch.setattr(_analysis, "prompt_previews", lambda nb, qid: ())
 
-    monkeypatch.setattr(build_module.subprocess, "run", fake_run)
-    notebook = tmp_path / "hw.py"
-    notebook.write_text("", encoding="utf-8")
+    inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
 
-    assert build_module.marimo_check(notebook, "solved notebook", sys.executable) == [
-        "`marimo check` on the solved notebook:\nwarning: something odd"
-    ]
+    assert [q["prompts"] for q in inputs["questions"]] == [[], [], ["no question text"]]
 
 
 def test_data_files_skip_junk(tmp_path):
@@ -749,29 +850,3 @@ def test_data_files_skip_junk(tmp_path):
     files = data_files(folder, read_config(src, folder / "hw.py"))
 
     assert [str(rel) for rel in files] == ["data/scores.csv"]
-
-
-def test_report_says_one_pt(tmp_path):
-    result = fake_result(tmp_path / "dist", scores=(QuestionScore("q3", "Proof", 1, None, None),))
-
-    text = report(result)
-
-    assert "- q3 Proof: 1 pt, graded by hand" in text
-
-
-def test_free_points_warning_names_tests_that_pass_blank():
-    cfg = AssignmentConfig("A", "hw.py", {"q1": Question("q1", "Q", 4)})
-    outcomes = {"test_q1_a": Outcome("test_q1_a", True), "test_q1_b": Outcome("test_q1_b", False)}
-
-    [warning] = free_points_warnings(outcomes, cfg)
-
-    assert "test_q1_a" in warning
-    assert "test_q1_b" not in warning
-
-
-def test_free_points_warning_skips_zero_point_questions():
-    questions = {"q1": Question("q1", "Q", 4), "q2": Question("q2", "Practice", 0)}
-    cfg = AssignmentConfig("A", "hw.py", questions)
-    outcomes = {"test_q1_a": Outcome("test_q1_a", False), "test_q2_a": Outcome("test_q2_a", True)}
-
-    assert free_points_warnings(outcomes, cfg) == []

@@ -11,7 +11,9 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - `src/mogs/`: the Python package, imported and published on PyPI.
   `config.py` reads the config from the notebook's `mogs.assignment(...)` and
   `mogs.grade(...)` calls (statically, from the AST) and edits the PEP 723
-  header as text. `cli.py` holds the `build` and `grade` commands.
+  header as text. `_analysis.py` gives `build` and `grade` what they need
+  from the notebook as plain data: the student notebook, the bundle, the
+  requirements, the data files and the warnings.
 - `crates/mogs-pdf/`: the PDF of written answers, plain Rust with cargo tests.
   `src/mogs/_answers.py` builds the questions from the notebook; this crate
   finds the formulas, runs Typst and falls back to LaTeX source or plain text.
@@ -20,19 +22,25 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   the crates and the vendored packages together.
 - `crates/mogs/`: the extension module `mogs._native`, in Rust (PyO3, abi3
   for Python 3.13 and newer). The `mogs` command is the console script
-  `mogs._native:main`, which parses the command line with clap and calls the
-  Python handlers in `mogs.cli` for `build` and `grade`. maturin builds
+  `mogs._native:main`, which parses the command line with clap. maturin builds
   it into one wheel per platform together with `src/mogs/`, and
   `src/mogs/_native.pyi` types it. The version is `[workspace.package] version`
   in `Cargo.toml`.
 - `crates/mogs-cli/`: the clap definition of the command line and
   `mogs init`, plain Rust with cargo tests. Python's text, checks and file
   operations come in through its `Interpreter` trait.
+- `crates/mogs-build/`: `mogs build` and `mogs grade`, plain Rust with cargo
+  tests. It writes the zips and grades the solved and blank copies. The
+  notebook's analysis and Python's text and exceptions come in through its
+  `Interpreter` trait. `templates/` holds `setup.sh` and `run_autograder`,
+  which runs the hidden command `mogs autograde`.
 - `crates/mogs-grader/`: the grading supervisor, plain Rust with cargo tests.
   It runs the Python grading child (`python -m mogs.grader.child <fd>`),
   enforces its deadlines and builds `results.json`. `crates/mogs/src/grader/`
   only converts values to and from Python. Text with Python's rules (`repr`,
-  `:g`, `round`) comes from Python through the `PyText` trait.
+  `:g`, `round`) comes from Python through the `PyText` trait. Its sandbox
+  tests run the real child on `$VIRTUAL_ENV/bin/python`, so run them through
+  `uv run`, as `make test` does.
 - `crates/mogs-schema/`: the JSON messages between Rust and
   Python (job, events, bundle, `results.json`) as Rust types. Every
   message but `results.json` has `"schema": 1`: bump `SCHEMA` there and in
@@ -45,8 +53,9 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   through the real `/autograder/run_autograder`. They need docker or podman
   (`MOGS_CONTAINER=docker|podman` picks one) and network, and take several
   minutes. The wheel for the image comes from `maturin build --zig` for
-  manylinux_2_17 x86_64, so it builds on any host. Without a runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI)
-  makes that a failure. The base image is amd64 only: on an arm64 host it runs
+  manylinux_2_17 x86_64, so it builds on any host. `MOGS_TOOL_REQUIREMENT` makes
+  `mogs build` put that wheel in the autograder's `requirements.txt`. Without a
+  runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI) makes that a failure. The base image is amd64 only: on an arm64 host it runs
   under emulation, which is slow enough that grading timeouts may trip.
 - `.github/workflows/release.yml`: on a published GitHub release (tags like
   `0.7`, no `v`), checks the tag against the `Cargo.toml` version, builds the

@@ -5,19 +5,24 @@ from pathlib import Path
 
 import pytest
 
-from mogs import regrade
+from mogs import _analysis
+from mogs._analysis import BuildError
 from mogs._native import main
-from mogs.build import BuildError, build
-from mogs.regrade import GradeResult, grade_submission
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
 TOTAL = 10
+FULL_MARKS = """
+Question            Score
+Average               4/4
+Reading scores        6/6
+Total               10/10
+"""
 
 
 @pytest.fixture(scope="module")
 def demo(tmp_path_factory) -> Path:
     folder = demo_copy(tmp_path_factory.mktemp("grade") / "demo")
-    build(folder)
+    assert main(["build", str(folder)]) == 0
 
     return folder
 
@@ -31,12 +36,15 @@ def edited(source: Path, target: Path, old: str, new: str) -> Path:
 
 
 @pytest.mark.network
-def test_solved_copy_gets_full_marks(demo):
-    result = grade_submission(demo, demo / "dist" / "autograder" / "hw.py")
+def test_solved_copy_gets_full_marks(demo, capsys):
+    submission = demo / "dist" / "autograder" / "hw.py"
 
-    assert isinstance(result, GradeResult)
-    assert result.score == (TOTAL, TOTAL)
-    assert all(outcome.passed for outcome in result.outcomes.values())
+    code = main(["grade", str(demo), str(submission)])
+    captured = capsys.readouterr()
+
+    assert code == 0, captured.err
+    assert captured.out == f"Graded:  {submission}\n{FULL_MARKS}"
+    assert captured.err == ""
 
 
 @pytest.mark.network
@@ -52,24 +60,36 @@ def test_report_marks_hidden_failures(demo, tmp_path, capsys):
     out = capsys.readouterr().out
 
     assert code == 0
-    assert "test_q1_negative (hidden)" in out
-    assert "test_q1_whole_numbers" not in out
-    assert "Average" in out
-    assert f"/{TOTAL}" in out
+    assert out == (
+        f"Graded:  {submission}\n"
+        "\n"
+        "Question            Score\n"
+        "Average               3/4\n"
+        "Reading scores        6/6\n"
+        "Total                9/10\n"
+        "\n"
+        "Failing tests:\n"
+        "- test_q1_negative (hidden): In test_q1_negative, line 6:\n"
+        "        assert mean([-4, 4, -6]) == -2\n"
+        "    AssertionError: assert 0 == -2\n"
+        "     +  where 0 = mean([-4, 4, -6])\n"
+    )
 
 
 @pytest.mark.network
-def test_folder_submission_finds_the_notebook(demo, tmp_path):
+def test_folder_submission_finds_the_notebook(demo, tmp_path, capsys):
     upload = tmp_path / "upload"
     upload.mkdir()
     with zipfile.ZipFile(demo / "dist" / "student" / "hw.zip") as archive:
         (upload / "hw.py").write_bytes(archive.read("hw/hw.py"))
     (upload / "hw_answers.pdf").write_bytes(b"%PDF-1.4")
 
-    result = grade_submission(demo, upload)
+    code = main(["grade", str(demo), str(upload)])
+    out = capsys.readouterr().out
 
-    assert result.submission == upload / "hw.py"
-    assert result.score == (0, TOTAL)
+    assert code == 0
+    assert out.startswith(f"Graded:  {upload / 'hw.py'}\n")
+    assert f"Total                0/{TOTAL}\n" in out
 
 
 def demo_copy(target: Path) -> Path:
@@ -85,7 +105,7 @@ def test_folder_without_notebook_is_an_error(tmp_path, capsys):
     code = main(["grade", str(folder), str(upload)])
 
     assert code == 1
-    assert "No `.py` file found" in capsys.readouterr().err
+    assert capsys.readouterr().err.startswith(f"Grading failed.\n{upload}: No `.py` file found")
 
 
 def test_missing_submission_is_an_error(tmp_path, capsys):
@@ -94,14 +114,27 @@ def test_missing_submission_is_an_error(tmp_path, capsys):
     code = main(["grade", str(folder), str(tmp_path / "nope.py")])
 
     assert code == 1
-    assert "nope.py" in capsys.readouterr().err
+    assert capsys.readouterr().err == (
+        f"Grading failed.\n{tmp_path / 'nope.py'} is not a file or folder.\n"
+    )
 
 
-def test_windows_is_refused(tmp_path, monkeypatch):
+def test_invalid_source_notebook_is_an_error(tmp_path, capsys):
+    code = main(["grade", str(tmp_path / "nope"), str(tmp_path / "hw.py")])
+
+    assert code == 1
+    assert capsys.readouterr().err == f"Grading failed.\n{tmp_path / 'nope'} does not exist.\n"
+
+
+def test_windows_is_refused(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "platform", "win32")
 
-    with pytest.raises(BuildError, match="Linux or macOS"):
-        grade_submission(tmp_path, tmp_path / "hw.py")
+    code = main(["grade", str(tmp_path), str(tmp_path / "hw.py")])
+
+    assert code == 1
+    assert capsys.readouterr().err == (
+        "Grading failed.\nGrading needs Linux or macOS (WSL on Windows).\n"
+    )
 
 
 @pytest.mark.network
@@ -118,20 +151,22 @@ def test_load_failures_keep_test_names_and_hidden_marks(demo, tmp_path, capsys):
     out = captured.out
 
     assert code == 1
-    assert "failed to load" in captured.err
+    assert captured.err.startswith(f"Grading failed.\n{submission} failed to load: ")
     assert "while loading your notebook" in out
     assert "test_q1_whole_numbers" in out
     assert "test_q1_negative (hidden)" in out
 
 
 @pytest.mark.network
-def test_symlinked_submission_is_graded(demo, tmp_path):
+def test_symlinked_submission_is_graded(demo, tmp_path, capsys):
     link = tmp_path / "hw.py"
     link.symlink_to(demo / "dist" / "autograder" / "hw.py")
 
-    result = grade_submission(demo, link)
+    code = main(["grade", str(demo), str(link)])
+    out = capsys.readouterr().out
 
-    assert result.score == (TOTAL, TOTAL)
+    assert code == 0
+    assert out == f"Graded:  {demo / 'dist' / 'autograder' / 'hw.py'}\n{FULL_MARKS}"
 
 
 def test_missing_data_file_is_an_error(tmp_path, capsys):
@@ -155,8 +190,7 @@ def test_zip_submission_is_unpacked_and_graded(demo, tmp_path, capsys):
     out = capsys.readouterr().out
 
     assert code == 0
-    assert f"Graded:  {upload / 'hw.py'}" in out
-    assert f"{TOTAL}/{TOTAL}" in out
+    assert out == f"Graded:  {upload / 'hw.py'}\n{FULL_MARKS}"
 
 
 @pytest.mark.network
@@ -234,13 +268,14 @@ def test_failing_hidden_helper_is_a_normal_result(tmp_path, capsys):
     folder = tmp_path / "hidden"
     folder.mkdir()
     (folder / "hw.py").write_text(HIDDEN_ONLY, encoding="utf-8")
-    build(folder)
+    assert main(["build", str(folder)]) == 0
     submission = edited(
         folder / "dist" / "autograder" / "hw.py",
         tmp_path / "hw.py",
         "def double(x):",
         "def triple(x):",
     )
+    capsys.readouterr()
 
     code = main(["grade", str(folder), str(submission)])
     captured = capsys.readouterr()
@@ -259,7 +294,22 @@ def test_zip_with_path_outside_is_refused(tmp_path, capsys):
     code = main(["grade", str(folder), str(upload)])
 
     assert code == 1
-    assert "../escape.py" in capsys.readouterr().err
+    assert capsys.readouterr().err == (
+        f"Grading failed.\n{upload}: ../escape.py would unpack outside the folder.\n"
+    )
+    assert not (tmp_path / "escape.py").exists()
+
+
+def test_zip_with_absolute_path_is_refused(tmp_path, capsys):
+    folder = demo_copy(tmp_path / "demo")
+    upload = tmp_path / "upload.zip"
+    with zipfile.ZipFile(upload, "w") as archive:
+        archive.writestr(f"{tmp_path}/escape.py", "x = 1\n")
+
+    code = main(["grade", str(folder), str(upload)])
+
+    assert code == 1
+    assert "would unpack outside the folder." in capsys.readouterr().err
     assert not (tmp_path / "escape.py").exists()
 
 
@@ -271,7 +321,9 @@ def test_broken_zip_is_an_error(tmp_path, capsys):
     code = main(["grade", str(folder), str(upload)])
 
     assert code == 1
-    assert "upload.zip" in capsys.readouterr().err
+    assert capsys.readouterr().err == (
+        f"Grading failed.\n{upload} is not a readable zip (File is not a zip file).\n"
+    )
 
 
 def test_zip_without_notebook_is_an_error(tmp_path, capsys):
@@ -283,7 +335,7 @@ def test_zip_without_notebook_is_an_error(tmp_path, capsys):
     code = main(["grade", str(folder), str(upload)])
 
     assert code == 1
-    assert "No `.py` file found" in capsys.readouterr().err
+    assert capsys.readouterr().err.startswith(f"Grading failed.\n{upload}: No `.py` file found")
 
 
 def test_other_file_type_is_refused(tmp_path, capsys):
@@ -295,12 +347,14 @@ def test_other_file_type_is_refused(tmp_path, capsys):
     err = capsys.readouterr().err
 
     assert code == 1
-    assert "hw.txt" in err
-    assert ".zip" in err
+    assert err == (
+        f"Grading failed.\n{upload} is not a notebook. Pass a `.py` notebook, a `.zip` of the "
+        "submission, or a folder with one.\n"
+    )
 
 
 def test_zip_with_too_many_members_is_refused(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(regrade, "MAX_ZIP_MEMBERS", 3)
+    monkeypatch.setattr(_analysis, "MAX_ZIP_MEMBERS", 3)
     folder = demo_copy(tmp_path / "demo")
     upload = tmp_path / "upload.zip"
     with zipfile.ZipFile(upload, "w") as archive:
@@ -311,12 +365,11 @@ def test_zip_with_too_many_members_is_refused(tmp_path, monkeypatch, capsys):
     err = capsys.readouterr().err
 
     assert code == 1
-    assert "upload.zip" in err
-    assert "4 files" in err
+    assert err == f"Grading failed.\n{upload} holds 4 files; the limit is 3.\n"
 
 
 def test_zip_that_unpacks_too_large_is_refused(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(regrade, "MAX_ZIP_BYTES", 1000)
+    monkeypatch.setattr(_analysis, "MAX_ZIP_BYTES", 1000)
     folder = demo_copy(tmp_path / "demo")
     upload = tmp_path / "upload.zip"
     with zipfile.ZipFile(upload, "w", zipfile.ZIP_DEFLATED) as archive:
@@ -327,13 +380,12 @@ def test_zip_that_unpacks_too_large_is_refused(tmp_path, monkeypatch, capsys):
     err = capsys.readouterr().err
 
     assert code == 1
-    assert "upload.zip" in err
-    assert "1000 bytes" in err
+    assert err == f"Grading failed.\n{upload} unpacks to more than 1000 bytes.\n"
 
 
 def test_zip_with_lying_sizes_stops_at_the_limit(tmp_path, monkeypatch):
-    monkeypatch.setattr(regrade, "MAX_ZIP_BYTES", 1000)
-    monkeypatch.setattr(regrade, "_CHUNK", 100)
+    monkeypatch.setattr(_analysis, "MAX_ZIP_BYTES", 1000)
+    monkeypatch.setattr(_analysis, "_CHUNK", 100)
     upload = tmp_path / "upload.zip"
     with zipfile.ZipFile(upload, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("big.txt", "0" * 5000)
@@ -341,14 +393,14 @@ def test_zip_with_lying_sizes_stops_at_the_limit(tmp_path, monkeypatch):
 
     target = tmp_path / "upload"
     with pytest.raises(BuildError, match="upload.zip"):
-        regrade._unpack(upload, target)
+        _analysis.unpack(upload, target)
 
     assert sum(path.stat().st_size for path in target.rglob("*") if path.is_file()) <= 1000
 
 
 @pytest.mark.parametrize(
     ("offsets", "value", "message"),
-    [((6, 8), 0x1, "encrypted"), ((8, 10), 99, "compression")],
+    [((6, 8), 0x1, "encrypted"), ((8, 10), 99, "That compression method is not supported")],
     ids=["password", "unsupported-compression"],
 )
 def test_unreadable_zip_member_is_an_error(tmp_path, capsys, offsets, value, message):
@@ -363,7 +415,7 @@ def test_unreadable_zip_member_is_an_error(tmp_path, capsys, offsets, value, mes
     err = capsys.readouterr().err
 
     assert code == 1
-    assert "upload.zip" in err
+    assert err.startswith(f"Grading failed.\n{upload} is not a readable zip (")
     assert message in err
 
 

@@ -14,8 +14,9 @@ def mogs(*args: str | Path, cwd: Path | None = None) -> subprocess.CompletedProc
     return subprocess.run([SCRIPT, *args], capture_output=True, text=True, cwd=cwd)
 
 
-def test_version_matches_package():
-    assert _native.version() == version("mogs")
+def test_version_matches_package(capsys):
+    assert _native.main(["--version"]) == 0
+    assert capsys.readouterr().out == f"mogs {version('mogs')}\n"
 
 
 def test_main_returns_the_exit_code(tmp_path, monkeypatch, capsys):

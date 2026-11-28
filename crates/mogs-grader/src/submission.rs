@@ -200,4 +200,183 @@ mod tests {
             ))
         );
     }
+
+    fn found(dir: &Path, notebook: &str) -> Submission {
+        find_submission(dir, notebook, None, &FakeHost::default())
+    }
+
+    #[test]
+    fn exact_name_in_a_nested_folder_wins() {
+        let names = [
+            "upload/hw.py",
+            "upload/helper.py",
+            "__MACOSX/upload/._hw.py",
+            "upload/a.pdf",
+        ];
+        let dir = upload(&names);
+
+        let found = found(dir.path(), "hw.py");
+
+        assert_eq!(found.py, Some(dir.path().join("upload/hw.py")));
+        assert_eq!(found.answers, Some(dir.path().join("upload/a.pdf")));
+        assert_eq!(found.error, None);
+    }
+
+    #[test]
+    fn single_py_with_another_name_is_accepted() {
+        let dir = upload(&[
+            "folder/my_homework.py",
+            "__MACOSX/folder/._my_homework.py",
+            ".hidden.py",
+            "__pycache__/x.py",
+        ]);
+
+        let found = found(dir.path(), "hw.py");
+
+        assert_eq!(found.py, Some(dir.path().join("folder/my_homework.py")));
+        assert_eq!(found.answers, None);
+        assert_eq!(found.error, None);
+    }
+
+    #[test]
+    fn two_py_files_are_both_named_and_not_called_notebooks() {
+        let dir = upload(&["one.py", "sub/two.py"]);
+
+        let found = found(dir.path(), "hw.py");
+
+        assert_eq!(found.py, None);
+        let error = found.error.unwrap();
+        for part in ["one.py", "two.py", "No `hw.py`"] {
+            assert!(error.contains(part), "{error}");
+        }
+        assert!(!error.contains("notebooks"), "{error}");
+    }
+
+    #[test]
+    fn public_test_files_are_not_notebooks() {
+        let dir = upload(&["hw2/student_file.py", "hw2/tests/q1.py", "hw2/tests/q2.py"]);
+
+        let found = found(dir.path(), "hw.py");
+
+        assert_eq!(found.py, Some(dir.path().join("hw2/student_file.py")));
+    }
+
+    #[test]
+    fn notebook_named_like_a_public_test_file_is_found() {
+        let dir = upload(&["hw/q1.py", "hw/tests/q1.py"]);
+
+        assert_eq!(
+            found(dir.path(), "q1.py").py,
+            Some(dir.path().join("hw/q1.py"))
+        );
+    }
+
+    #[test]
+    fn assignment_named_tests_is_found() {
+        let dir = upload(&["tests/hw.py", "tests/tests/q1.py"]);
+
+        assert_eq!(
+            found(dir.path(), "hw.py").py,
+            Some(dir.path().join("tests/hw.py"))
+        );
+    }
+
+    #[test]
+    fn lone_tests_folder_still_counts() {
+        let dir = upload(&["tests/my_homework.py"]);
+
+        let found = found(dir.path(), "hw.py");
+
+        assert_eq!(found.py, Some(dir.path().join("tests/my_homework.py")));
+    }
+
+    #[test]
+    fn markdown_answers_are_named_after_the_assignment() {
+        let dir = upload(&["hw2.py", "homework2_answers.md"]);
+
+        let found = find_submission(
+            dir.path(),
+            "hw2.py",
+            Some("homework2"),
+            &FakeHost::default(),
+        );
+
+        assert_eq!(found.answers, Some(dir.path().join("homework2_answers.md")));
+    }
+
+    #[test]
+    fn no_py_file() {
+        let dir = upload(&["notes.txt"]);
+
+        let found = found(dir.path(), "hw.py");
+
+        assert_eq!(found.py, None);
+        assert!(found.error.unwrap().contains("hw.py"));
+    }
+
+    #[test]
+    fn markdown_answers_are_a_fallback() {
+        let dir = upload(&["hw.py", "folder/HW_Answers.md"]);
+
+        let markdown = found(dir.path(), "hw.py").answers;
+        fs::write(dir.path().join("answers.pdf"), "").unwrap();
+        let pdf = found(dir.path(), "hw.py").answers;
+
+        assert_eq!(markdown, Some(dir.path().join("folder/HW_Answers.md")));
+        assert_eq!(pdf, Some(dir.path().join("answers.pdf")));
+    }
+
+    #[test]
+    fn other_markdown_is_not_answers() {
+        for name in ["README.md", "answers.md", "hw.md", "other_answers.md"] {
+            let dir = upload(&["hw.py", name]);
+
+            assert_eq!(found(dir.path(), "hw.py").answers, None, "{name}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinks_are_ignored() {
+        use std::os::unix::fs::symlink;
+
+        let dir = upload(&[
+            "outside/bundle.json",
+            "outside/real.py",
+            "outside/a.pdf",
+            "outside/dir/inner.py",
+            "sub/mine.py",
+        ]);
+        let (outside, sub) = (dir.path().join("outside"), dir.path().join("sub"));
+        symlink(outside.join("bundle.json"), sub.join("hw.py")).unwrap();
+        symlink(outside.join("a.pdf"), sub.join("a.pdf")).unwrap();
+        symlink(outside.join("dir"), sub.join("linked")).unwrap();
+
+        let found = found(&sub, "hw.py");
+
+        assert_eq!(found.py, Some(sub.join("mine.py")));
+        assert_eq!(found.answers, None);
+    }
+
+    // Windows refuses `*` in file names.
+    #[cfg(unix)]
+    #[test]
+    fn names_in_messages_cannot_break_markdown() {
+        let dir = upload(&["a`` **b**.py", "c.py"]);
+
+        let error = found(dir.path(), "hw.py").error.unwrap();
+
+        assert!(error.contains("``` a`` **b**.py ```"), "{error}");
+    }
+
+    #[test]
+    fn exact_name_twice_is_ambiguous() {
+        let dir = upload(&["a/hw.py", "b/hw.py"]);
+
+        let found = found(dir.path(), "hw.py");
+
+        assert_eq!(found.py, None);
+        let nested = Path::new("a").join("hw.py").display().to_string();
+        assert!(found.error.unwrap().contains(&nested));
+    }
 }

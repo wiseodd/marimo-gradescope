@@ -1312,7 +1312,7 @@ dependencies = [
 name = "mogs"
 version = "0.7.0"
 dependencies = [
- "indexmap",
+ "mogs-build",
  "mogs-cli",
  "mogs-grader",
  "mogs-pdf",
@@ -1320,6 +1320,18 @@ dependencies = [
  "pyo3",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "mogs-build"
+version = "0.7.0"
+dependencies = [
+ "crc32fast",
+ "indexmap",
+ "mogs-grader",
+ "mogs-schema",
+ "regex",
+ "tempfile",
 ]
 
 [[package]]
