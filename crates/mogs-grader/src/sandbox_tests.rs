@@ -365,20 +365,22 @@ def test_q1_after():
 
 #[test]
 fn budget_exhaustion_marks_the_rest_budget() {
+    // 16 tests of 0.6 s, but a 6 s budget: room for a slow child start, and still the budget
+    // runs out during the run.
     let source: String = std::iter::once("import time\n\n".to_string())
-        .chain((0..8).map(|i| format!("def test_q1_s{i}():\n    time.sleep(0.6)\n\n")))
+        .chain((0..16).map(|i| format!("def test_q1_s{i}():\n    time.sleep(0.6)\n\n")))
         .collect();
-    let grading = bundle_with(vec![cell("q1", &source, false, &[])], 1.0, 2.5);
+    let grading = bundle_with(vec![cell("q1", &source, false, &[])], 2.0, 6.0);
     let tmp = tmp();
     let start = Instant::now();
 
     let results = run(tmp.path(), &fixture("infinite_loop"), &grading);
 
-    assert!(start.elapsed() < Duration::from_secs_f64(4.5));
-    let names: Vec<String> = (0..8).map(|i| format!("test_q1_s{i}")).collect();
+    assert!(start.elapsed() < Duration::from_secs_f64(6.0 + 2.0));
+    let names: Vec<String> = (0..16).map(|i| format!("test_q1_s{i}")).collect();
     assert_eq!(results.keys().cloned().collect::<Vec<_>>(), names);
     assert!(results["test_q1_s0"].passed);
-    assert_eq!(results["test_q1_s7"].reason, Some(Budget));
+    assert_eq!(results["test_q1_s15"].reason, Some(Budget));
 
     let outcomes: Vec<&Outcome> = results.values().collect();
     let first = outcomes
@@ -934,16 +936,17 @@ fn grade_shares_the_budget() {
     let slow = |qid: &str, seconds: f64| {
         format!("import time\n\ndef test_{qid}_slow():\n    time.sleep({seconds})\n")
     };
+    // The public phase, a slow start included, fits the 6 s budget; the hidden test does not.
     let cells = vec![
         cell("q1", &slow("q1", 0.2), false, &[]),
-        cell("q2", &format!("# HIDDEN\n{}", slow("q2", 5.0)), true, &[]),
+        cell("q2", &format!("# HIDDEN\n{}", slow("q2", 30.0)), true, &[]),
     ];
     let tmp = tmp();
 
     let results = run(
         tmp.path(),
         &notebook(tmp.path(), ""),
-        &bundle_with(cells, 10.0, 3.0),
+        &bundle_with(cells, 10.0, 6.0),
     );
 
     assert!(results["test_q1_slow"].passed);
