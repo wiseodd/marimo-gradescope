@@ -6,6 +6,8 @@ from pathlib import Path
 from mogs import selfcheck
 from mogs._env import clean_env
 from mogs.config import read_config
+from mogs.grader.bundle import GradingBundle, bundle_from_notebook
+from mogs.runner import FailureReason, Outcome
 from mogs.source import parse_notebook
 from mogs.transform import public_test_files, student_notebook
 
@@ -212,3 +214,108 @@ def test_names_a_failed_notebook_run_with_the_names_it_cost(tmp_path):
         "three": f"running your notebook failed: line {line} raised TypeError: "
         "unsupported operand type(s) for +: 'ellipsis' and 'int'"
     }
+
+
+# Every test of a solved copy, from the bundle, as `mogs build` checks it
+
+
+def solved_with_bundle(folder: Path, src: str) -> tuple[Path, Path]:
+    """Write the solved copy of the source `src` as `hw.py`, and its bundle as `bundle.json`."""
+
+    nb = parse_notebook(src)
+    cfg = read_config(src, folder / "source.py")
+    notebook = folder / "hw.py"
+    solved = student_notebook(src, nb, cfg, "mogs", solutions=True)
+    notebook.write_text(solved, encoding="utf-8")
+    bundle = folder / "bundle.json"
+    bundle.write_text(bundle_from_notebook(nb, cfg).to_json(), encoding="utf-8")
+
+    return notebook, bundle
+
+
+def outcomes(notebook: Path, bundle: Path) -> dict[str, tuple[bool, str, FailureReason | None]]:
+    loaded = GradingBundle.from_json(bundle.read_text(encoding="utf-8"))
+    results = selfcheck.bundle_results(notebook, loaded)
+
+    return {o.name: (o.passed, o.message, o.reason) for o in results}
+
+
+def test_bundle_runs_public_and_hidden_tests_of_the_solved_copy(tmp_path):
+    notebook, bundle = solved_with_bundle(tmp_path, SOLUTION.read_text(encoding="utf-8"))
+
+    results = outcomes(notebook, bundle)
+
+    assert list(results) == [
+        "test_q1_add",
+        "test_q1_add_negative",
+        "test_q1_add_large",
+        "test_q2_count",
+        "test_q2_upper",
+        "test_q2_empty",
+    ]
+    assert all(passed for passed, _, _ in results.values())
+
+
+def test_bundle_names_a_failing_hidden_test(tmp_path):
+    src = SOLUTION.read_text(encoding="utf-8").replace(
+        "assert add(big(20), 1) == big(20) + 1", "assert add(big(20), 1) == big(20) + 2"
+    )
+    notebook, bundle = solved_with_bundle(tmp_path, src)
+
+    results = outcomes(notebook, bundle)
+
+    failed = {name: result for name, result in results.items() if not result[0]}
+    assert list(failed) == ["test_q1_add_large"]
+    assert failed["test_q1_add_large"][2] == FailureReason.ASSERTION
+
+
+def test_bundle_runs_hidden_helpers(tmp_path):
+    src = SOLUTION.read_text(encoding="utf-8").replace(
+        "    # HIDDEN\n    def big(n):\n        return 10**n\n\n",
+        "    # HIDDEN\n    def big(n):\n        return 10**n\n\n    return\n\n\n"
+        "@app.cell\ndef _():\n    # HIDDEN\n",
+    )
+    notebook, bundle = solved_with_bundle(tmp_path, src)
+    assert GradingBundle.from_json(bundle.read_text(encoding="utf-8")).helpers
+
+    results = outcomes(notebook, bundle)
+
+    assert results["test_q1_add_large"] == (True, "", None)
+
+
+def test_bundle_fails_every_test_of_a_notebook_that_does_not_import(tmp_path):
+    notebook, bundle = solved_with_bundle(tmp_path, SOLUTION.read_text(encoding="utf-8"))
+    notebook.write_text("raise ValueError('broken')\n", encoding="utf-8")
+
+    results = outcomes(notebook, bundle)
+
+    assert len(results) == 6
+    assert set(results.values()) == {
+        (
+            False,
+            "your notebook failed to import (ValueError: broken)",
+            FailureReason.LOAD_FAILED,
+        )
+    }
+
+
+def test_module_with_a_bundle_prints_every_outcome_as_json(tmp_path):
+    src = SOLUTION.read_text(encoding="utf-8").replace(
+        'assert count_vowels("") == 0', 'assert count_vowels("") == 1'
+    )
+    notebook, bundle = solved_with_bundle(tmp_path, src)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "mogs.selfcheck", "--bundle", str(bundle), str(notebook)],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=tmp_path,
+        env=clean_env(),
+    )
+    summary = json.loads(result.stdout.strip().splitlines()[-1])
+    results = [Outcome.from_dict(outcome) for outcome in summary["outcomes"]]
+
+    assert result.returncode == 0, result.stderr
+    assert len(results) == 6
+    assert [o.name for o in results if not o.passed] == ["test_q2_empty"]

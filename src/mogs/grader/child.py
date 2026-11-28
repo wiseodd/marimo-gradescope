@@ -12,12 +12,12 @@ import os
 import signal
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from types import FrameType
 from typing import TypeAlias
 
 from mogs._assertrewrite import compile_tests
-from mogs.grader.bundle import HiddenHelper, TestCell
+from mogs.grader.bundle import TestCell
+from mogs.grader.helpers import Failure, Helpers, Namespace
 from mogs.grader.protocol import Event, Job, Loaded, Loading, Result, Start, encode
 from mogs.loader import bind, load
 from mogs.runner import (
@@ -29,7 +29,6 @@ from mogs.runner import (
 )
 
 Emit: TypeAlias = Callable[[Event], None]
-Namespace: TypeAlias = dict[str, object]
 
 
 class _Timeout(BaseException):
@@ -125,84 +124,12 @@ def run(job: Job, emit: Emit) -> None:
     base.update(bind(job.submission, uses, run_failed=job.run_failed))
     emit(Loaded(None))
 
-    helpers = _Helpers(bundle.helpers, base, timeout)
+    helpers = Helpers(
+        bundle.helpers, base, lambda source, label, ns: _load(source, label, ns, timeout)
+    )
 
     for cell in bundle.cells:
         _run_cell(cell, base, helpers, job.skip, timeout, emit)
-
-
-@dataclass(frozen=True, slots=True)
-class _Failure:
-    """Why a hidden helper, or one it needs, did not load."""
-
-    message: str
-    reason: FailureReason
-
-
-class _Helpers:
-    """Runs hidden helpers on first need, each at most once, and keeps what they define.
-
-    A helper runs in a copy of the base namespace plus the names of the helpers it needs, which
-    run first. A failure is kept too, so it reaches every cell that needs the helper and no
-    other cell.
-    """
-
-    def __init__(self, helpers: tuple[HiddenHelper, ...], base: Namespace, timeout: float) -> None:
-        self._helpers = helpers
-        self._base = base
-        self._timeout = timeout
-        self._done: dict[int, Namespace | _Failure] = {}
-        self._running: set[int] = set()
-
-    def provide(self, needs: tuple[str, ...]) -> Namespace | _Failure:
-        """The values of `needs`, or the failure of a helper that defines one of them."""
-
-        names: Namespace = {}
-
-        for index, helper in enumerate(self._helpers):
-            if not set(helper.defines) & set(needs):
-                continue
-
-            match self._run(index):
-                case _Failure() as failure:
-                    return failure
-                case defined:
-                    names.update(defined)
-
-        return names
-
-    def _run(self, index: int) -> Namespace | _Failure:
-        if index in self._done:
-            return self._done[index]
-
-        helper = self._helpers[index]
-        label = ", ".join(f"`{name}`" for name in helper.defines)
-
-        if index in self._running:
-            message = f"the hidden helper cell defining {label} needs itself through other cells"
-            return _Failure(message, FailureReason.LOAD_FAILED)
-
-        self._running.add(index)
-
-        match self.provide(helper.needs):
-            case _Failure() as failure:
-                result: Namespace | _Failure = failure
-            case names:
-                namespace = {**self._base, **names}
-                match _load(helper.source, "hidden-helper", namespace, self._timeout):
-                    case (message, reason):
-                        result = _Failure(
-                            f"the hidden helper cell defining {label} {message}", reason
-                        )
-                    case None:
-                        result = {
-                            name: namespace[name] for name in helper.defines if name in namespace
-                        }
-
-        self._running.discard(index)
-        self._done[index] = result
-
-        return result
 
 
 def _load(
@@ -235,7 +162,7 @@ def _load(
 def _run_cell(
     cell: TestCell,
     base: Namespace,
-    helpers: _Helpers,
+    helpers: Helpers,
     skip: tuple[str, ...],
     timeout: float,
     emit: Emit,
@@ -251,7 +178,7 @@ def _run_cell(
     emit(Loading(tests))
 
     match helpers.provide(cell.needs):
-        case _Failure(message, reason):
+        case Failure(message, reason):
             _fail_cell(cell, skip, message, reason, emit)
             return
         case provided:

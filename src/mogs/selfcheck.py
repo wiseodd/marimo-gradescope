@@ -1,9 +1,14 @@
-"""Run the public tests of a saved notebook and print a summary as JSON.
+"""Run the tests of a saved notebook and print a summary as JSON.
 
 Usage: `python -m mogs.selfcheck NOTEBOOK [FOLDER]`. The export button runs this
 in a subprocess on the saved file, so the tests see the file on disk, not the kernel. It runs
 from FOLDER, by default the notebook's folder, as marimo does, so relative paths in the
 notebook work.
+
+Usage: `python -m mogs.selfcheck --bundle BUNDLE NOTEBOOK`. `mogs build` runs this on the
+solved copy: every test of the grading bundle in the file BUNDLE, public and hidden, from the
+notebook's folder. The last line of stdout is then `{"outcomes": [outcome, ...]}`, one per
+test in bundle order. The hidden helpers run as in the grader.
 
 Tests are found statically and run the way the grader's public phase runs them: the setup
 cell first, then the student names bound from the notebook, then each test cell compiled with
@@ -23,12 +28,20 @@ import contextlib
 import json
 import os
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TypedDict
 
 from mogs.config import AssignmentConfig
-from mogs.grader.bundle import Phase, TestCell, bundle_from_notebook
-from mogs.loader import bind, unavailable
+from mogs.grader.bundle import (
+    GradingBundle,
+    HiddenHelper,
+    Phase,
+    TestCell,
+    bundle_from_notebook,
+)
+from mogs.grader.helpers import Failure, Helpers, Namespace
+from mogs.loader import bind, load, unavailable
 from mogs.runner import (
     FailureReason,
     Outcome,
@@ -84,34 +97,10 @@ def public_results(path: Path) -> Summary:
 
         cells.append(TestCell(qid, relative, False, source, names, uses))
 
-    base: dict[str, object] = {"__name__": "__mogs_selfcheck__"}
-    setup_error = None
-    missing: dict[str, str] = {}
+    ran, missing = _run_cells(path, bundle.setup_code, cells, ())
 
-    try:
-        exec(compile(bundle.setup_code, "<mogs-setup>", "exec", dont_inherit=True), base)
-    except Exception as exc:
-        setup_error = cap(f"the setup cell failed ({exception_summary(exc)})")
-
-    if setup_error is None:
-        uses = sorted({name for cell in cells for name in cell.uses})
-        bound = bind(path, uses)
-        base.update(bound)
-        missing = {
-            name: reason
-            for name, value in bound.items()
-            if (reason := unavailable(value)) is not None
-        }
-
-    for cell in cells:
-        results = outcomes.setdefault(cell.qid, [])
-
-        if setup_error is not None:
-            reason = FailureReason.LOAD_FAILED
-            results += [Outcome(name, False, setup_error, reason) for name in cell.tests]
-            continue
-
-        results += run_test_source(cell.source, cell.label, cell.tests, dict(base))
+    for qid, outcome in ran:
+        outcomes.setdefault(qid, []).append(outcome)
 
     questions: dict[str, dict[str, object]] = {
         qid: {
@@ -123,6 +112,87 @@ def public_results(path: Path) -> Summary:
     }
 
     return {"questions": questions, "unavailable": missing}
+
+
+def bundle_results(path: Path, bundle: GradingBundle) -> list[Outcome]:
+    """Run every test of `bundle`, public and hidden, on the notebook at `path`, in this process.
+
+    `mogs build` checks the solved copy with this. The tests run as in the grader, in bundle
+    order, with the hidden helpers they need, but in one process and without timers or limits;
+    the caller caps the whole run. A notebook that does not import fails every test with
+    `LOAD_FAILED`, as in the grader.
+    """
+
+    _, import_error = load(path)
+
+    if import_error is not None:
+        reason = FailureReason.LOAD_FAILED
+        return [
+            Outcome(name, False, import_error, reason)
+            for cell in bundle.cells
+            for name in cell.tests
+        ]
+
+    ran, _ = _run_cells(path, bundle.setup_code, bundle.cells, bundle.helpers)
+
+    return [outcome for _, outcome in ran]
+
+
+def _run_cells(
+    path: Path, setup_code: str, cells: Sequence[TestCell], helpers: Sequence[HiddenHelper]
+) -> tuple[list[tuple[str, Outcome]], dict[str, str]]:
+    """Run the setup code, bind the names the cells use, then run each cell's tests.
+
+    Returns:
+        Each outcome with its question id, in cell order, and the reason for each name the
+        notebook could not provide.
+    """
+
+    base: Namespace = {"__name__": "__mogs_selfcheck__"}
+
+    try:
+        exec(compile(setup_code, "<mogs-setup>", "exec", dont_inherit=True), base)
+    except Exception as exc:
+        error = cap(f"the setup cell failed ({exception_summary(exc)})")
+        reason = FailureReason.LOAD_FAILED
+        failed = [
+            (cell.qid, Outcome(name, False, error, reason)) for cell in cells for name in cell.tests
+        ]
+        return failed, {}
+
+    uses = sorted({name for part in [*helpers, *cells] for name in part.uses})
+    bound = bind(path, uses)
+    base.update(bound)
+    missing = {
+        name: reason for name, value in bound.items() if (reason := unavailable(value)) is not None
+    }
+    provider = Helpers(tuple(helpers), base, _load)
+    ran: list[tuple[str, Outcome]] = []
+
+    for cell in cells:
+        match provider.provide(cell.needs):
+            case Failure(message, reason):
+                results = [Outcome(name, False, cap(message), reason) for name in cell.tests]
+            case provided:
+                namespace = {**base, **provided}
+                results = run_test_source(cell.source, cell.label, cell.tests, namespace)
+
+        ran += [(cell.qid, outcome) for outcome in results]
+
+    return ran, missing
+
+
+def _load(source: str, label: str, namespace: Namespace) -> tuple[str, FailureReason] | None:
+    """Run a hidden helper cell into `namespace`, without a timer."""
+
+    from mogs._assertrewrite import compile_tests
+
+    try:
+        exec(compile_tests(source, label), namespace)
+    except BaseException as exc:
+        return f"failed to load ({exception_summary(exc)})", FailureReason.LOAD_FAILED
+
+    return None
 
 
 def test_files(nb: Notebook) -> list[tuple[str, str]]:
@@ -162,11 +232,41 @@ def main(path: str | Path, folder: str | Path | None = None) -> int:
     return 0
 
 
+def main_bundle(bundle: str | Path, path: str | Path) -> int:
+    """Print the outcome of every test in the bundle file `bundle` on the notebook at `path`.
+
+    The tests run from the notebook's folder.
+
+    Returns:
+        The exit status: 0, or 1 when the bundle or the notebook cannot be read.
+    """
+
+    sys.dont_write_bytecode = True
+    notebook = Path(path).resolve()
+
+    try:
+        loaded = GradingBundle.from_json(Path(bundle).read_text(encoding="utf-8"))
+        os.chdir(notebook.parent)
+        with contextlib.redirect_stdout(sys.stderr):
+            outcomes = bundle_results(notebook, loaded)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        print(f"Cannot check {notebook.name}: {exc}", file=sys.stderr)
+        return 1
+
+    print(json.dumps({"outcomes": [outcome.to_dict() for outcome in outcomes]}))
+    return 0
+
+
 if __name__ == "__main__":
     match sys.argv[1:]:
+        case ["--bundle", bundle, path]:
+            sys.exit(main_bundle(bundle, path))
         case [path]:
             sys.exit(main(path))
         case [path, folder]:
             sys.exit(main(path, folder))
         case _:
-            sys.exit("Usage: python -m mogs.selfcheck NOTEBOOK [FOLDER]")
+            sys.exit(
+                "Usage: python -m mogs.selfcheck NOTEBOOK [FOLDER]\n"
+                "       python -m mogs.selfcheck --bundle BUNDLE NOTEBOOK"
+            )
