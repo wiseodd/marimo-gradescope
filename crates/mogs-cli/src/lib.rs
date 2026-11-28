@@ -6,6 +6,7 @@
 //! imitates CPython.
 
 mod command;
+pub mod diagnostic;
 pub mod scaffold;
 
 use std::ffi::{OsStr, OsString};

@@ -12,9 +12,11 @@ mod interpreter;
 mod scaffold;
 
 use std::ffi::OsString;
+use std::path::PathBuf;
 
 use mogs_cli::Command;
-use pyo3::exceptions::PyOSError;
+use mogs_cli::diagnostic::{Located, render};
+use pyo3::exceptions::{PyBaseException, PyOSError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 
@@ -88,10 +90,66 @@ pub(crate) fn fail(py: Python<'_>, what: &str, message: Bound<'_, PyString>) -> 
 
 /// Print `<what> failed.` and the message of `error` if it is a `UsageError` or an
 /// `OSError`, and give exit code 1; raise any other error.
+///
+/// A `UsageError` whose `diagnostic.span` names a file is drawn on that file's lines, in
+/// color when stderr is a terminal and `NO_COLOR` is unset. Without such a span, when the
+/// file no longer holds the span, or when drawing panics, its text is printed as it is.
 pub(crate) fn failed(py: Python<'_>, what: &str, error: PyErr) -> PyResult<i64> {
-    if error.is_instance_of::<UsageError>(py) || error.is_instance_of::<PyOSError>(py) {
+    if error.is_instance_of::<UsageError>(py) {
+        let value = error.value(py);
+
+        return match drawn(py, value)? {
+            Some(text) => fail(py, what, PyString::new(py, &text)),
+            None => fail(py, what, value.str()?),
+        };
+    }
+
+    if error.is_instance_of::<PyOSError>(py) {
         return fail(py, what, error.value(py).str()?);
     }
 
     Err(error)
+}
+
+/// The `UsageError` `error` drawn on the lines of its file, if its span names one.
+fn drawn(py: Python<'_>, error: &Bound<'_, PyBaseException>) -> PyResult<Option<String>> {
+    let diagnostic = error.getattr("diagnostic")?;
+    let span = diagnostic.getattr("span")?;
+    if span.is_none() {
+        return Ok(None);
+    }
+
+    let path = span.getattr("path")?;
+    if path.is_none() {
+        return Ok(None);
+    }
+
+    let file: PathBuf = path.extract()?;
+    let Ok(source) = std::fs::read_to_string(&file) else {
+        return Ok(None);
+    };
+
+    let located = Located {
+        message: diagnostic.getattr("message")?.extract()?,
+        path: path.str()?.extract()?,
+        line: span.getattr("line")?.extract()?,
+        col: span.getattr("col")?.extract()?,
+        end_line: span.getattr("end_line")?.extract()?,
+        end_col: span.getattr("end_col")?.extract()?,
+        label: diagnostic.getattr("label")?.extract()?,
+        help: diagnostic.getattr("help")?.extract()?,
+    };
+
+    let terminal: bool = py
+        .import("sys")?
+        .getattr("stderr")?
+        .call_method0("isatty")?
+        .extract()?;
+    let color = terminal && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
+
+    // A bug in the drawing must not hide the user's error: its plain text prints instead.
+    // Rust's panic hook still prints the panic message to stderr first, on purpose.
+    let drawn = std::panic::catch_unwind(|| render(&located, &source, color));
+
+    Ok(drawn.ok().flatten())
 }

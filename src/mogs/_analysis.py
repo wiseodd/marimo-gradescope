@@ -30,6 +30,7 @@ from mogs.config import (
     ConfigError,
     UsageError,
     api_calls,
+    located,
     normalized_name,
     read_config,
 )
@@ -123,10 +124,13 @@ def read_assignment(assignment_dir: Path) -> Assignment:
 
     path = find_notebook(assignment_dir)
     src = path.read_text(encoding="utf-8")
-    cfg = read_config(src, path)
-    nb = parse_notebook(src)
 
-    errors = validate(nb, cfg)
+    # All three read only the source's lines, so their spans point into `path`.
+    with located(path):
+        cfg = read_config(src, path)
+        nb = parse_notebook(src)
+        errors = validate(nb, cfg)
+
     if errors:
         listed = "\n".join("- " + error.replace("\n", "\n  ") for error in errors)
         raise BuildError(f"{path} has {len(errors)} problem(s):\n{listed}")
@@ -148,8 +152,10 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
     src, cfg, nb = assignment.src, assignment.cfg, assignment.nb
 
     data = data_files(assignment.path.parent, cfg)
-    student = student_notebook(src, nb, cfg, pinned_requirement())
-    solved = student_notebook(src, nb, cfg, pinned_requirement(), solutions=True)
+
+    path = assignment.path
+    student = student_notebook(src, nb, cfg, pinned_requirement(), path=path)
+    solved = student_notebook(src, nb, cfg, pinned_requirement(), solutions=True, path=path)
     bundle = bundle_from_notebook(nb, cfg)
     tests = public_test_files(nb)
     requirements, warnings = gradescope_requirements(src, cfg, f"{TOOL}=={__version__}")

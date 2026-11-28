@@ -363,6 +363,19 @@ The solved notebook must get full marks, or the build fails.
 The blank student notebook should get zero.
 If a test passes on the blank notebook, it gives students free points, and the build warns you about it.
 
+When an error comes from one place in the notebook, the build shows that line, and a fix for some common mistakes:
+
+```
+Build failed.
+error: `points` must be a number >= 0, got '10'.
+  --> hw/hw.py:17:29
+   |
+17 |     mogs.grade("q1", points="10")
+   |                             ^^^^ a string
+   |
+help: drop the quotes: points=10
+```
+
 `build` runs on Linux and macOS.
 On Windows, use WSL.
 

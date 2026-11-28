@@ -10,6 +10,8 @@ publish = false
 [dependencies]
 # clap's help and errors are taken as text and printed through Python, so no color.
 clap = { version = "4", default-features = false, features = ["derive", "error-context", "help", "std", "suggestions", "usage"] }
+# The located errors, drawn as rustc draws them.
+annotate-snippets = "0.12"
 
 [dev-dependencies]
 tempfile = "3"

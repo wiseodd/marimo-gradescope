@@ -19,6 +19,7 @@ from mogs.config import (
     Api,
     AssignmentConfig,
     ConfigError,
+    Span,
     UsageError,
     api_calls,
     normalize_newlines,
@@ -26,6 +27,7 @@ from mogs.config import (
     question_id,
     read_header,
     split_lines,
+    syntax_span,
 )
 
 INSTRUCTOR = "instructor"
@@ -566,7 +568,11 @@ def parse_notebook(src: str) -> Notebook:
     try:
         tree = ast.parse(src)
     except SyntaxError as e:
-        raise SourceError(f"The notebook is not valid Python (line {e.lineno}): {e.msg}") from e
+        raise SourceError(
+            f"The notebook is not valid Python (line {e.lineno}): {e.msg}",
+            message=f"The notebook is not valid Python: {e.msg}",
+            span=syntax_span(src, e),
+        ) from e
 
     lines = split_lines(src)
     cells = []
@@ -625,7 +631,11 @@ def _decorator_kind(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
             case "class_definition", ast.ClassDef():
                 return CellKind.CLASS
             case str() as attr, _:
-                raise SourceError(f"line {decorator.lineno}: unexpected `@app.{attr}` here.")
+                raise SourceError(
+                    f"line {decorator.lineno}: unexpected `@app.{attr}` here.",
+                    message=f"unexpected `@app.{attr}` here.",
+                    span=Span.of(decorator),
+                )
 
     return None
 
@@ -655,15 +665,21 @@ def _call_qid(tree: ast.Module, node: ast.stmt, api: Api) -> str | None:
     """Question id of the single `api` call in a cell, or None if it has none."""
 
     found: list[str] = []
+    calls = api_calls(tree, node, api)
 
-    for call in api_calls(tree, node, api):
+    for call in calls:
         match call.args:
             case [ast.Constant(value=str() as qid), *_]:
                 found.append(qid)
             case _:
+                message = (
+                    f"{api}() needs the question id as a string literal first argument, e.g. "
+                    f'mogs.{api}("q1", points=10).'
+                )
                 raise SourceError(
-                    f"line {call.lineno}: {api}() needs the question id as a string literal "
-                    f'first argument, e.g. mogs.{api}("q1", points=10).'
+                    f"line {call.lineno}: {message}",
+                    message=message,
+                    span=Span.of(call.args[0] if call.args else call.func),
                 )
 
     match found:
@@ -672,8 +688,11 @@ def _call_qid(tree: ast.Module, node: ast.stmt, api: Api) -> str | None:
         case [qid]:
             return qid
         case _:
+            message = f"a cell may hold only one {api} call, found {len(found)}."
             raise SourceError(
-                f"line {node.lineno}: a cell may hold only one {api} call, found {len(found)}."
+                f"line {node.lineno}: {message}",
+                message=message,
+                span=Span.of(calls[1].func),
             )
 
 
@@ -724,7 +743,11 @@ def _header_end(lines: list[str], node: ast.stmt, cell: Cell) -> int:
         if lines[number - 1].strip() and not lines[number - 1].strip().startswith("#")
     ]
     if not header:
-        raise SourceError(f"line {node.lineno}: put the cell body on its own lines.")
+        raise SourceError(
+            f"line {node.lineno}: put the cell body on its own lines.",
+            message="put the cell body on its own lines.",
+            span=Span.of_line(lines, node.lineno),
+        )
 
     return header[-1]
 

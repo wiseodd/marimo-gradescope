@@ -7,15 +7,18 @@ outside the edited part survive.
 """
 
 import ast
+import contextlib
 import copy
+import difflib
 import json
 import re
 import tomllib
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import Self
 
 TOOL = "mogs"
 PACKAGE = "mogs"
@@ -37,8 +40,138 @@ WINDOWS_RESERVED = frozenset(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class Span:
+    """Where in a notebook an error is, as `ast` gives positions.
+
+    Attributes:
+        path: The notebook, once the error leaves the code that read it.
+        line: First line, 1-based.
+        col: Start in that line, a 0-based offset in UTF-8 bytes.
+        end_line: Last line, 1-based.
+        end_col: End in that line, a 0-based offset in UTF-8 bytes, exclusive.
+    """
+
+    path: Path | None
+    line: int
+    col: int
+    end_line: int
+    end_col: int
+
+    @staticmethod
+    def of(node: ast.expr | ast.stmt | ast.keyword) -> "Span":
+        """The span of an AST node, or of its first character when it has no end."""
+
+        match node.end_lineno, node.end_col_offset:
+            case int() as end_line, int() as end_col:
+                return Span(None, node.lineno, node.col_offset, end_line, end_col)
+            case _:
+                return Span(None, node.lineno, node.col_offset, node.lineno, node.col_offset + 1)
+
+    @staticmethod
+    def of_line(lines: list[str], number: int) -> "Span":
+        """The span of line `number` of `lines`, without its indent and trailing blanks."""
+
+        text = lines[number - 1]
+        indent = len(text) - len(text.lstrip())
+        start = len(text[:indent].encode())
+        end = len(text.rstrip().encode())
+
+        return Span(None, number, start, number, max(end, start))
+
+
+@dataclass(frozen=True, slots=True)
+class Diagnostic:
+    """What the command line shows of an error: the notebook line it points at.
+
+    Attributes:
+        message: The text without the call or line it names, which `span` shows instead.
+        span: Where the error is, if known.
+        label: A short note at the span.
+        help: A fix for a common mistake.
+    """
+
+    message: str
+    span: Span | None = None
+    label: str | None = None
+    help: str | None = None
+
+
 class UsageError(Exception):
-    """An error in what the user gave, which fails a `mogs` command with its message."""
+    """An error in what the user gave, which fails a `mogs` command with its message.
+
+    `str()` of the error is its full text, which panels and the self-check show.
+    `diagnostic` lets the command line point at the notebook line instead.
+    """
+
+    def __init__(
+        self,
+        text: str,
+        *,
+        message: str | None = None,
+        span: Span | None = None,
+        label: str | None = None,
+        help: str | None = None,
+    ) -> None:
+        super().__init__(text)
+
+        self.diagnostic = Diagnostic(text if message is None else message, span, label, help)
+
+    def at(self, path: Path) -> Self:
+        """Place the span of this error in the notebook at `path`, and return the error.
+
+        An error without a span, or whose span names a file already, stays as it is.
+        """
+
+        match self.diagnostic.span:
+            case Span(path=None) as span:
+                span = copy.replace(span, path=path)
+                self.diagnostic = copy.replace(self.diagnostic, span=span)
+
+        return self
+
+
+@contextlib.contextmanager
+def located(path: Path | None) -> Generator[None]:
+    """Place the spans of the `UsageError`s raised inside in the notebook at `path`.
+
+    Wrap only code whose spans count lines of that notebook. With `path` None, nothing
+    changes.
+    """
+
+    try:
+        yield
+    except UsageError as error:
+        if path is not None:
+            error.at(path)
+        raise
+
+
+def syntax_span(src: str, error: SyntaxError) -> Span | None:
+    """Where `ast.parse(src)` failed, from the error's 1-based character offsets.
+
+    None when the error names no line of `src`, as at the end of the file.
+    """
+
+    lines = split_lines(src)
+
+    match error.lineno, error.offset:
+        case int() as line, int() as offset if 1 <= line <= len(lines) and offset >= 1:
+            pass
+        case _:
+            return None
+
+    text = lines[line - 1]
+    start = min(offset - 1, len(text))
+    end = start + 1
+
+    match error.end_lineno, error.end_offset:
+        case int() as end_line, int() as end_offset if end_line == line and end_offset > offset:
+            end = min(end_offset - 1, len(text))
+
+    col = len(text[:start].encode())
+
+    return Span(None, line, col, line, max(len(text[:end].encode()), col))
 
 
 class ConfigError(UsageError):
@@ -154,7 +287,11 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
     try:
         tree = ast.parse(src)
     except SyntaxError as e:
-        raise ConfigError(f"The notebook is not valid Python (line {e.lineno}): {e.msg}") from e
+        raise ConfigError(
+            f"The notebook is not valid Python (line {e.lineno}): {e.msg}",
+            message=f"The notebook is not valid Python: {e.msg}",
+            span=syntax_span(src, e),
+        ) from e
 
     match api_calls(tree, tree, Api.ASSIGNMENT):
         case [call]:
@@ -166,7 +303,10 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
             )
         case [_, second, *_]:
             raise ConfigError(
-                f"{ASSIGNMENT} (line {second.lineno}): the notebook calls it more than once."
+                f"{ASSIGNMENT} (line {second.lineno}): the notebook calls it more than once.",
+                message="the notebook calls it more than once.",
+                span=Span.of(second.func),
+                help=f"keep one `{ASSIGNMENT[:-2]}(...)` call, with all the settings",
             )
 
     tested = {
@@ -183,9 +323,12 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
         question = copy.replace(question, manual=question.id not in tested)
 
         if question.id in questions:
-            raise ConfigError(
-                f"{_where(call)}: question `{question.id}` is declared more than once (first at "
-                f"line {lines[question.id]})."
+            first = lines[question.id]
+            where = _where(call).at(call.args[0])
+
+            raise where.error(
+                f"question `{question.id}` is declared more than once (first at line {first}).",
+                help="give each question its own id",
             )
 
         questions[question.id] = question
@@ -242,10 +385,42 @@ def api_calls(tree: ast.Module, node: ast.AST, api: Api) -> list[ast.Call]:
     return sorted(calls, key=lambda call: (call.lineno, call.col_offset))
 
 
-def _where(call: ast.Call) -> str:
-    """`mogs.grade() (line 12)`: the call as written, and its line."""
+@dataclass(frozen=True, slots=True)
+class Where:
+    """What a config error names, such as `mogs.grade() (line 12)`, and the node it is about.
 
-    return f"{ast.unparse(call.func)}() (line {call.lineno})"
+    Attributes:
+        name: The call as written and its line, or another name.
+        node: The node the error points at, if any.
+    """
+
+    name: str
+    node: ast.expr | ast.keyword | None = None
+
+    def __str__(self) -> str:
+        return self.name
+
+    def at(self, node: ast.expr | ast.keyword) -> "Where":
+        """The same name, pointing at `node`."""
+
+        return copy.replace(self, node=node)
+
+    def error(self, text: str, *, label: str | None = None, help: str | None = None) -> ConfigError:
+        """`ConfigError("<name>: <text>")`, located at the node."""
+
+        return ConfigError(
+            f"{self.name}: {text}",
+            message=text,
+            span=None if self.node is None else Span.of(self.node),
+            label=label,
+            help=help,
+        )
+
+
+def _where(call: ast.Call) -> Where:
+    """`mogs.grade() (line 12)`: the call as written, and its line, pointing at the call."""
+
+    return Where(f"{ast.unparse(call.func)}() (line {call.lineno})", call.func)
 
 
 def _arguments(call: ast.Call, allowed: Iterable[str]) -> dict[str, object]:
@@ -262,17 +437,19 @@ def _arguments(call: ast.Call, allowed: Iterable[str]) -> dict[str, object]:
     for keyword in call.keywords:
         match keyword.arg:
             case None:
-                raise ConfigError(f"{where}: write each argument out; `**` is not read.")
+                raise where.at(keyword).error("write each argument out; `**` is not read.")
             case str() as key if key not in allowed:
-                raise ConfigError(
-                    f"{where}: unknown argument `{key}`. It takes {', '.join(allowed)}."
+                close = difflib.get_close_matches(key, allowed, n=1)
+                raise where.at(keyword).error(
+                    f"unknown argument `{key}`. It takes {', '.join(allowed)}.",
+                    help=f"did you mean `{close[0]}`?" if close else None,
                 )
             case str() as key:
                 try:
                     values[key] = ast.literal_eval(keyword.value)
                 except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as e:
-                    raise ConfigError(
-                        f"{where}: `{key}` must be a literal value, such as a number or a "
+                    raise where.at(keyword.value).error(
+                        f"`{key}` must be a literal value, such as a number or a "
                         f"string, got `{ast.unparse(keyword.value)}`. The build reads it "
                         "without running the notebook."
                     ) from e
@@ -286,32 +463,43 @@ def _assignment(call: ast.Call, path: Path) -> AssignmentConfig:
     where = _where(call)
 
     if call.args:
-        raise ConfigError(f'{where}: pass each setting as a keyword, e.g. name="HW1".')
+        raise where.at(call.args[0]).error('pass each setting as a keyword, e.g. name="HW1".')
 
     keys = ("name", "files", "timeout", "budget", "memory", "python", "requirements")
     config = AssignmentConfig(name=path.stem, notebook=path.name, questions={})
+    nodes = _values(call)
 
     for key, value in _arguments(call, keys).items():
+        at = where.at(nodes[key])
+
         match key:
             case "name":
-                config = copy.replace(config, name=_string(where, key, value))
+                config = copy.replace(config, name=_string(at, key, value))
             case "python":
-                config = copy.replace(config, python=_string(where, key, value))
+                config = copy.replace(config, python=_string(at, key, value))
             case "files":
-                config = copy.replace(config, files=_files(where, value))
+                config = copy.replace(config, files=_files(at, value))
             case "timeout":
-                config = copy.replace(config, timeout=_seconds(where, key, value))
+                config = copy.replace(config, timeout=_seconds(at, key, value))
             case "budget":
-                config = copy.replace(config, budget=_seconds(where, key, value))
+                config = copy.replace(config, budget=_seconds(at, key, value))
             case "memory":
-                config = copy.replace(config, memory_mb=_memory(where, value))
+                config = copy.replace(config, memory_mb=_memory(at, value))
             case "requirements":
-                requirements = path.parent / _string(where, key, value)
+                requirements = path.parent / _string(at, key, value)
                 config = copy.replace(config, requirements=requirements)
             case _:
                 raise AssertionError(f"unhandled argument {key!r}")
 
-    return copy.replace(config, name=_name(where, config.name))
+    named = where.at(nodes["name"]) if "name" in nodes else where
+
+    return copy.replace(config, name=_name(named, config.name))
+
+
+def _values(call: ast.Call) -> dict[str, ast.expr]:
+    """The value nodes of the named keyword arguments of `call`."""
+
+    return {keyword.arg: keyword.value for keyword in call.keywords if keyword.arg is not None}
 
 
 def _check_file_names(qids: list[str]) -> None:
@@ -354,45 +542,93 @@ def _question(call: ast.Call) -> Question:
     where = _where(call)
     example = f'{ast.unparse(call.func)}("q1", points=10)'
 
+    needs_id = f"needs the question id as a string literal first argument, e.g. {example}."
+
     match call.args:
         case [ast.Constant(value=str() as qid)]:
             pass
-        case [ast.Constant(value=str()), *_]:
-            raise ConfigError(f"{where}: pass `points` and `title` as keywords, e.g. {example}.")
-        case _:
-            raise ConfigError(
-                f"{where}: needs the question id as a string literal first argument, "
-                f"e.g. {example}."
+        case [ast.Constant(value=str()), ast.Constant(value=bool())]:
+            raise where.at(call.args[1]).error(
+                f"pass `points` and `title` as keywords, e.g. {example}."
             )
+        case [ast.Constant(value=str()), ast.Constant(value=int() | float()) as second]:
+            raise where.at(second).error(
+                f"pass `points` and `title` as keywords, e.g. {example}.",
+                help=f"write it as a keyword: points={ast.unparse(second)}",
+            )
+        case [ast.Constant(value=str()), ast.Constant(value=str()) as second]:
+            raise where.at(second).error(
+                f"pass `points` and `title` as keywords, e.g. {example}.",
+                help=f"write it as a keyword: title={ast.unparse(second)}",
+            )
+        case [ast.Constant(value=str()), second, *_]:
+            raise where.at(second).error(f"pass `points` and `title` as keywords, e.g. {example}.")
+        case [ast.Name(id=name) as first, *_]:
+            raise where.at(first).error(needs_id, help=f'quote the id: "{name}"')
+        case [first, *_]:
+            raise where.at(first).error(needs_id)
+        case _:
+            raise where.error(needs_id)
 
     if not QID_RE.match(qid):
-        raise ConfigError(
-            f"{where}: question id `{qid}` must be letters and digits, starting with a letter "
-            "(no `_`, since tests are named `test_<id>_<name>`)."
+        fixed = re.sub(r"[^A-Za-z0-9]", "", qid)
+        raise where.at(call.args[0]).error(
+            f"question id `{qid}` must be letters and digits, starting with a letter "
+            "(no `_`, since tests are named `test_<id>_<name>`).",
+            help=f"try `{fixed}`" if QID_RE.match(fixed) else None,
         )
 
     values = _arguments(call, ("points", "title"))
+    nodes = _values(call)
 
     if "points" not in values:
-        raise ConfigError(f"{where}: needs `points`, e.g. {example}.")
+        raise where.error(f"needs `points`, e.g. {example}.")
 
     title = values.get("title", default_title(qid))
     match title:
         case str():
             pass
         case _:
-            raise ConfigError(f"{where}: `title` must be a string, got {title!r}.")
+            raise where.at(nodes["title"]).error(f"`title` must be a string, got {title!r}.")
 
-    return Question(qid, title, _points(where, values["points"]))
+    return Question(qid, title, _points(where.at(nodes["points"]), values["points"]))
 
 
-def _points(where: str, value: object) -> float:
+def _points(where: Where, value: object) -> float:
     match value:
         case bool():
             pass
         case int() | float() if value >= 0:
             return float(value)
-    raise ConfigError(f"{where}: `points` must be a number >= 0, got {value!r}.")
+    text = f"`points` must be a number >= 0, got {value!r}."
+    raise _number_error(where, "points", text, value, lambda number: number >= 0)
+
+
+def _number_error(
+    where: Where, key: str, text: str, value: object, valid: Callable[[int | float], bool]
+) -> ConfigError:
+    """The error for a bad number, with a help line when `value` is a valid number in quotes.
+
+    The quotes come off only when what is inside is a Python number literal, so `"010"` gets
+    no help.
+    """
+
+    match value:
+        case str():
+            try:
+                number = ast.literal_eval(value)
+            except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+                number = None
+        case _:
+            number = None
+
+    match number:
+        case bool():
+            return where.error(text)
+        case int() | float() if valid(number):
+            return where.error(text, label="a string", help=f"drop the quotes: {key}={value}")
+        case _:
+            return where.error(text)
 
 
 def default_title(qid: str) -> str:
@@ -402,14 +638,14 @@ def default_title(qid: str) -> str:
     return f"Question {match.group(1)}" if match else qid
 
 
-def _string(where: str, key: str, value: object) -> str:
+def _string(where: Where, key: str, value: object) -> str:
     match value:
         case str():
             return value
-    raise ConfigError(f"{where}: `{key}` must be a string, got {value!r}.")
+    raise where.error(f"`{key}` must be a string, got {value!r}.")
 
 
-def _name(where: str, value: str) -> str:
+def _name(where: Where, value: str) -> str:
     """Check that the assignment name works as a file name, on Windows too.
 
     The name names the autograder zip, the student zip and the folder in the student zip.
@@ -420,8 +656,8 @@ def _name(where: str, value: str) -> str:
         or value.startswith(".")
         or any(char in "/\\" or unicodedata.category(char) == "Cc" for char in value)
     ):
-        raise ConfigError(
-            f"{where}: `name` names the autograder zip, so it must not be empty, start with "
+        raise where.error(
+            "`name` names the autograder zip, so it must not be empty, start with "
             f"`.`, or hold `/`, `\\` or control characters; got {value!r}."
         )
 
@@ -430,8 +666,8 @@ def _name(where: str, value: str) -> str:
         or any(char in WINDOWS_FORBIDDEN for char in value)
         or value.endswith((".", " "))
     ):
-        raise ConfigError(
-            f"{where}: `name` {value!r} is not a valid file name on Windows. It names the "
+        raise where.error(
+            f"`name` {value!r} is not a valid file name on Windows. It names the "
             "student zip and its folder, which students on Windows must be able to unzip. Pick "
             "another `name`, or set one if it comes from the notebook's file name."
         )
@@ -446,33 +682,39 @@ def check_name(value: str) -> str:
         ConfigError: If it does not.
     """
 
-    return _name("Assignment name", value)
+    return _name(Where("Assignment name"), value)
 
 
-def _files(where: str, value: object) -> tuple[str, ...]:
+def _files(where: Where, value: object) -> tuple[str, ...]:
     match value:
         case list() | tuple() if all(isinstance(item, str) for item in value):
             return tuple(value)
-    raise ConfigError(f"{where}: `files` must be a list of paths, got {value!r}.")
+    raise where.error(f"`files` must be a list of paths, got {value!r}.")
 
 
-def _seconds(where: str, key: str, value: object) -> float:
+def _seconds(where: Where, key: str, value: object) -> float:
     match value:
         case bool():
             pass
         case int() | float() if value > 0:
             return float(value)
-    raise ConfigError(f"{where}: `{key}` must be a number of seconds > 0, got {value!r}.")
+    text = f"`{key}` must be a number of seconds > 0, got {value!r}."
+    raise _number_error(where, key, text, value, lambda number: number > 0)
 
 
-def _memory(where: str, value: object) -> int:
+def _memory(where: Where, value: object) -> int:
     match value:
         case bool():
             pass
         case int() if value >= MIN_MEMORY_MB:
             return value
-    raise ConfigError(
-        f"{where}: `memory` must be a whole number of MB >= {MIN_MEMORY_MB}, got {value!r}."
+    text = f"`memory` must be a whole number of MB >= {MIN_MEMORY_MB}, got {value!r}."
+    raise _number_error(
+        where,
+        "memory",
+        text,
+        value,
+        lambda number: isinstance(number, int) and number >= MIN_MEMORY_MB,
     )
 
 

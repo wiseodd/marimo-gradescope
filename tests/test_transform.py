@@ -12,6 +12,7 @@ from mogs._env import clean_env
 from mogs.config import (
     AssignmentConfig,
     Question,
+    Span,
     read_config,
     read_header,
 )
@@ -438,6 +439,7 @@ def _():
     assert "source line 31" in message
     assert "after function definition on line 27" in message
     assert "`@app.cell`" in message
+    assert info.value.diagnostic.span == Span(None, 31, 0, 31, 9)
 
 
 def test_invalid_output_after_a_multiline_edit_names_the_source_line():
