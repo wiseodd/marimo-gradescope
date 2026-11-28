@@ -355,6 +355,14 @@ examples/demo/
 
 Each build replaces both directories, and a failed build removes them.
 
+Before writing them, the build checks the assignment by grading two notebooks with the real grader: the solved notebook and the blank student notebook.
+It does this in a fresh environment with the same pinned requirements that Gradescope gets.
+That's why the build needs network access, and why the first build of an assignment takes a while: it has to download the dependencies.
+
+The solved notebook must get full marks, or the build fails.
+The blank student notebook should get zero.
+If a test passes on the blank notebook, it gives students free points, and the build warns you about it.
+
 When an error comes from one place in the notebook, the build shows that line, and a fix for some common mistakes:
 
 ```
@@ -367,14 +375,6 @@ error: `points` must be a number >= 0, got '10'.
    |
 help: drop the quotes: points=10
 ```
-
-Before writing them, the build checks the assignment by grading two notebooks with the real grader: the solved notebook and the blank student notebook.
-It does this in a fresh environment with the same pinned requirements that Gradescope gets.
-That's why the build needs network access, and why the first build of an assignment takes a while: it has to download the dependencies.
-
-The solved notebook must get full marks, or the build fails.
-The blank student notebook should get zero.
-If a test passes on the blank notebook, it gives students free points, and the build warns you about it.
 
 `build` runs on Linux and macOS.
 On Windows, use WSL.
