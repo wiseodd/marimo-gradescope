@@ -1,10 +1,13 @@
 //! Commands run as `subprocess.run(..., capture_output=True)` runs them, stoppable by Ctrl+C
 //! and by a time limit.
 
-use std::io::{self, Read};
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
-use std::process::{Child, Command, ExitStatus, Stdio};
-use std::thread::{self, JoinHandle};
+#[cfg(not(unix))]
+use std::process::Stdio;
+use std::process::{Child, Command, ExitStatus};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::{Interpreter, interrupted};
@@ -41,8 +44,10 @@ pub(crate) fn run<I: Interpreter>(i: &I, command: &mut Command) -> Result<Output
 /// Run `command` as [`run`] does, for at most `limit`.
 ///
 /// Returns `None` when the command is still running at `limit`. It is then asked to end, as
-/// Ctrl+C would (`SIGTERM` on Unix, which `uv run` passes on to its child), and killed if it
-/// has not ended [`GRACE`] later.
+/// Ctrl+C would (`SIGTERM` on Unix), and killed if it has not ended [`GRACE`] later. Stopping
+/// it stops what it started too: on Unix it runs in a process group of its own, and on Windows
+/// `taskkill /T` ends its process tree. On Unix, what it left running when it ends is killed.
+/// Its output goes to files, so a process it leaves behind cannot hold the run open.
 pub(crate) fn run_within<I: Interpreter>(
     i: &I,
     command: &mut Command,
@@ -50,30 +55,31 @@ pub(crate) fn run_within<I: Interpreter>(
 ) -> Result<Option<Output>, I::Error> {
     let program = PathBuf::from(command.get_program());
     let os = |error| i.os(error, &program);
+    let io = |error| i.io(error);
 
     for key in DROPPED {
         command.env_remove(key);
     }
 
-    let mut child = command
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(os)?;
-    let stdout = drain(child.stdout.take());
-    let stderr = drain(child.stderr.take());
+    let mut stdout = tempfile::tempfile().map_err(io)?;
+    let mut stderr = tempfile::tempfile().map_err(io)?;
+    command
+        .stdout(stdout.try_clone().map_err(io)?)
+        .stderr(stderr.try_clone().map_err(io)?);
+
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(command, 0);
+
+    let mut child = command.spawn().map_err(os)?;
     let deadline = limit.map(|limit| Instant::now() + limit);
 
-    // The readers end when the pipes close; they are not waited for after a stop, since a
-    // child of the command may hold them open.
     let status = loop {
         if let Some(status) = child.try_wait().map_err(os)? {
             break status;
         }
 
         if let Err(error) = interrupted(i) {
-            let _ = child.kill();
-            let _ = child.wait();
+            kill(&mut child);
             return Err(error);
         }
 
@@ -85,61 +91,67 @@ pub(crate) fn run_within<I: Interpreter>(
         thread::sleep(POLL);
     };
 
-    let read = |reader: JoinHandle<io::Result<Vec<u8>>>| {
-        reader
-            .join()
-            .expect("the pipe reader does not panic")
-            .map_err(|error| i.io(error))
+    #[cfg(unix)]
+    signal_group(&child, rustix::process::Signal::KILL);
+
+    let read = |file: &mut File| {
+        let mut out = Vec::new();
+        file.seek(SeekFrom::Start(0))?;
+        file.read_to_end(&mut out)?;
+        Ok(out)
     };
 
     Ok(Some(Output {
         status,
-        stdout: read(stdout)?,
-        stderr: read(stderr)?,
+        stdout: read(&mut stdout).map_err(io)?,
+        stderr: read(&mut stderr).map_err(io)?,
     }))
 }
 
-/// Ask `child` to end, then kill it if it has not ended [`GRACE`] later.
+/// Ask `child` and what it started to end, then kill them if `child` has not ended [`GRACE`]
+/// later.
 fn stop(child: &mut Child) {
-    terminate(child);
+    #[cfg(unix)]
+    signal_group(child, rustix::process::Signal::TERM);
+
+    #[cfg(not(unix))]
+    kill(child);
+
     let deadline = Instant::now() + GRACE;
 
     while Instant::now() < deadline {
         if !matches!(child.try_wait(), Ok(None)) {
-            return;
+            break;
         }
 
         thread::sleep(POLL);
     }
 
+    kill(child);
+}
+
+/// Kill `child` and what it started, and reap `child`.
+fn kill(child: &mut Child) {
+    #[cfg(unix)]
+    signal_group(child, rustix::process::Signal::KILL);
+
+    // Windows has no process groups to signal; `taskkill /T` ends the whole tree.
+    #[cfg(not(unix))]
+    let _ = Command::new("taskkill")
+        .args(["/T", "/F", "/PID", &child.id().to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
     let _ = child.kill();
     let _ = child.wait();
 }
 
-/// Send `SIGTERM` to `child`.
+/// Send `signal` to the process group that `child` leads.
 #[cfg(unix)]
-fn terminate(child: &mut Child) {
+fn signal_group(child: &Child, signal: rustix::process::Signal) {
     let pid = rustix::process::Pid::from_child(child);
-    let _ = rustix::process::kill_process(pid, rustix::process::Signal::TERM);
-}
-
-/// Kill `child`: Windows has no signal to ask a process to end.
-#[cfg(not(unix))]
-fn terminate(child: &mut Child) {
-    let _ = child.kill();
-}
-
-/// Read all of `pipe` on a thread of its own.
-fn drain(pipe: Option<impl Read + Send + 'static>) -> JoinHandle<io::Result<Vec<u8>>> {
-    thread::spawn(move || {
-        let mut out = Vec::new();
-
-        if let Some(mut pipe) = pipe {
-            pipe.read_to_end(&mut out)?;
-        }
-
-        Ok(out)
-    })
+    let _ = rustix::process::kill_process_group(pid, signal);
 }
 
 #[cfg(all(test, unix))]
@@ -234,5 +246,58 @@ mod tests {
         );
 
         assert_eq!(output.unwrap().unwrap().stdout, b"done\n");
+    }
+
+    #[test]
+    fn background_process_does_not_hold_the_run() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 30 & echo done"]);
+        let started = Instant::now();
+
+        let output = ran(&mut command).unwrap();
+
+        assert_eq!(output.stdout, b"done\n");
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn stopping_a_command_stops_what_it_started() {
+        let folder = tempfile::tempdir().unwrap();
+        let pid_file = folder.path().join("pid");
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "sleep 30 & echo $! > \"$1\"; wait", "sh"])
+            .arg(&pid_file);
+
+        let _spawning = spawning();
+        let output = run_within(
+            &Fake::default(),
+            &mut command,
+            Some(Duration::from_millis(500)),
+        );
+
+        assert!(output.unwrap().is_none());
+        let pid: i32 = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(gone(pid), "process {pid} still runs");
+    }
+
+    /// Whether process `pid` has ended, waiting up to 2 s for it to be reaped.
+    fn gone(pid: i32) -> bool {
+        let pid = rustix::process::Pid::from_raw(pid).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+
+        while Instant::now() < deadline {
+            if rustix::process::test_kill_process(pid).is_err() {
+                return true;
+            }
+
+            thread::sleep(POLL);
+        }
+
+        false
     }
 }

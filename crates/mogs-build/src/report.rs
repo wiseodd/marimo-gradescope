@@ -261,12 +261,15 @@ mod tests {
 
         let text = report_text(&built(&cwd.join("demo/dist"), Vec::new(), &[]));
 
+        let zip = native("demo/dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip");
+        let student = native("demo/dist/student/hw.zip");
+
         assert_eq!(
             text.lines().take(4).collect::<Vec<_>>(),
             [
                 "All done!",
-                "Upload to Gradescope  : demo/dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip",
-                "Distribute to students: demo/dist/student/hw.zip",
+                &format!("Upload to Gradescope  : {zip}"),
+                &format!("Distribute to students: {student}"),
                 "",
             ]
         );
@@ -276,10 +279,21 @@ mod tests {
     fn report_shows_absolute_paths_outside_the_working_directory() {
         let text = report_text(&built(Path::new("/elsewhere/demo/dist"), Vec::new(), &[]));
 
+        let student = native("/elsewhere/demo/dist/student/hw.zip");
+
         assert_eq!(
             text.lines().nth(2),
-            Some("Distribute to students: /elsewhere/demo/dist/student/hw.zip")
+            Some(format!("Distribute to students: {student}").as_str())
         );
+    }
+
+    /// `path` with the separators of this platform, as the host shows paths.
+    fn native(path: &str) -> String {
+        Path::new(path)
+            .components()
+            .collect::<PathBuf>()
+            .display()
+            .to_string()
     }
 
     #[test]
