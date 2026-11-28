@@ -77,4 +77,12 @@ pub trait Interpreter {
     ///
     /// The `OSError` if the file cannot be written.
     fn write_text(&self, path: &Path, text: &str) -> Result<(), Self::Error>;
+    /// `mogs.requirements.write_header(Path(notebook))`, which writes the notebook's header from
+    /// its requirements file.
+    ///
+    /// # Errors
+    ///
+    /// The `ConfigError` of an invalid config or requirements file, or the `OSError` if the
+    /// notebook cannot be read or written.
+    fn write_header(&self, notebook: &Path) -> Result<(), Self::Error>;
 }
