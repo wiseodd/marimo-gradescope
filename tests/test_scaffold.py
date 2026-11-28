@@ -2,7 +2,6 @@ import os
 import re
 import subprocess
 import sys
-import sysconfig
 from importlib.metadata import version
 from pathlib import Path
 
@@ -11,8 +10,6 @@ import pytest
 from mogs._analysis import read_assignment
 from mogs._native import main
 from mogs.source import CellKind
-
-SCRIPT = Path(sysconfig.get_path("scripts")) / ("mogs.exe" if os.name == "nt" else "mogs")
 
 
 def init(folder: Path, capsys: pytest.CaptureFixture[str]) -> Path:
@@ -242,7 +239,7 @@ def test_cli_init_says_what_to_do_next(tmp_path, monkeypatch, capsys):
 
 @pytest.mark.skipif(sys.platform != "linux", reason="needs a file system of bytes")
 @pytest.mark.parametrize("folder", [b"p\xff/hw", b"h\xffw"])
-def test_cli_init_keeps_bytes_that_are_not_utf_8(folder, tmp_path):
+def test_cli_init_keeps_bytes_that_are_not_utf_8(folder, tmp_path, mogs_script):
     try:
         os.mkdir(bytes(tmp_path) + b"/\xff")
     except OSError as error:
@@ -252,7 +249,7 @@ def test_cli_init_keeps_bytes_that_are_not_utf_8(folder, tmp_path):
     env = dict(os.environ, PYTHONIOENCODING="utf-8:surrogateescape")
 
     result = subprocess.run(
-        [SCRIPT, "init", os.fsdecode(folder)], cwd=tmp_path, env=env, capture_output=True
+        [mogs_script, "init", os.fsdecode(folder)], cwd=tmp_path, env=env, capture_output=True
     )
 
     assert result.returncode == 0, result.stderr
@@ -279,6 +276,7 @@ def test_cli_init_shows_paths_as_python_does(tmp_path, monkeypatch, capsys):
 
 
 @pytest.mark.network
+@pytest.mark.skipif(sys.platform == "win32", reason="build needs Linux or macOS")
 def test_init_notebook_builds(tmp_path, capsys):
     init(tmp_path / "A12", capsys)
 

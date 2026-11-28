@@ -11,7 +11,6 @@ import ast
 import importlib.metadata
 import io
 import json
-import os
 import re
 import zipfile
 from collections.abc import Iterable
@@ -29,6 +28,7 @@ from mogs.config import (
     Api,
     AssignmentConfig,
     ConfigError,
+    UsageError,
     api_calls,
     normalized_name,
     read_config,
@@ -55,16 +55,15 @@ PORTING_URL = "https://mogs.kristia.de/porting"
 OTTER_RE = re.compile(
     r"(?<![\w#])# (?:ASSIGNMENT CONFIG|(?:BEGIN|END) (?:QUESTION|TESTS|PROMPT|TEST CONFIG))\b"
 )
-# The mogs line of Gradescope's `requirements.txt`, when not this exact version. The
-# end-to-end tests set it to a wheel of the checkout.
-TOOL_REQUIREMENT = "MOGS_TOOL_REQUIREMENT"
+# A Python version such as `3.13` or `3.13.5`, as `uv venv --python` takes it on Gradescope.
+PYTHON_RE = re.compile(r"3\.\d+(\.\d+)?")
 # Limits of a zipped submission.
 MAX_ZIP_MEMBERS = 5_000
 MAX_ZIP_BYTES = 500 * 1024 * 1024
 _CHUNK = 1024 * 1024
 
 
-class BuildError(Exception):
+class BuildError(UsageError):
     """The assignment cannot be built: no single notebook, invalid source, or a failed check."""
 
 
@@ -85,43 +84,32 @@ class Assignment:
     nb: Notebook
 
 
-class QuestionTests(TypedDict):
-    """One question of the config, with its tests counted.
+class GradeInputs(TypedDict):
+    """What grading needs: the bundle, its requirements and its data files.
 
-    `prompts` has the first line of each prompt cell of a manual question, as
-    `prompt_previews` gives it, or `NO_TEXT` when none has text. It is empty for other
-    questions.
+    The bundle is JSON. The requirements have no mogs line. The data files are (path relative
+    to the notebook, source) pairs.
     """
 
-    id: str
-    title: str
-    points: float
-    public: int
-    hidden: int
-    prompts: list[str]
-
-
-class GradeInputs(TypedDict):
-    """What grading needs: the bundle's fields and the requirements without the mogs line."""
-
-    bundle: dict[str, object]
+    bundle_json: str
     grading_requirements: str
+    data: list[tuple[str, Path]]
 
 
 class BuildInputs(GradeInputs):
     """What a build writes and checks.
 
-    `tests` and `data` hold (path relative to the notebook, text or source) pairs.
+    `tests` holds (path relative to the notebook, text) pairs.
+    `prompts` has, for each manual question, the first line of each of its prompt cells, as
+    `prompt_previews` gives it, or `NO_TEXT` when none has text.
     """
 
-    bundle_json: str
     student: str
     solved: str
     tests: list[tuple[str, str]]
-    data: list[tuple[str, Path]]
     requirements: str
     warnings: list[str]
-    questions: list[QuestionTests]
+    prompts: dict[str, list[str]]
 
 
 def read_assignment(assignment_dir: Path) -> Assignment:
@@ -149,12 +137,10 @@ def read_assignment(assignment_dir: Path) -> Assignment:
 def build_inputs(assignment: Assignment) -> BuildInputs:
     """What a build writes and checks, from the notebook.
 
-    The mogs line of `requirements` is `MOGS_TOOL_REQUIREMENT` when set and not empty, else
-    this version.
-    Student notebooks always pin this version.
+    The mogs line of `requirements` and student notebooks pin this version.
 
     Raises:
-        ConfigError: If a data file or a header edit is invalid.
+        ConfigError: If a data file, a header edit or `python` is invalid.
         SourceError: If the notebook cannot be transformed.
         RequirementsError: If the dependencies cannot be pinned.
     """
@@ -166,27 +152,20 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
     solved = student_notebook(src, nb, cfg, pinned_requirement(), solutions=True)
     bundle = bundle_from_notebook(nb, cfg)
     tests = public_test_files(nb)
-    requirement = os.environ.get(TOOL_REQUIREMENT) or f"{TOOL}=={__version__}"
-    requirements, warnings = gradescope_requirements(src, cfg, requirement)
-    by_question = nb.tests_by_question()
+    requirements, warnings = gradescope_requirements(src, cfg, f"{TOOL}=={__version__}")
+    prompts = {
+        q.id: list(prompt_previews(nb, q.id) or (NO_TEXT,))
+        for q in cfg.questions.values()
+        if q.manual
+    }
 
-    questions: list[QuestionTests] = []
-    for q in cfg.questions.values():
-        public, hidden = by_question.get(q.id, ([], []))
-        prompts = list(prompt_previews(nb, q.id) or (NO_TEXT,)) if q.manual else []
-        questions.append(
-            {
-                "id": q.id,
-                "title": q.title,
-                "points": q.points,
-                "public": len(public),
-                "hidden": len(hidden),
-                "prompts": prompts,
-            }
+    # Last, as the build checked it after everything else in v0.7.
+    if not PYTHON_RE.fullmatch(cfg.python):
+        raise ConfigError(
+            f'{ASSIGNMENT} `python` must be a version such as "3.13", got {cfg.python!r}.'
         )
 
     return {
-        "bundle": bundle.to_dict(),
         "bundle_json": bundle.to_json(),
         "grading_requirements": _without_tool(requirements),
         "student": student,
@@ -195,7 +174,7 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
         "data": [(str(rel), source) for rel, source in data.items()],
         "requirements": requirements,
         "warnings": source_warnings(nb) + warnings,
-        "questions": questions,
+        "prompts": prompts,
     }
 
 
@@ -207,11 +186,15 @@ def grade_inputs(assignment: Assignment) -> GradeInputs:
         RequirementsError: If the dependencies cannot be pinned.
     """
 
-    data_files(assignment.path.parent, assignment.cfg)
+    data = data_files(assignment.path.parent, assignment.cfg)
     bundle = bundle_from_notebook(assignment.nb, assignment.cfg)
     requirements, _ = gradescope_requirements(assignment.src, assignment.cfg, TOOL)
 
-    return {"bundle": bundle.to_dict(), "grading_requirements": _without_tool(requirements)}
+    return {
+        "bundle_json": bundle.to_json(),
+        "grading_requirements": _without_tool(requirements),
+        "data": [(str(rel), source) for rel, source in data.items()],
+    }
 
 
 def _without_tool(requirements: str) -> str:
@@ -344,10 +327,7 @@ def data_files(assignment_dir: Path, cfg: AssignmentConfig) -> dict[PurePosixPat
                 "output."
             )
 
-    try:
-        return shared_data_files(assignment_dir, cfg.files)
-    except ValueError as error:
-        raise ConfigError(f"{ASSIGNMENT} `files`: {error}.") from error
+    return shared_data_files(assignment_dir, cfg.files)
 
 
 def decoded(*streams: bytes) -> str:

@@ -3,6 +3,7 @@ name = "mogs"
 # The version is `[workspace.package] version` in Cargo.toml.
 dynamic = ["version"]
 description = "Build Gradescope autograders from marimo notebooks."
+readme = "README.md"
 authors = [{ name = "Agustinus Kristiadi", email = "agustinus@kristia.de" }]
 license = "MIT"
 # The vendored Typst packages are compiled into the extension module; their licenses ship too.
@@ -10,7 +11,9 @@ license-files = ["LICENSE", "crates/mogs-pdf/typst/preview/*/*/LICENSE"]
 requires-python = ">=3.13"
 classifiers = [
   "Development Status :: 3 - Alpha",
-  "Operating System :: OS Independent",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
 ]
@@ -19,6 +22,11 @@ dependencies = [
   "packaging>=24",
   "pytest",
 ]
+
+[project.urls]
+Documentation = "https://mogs.kristia.de"
+Repository = "https://github.com/wiseodd/mogs"
+Issues = "https://github.com/wiseodd/mogs/issues"
 
 [project.scripts]
 mogs = "mogs._native:main"
@@ -84,6 +92,8 @@ markers = [
 # Rebuild `mogs._native` when the Rust sources change.
 cache-keys = [
   { file = "pyproject.toml" },
+  # The package's long description.
+  { file = "README.md" },
   { file = "Cargo.toml" },
   { file = "Cargo.lock" },
   { file = "rust-toolchain.toml" },

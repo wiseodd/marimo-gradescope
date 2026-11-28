@@ -1,6 +1,6 @@
 """The Rust side of mogs, built from crates/mogs."""
 
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path, PurePosixPath
 
 from mogs._answers import Question
@@ -26,12 +26,15 @@ def data_files(root: Path, files: Sequence[str]) -> dict[PurePosixPath, Path]:
         Source path by relative destination, in the order of `files`, folders sorted.
 
     Raises:
-        ValueError: If a path is absolute, has a `..` part, is empty, starts with
+        ConfigError: If a path is absolute, has a `..` part, is empty, starts with
             `submission.py`, or does not exist. The message names the path.
     """
 
-def render_pdf(questions: Iterable[Question], status: Callable[[str], None]) -> bytes:
-    """The PDF of `questions`, one page or more per question, after calling `status`.
+PDF_STATUS: str
+"""The message to show while `render_pdf` works."""
+
+def render_pdf(questions: Iterable[Question]) -> bytes:
+    """The PDF of `questions`, one page or more per question.
 
     A Markdown part shows with LaTeX math, through the vendored Typst packages cmarker and
     mitex. A part that breaks the document is rendered again with less: first with each

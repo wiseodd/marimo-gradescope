@@ -14,25 +14,21 @@
 //! grader, in a fresh environment with Gradescope's requirements. The solved copy must get full
 //! marks. The student copy should get none; tests that pass on it come back as warnings.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use mogs_grader::GradeError;
-use mogs_schema::{Outcome, Results};
+use mogs_schema::{Bundle, Outcome, Results};
 
-use crate::environment::grading_python;
-use crate::templates::{RUN_AUTOGRADER, setup_script};
-use crate::zipout::write_zip;
-use crate::{Class, Interpreter, Question, grade_locally, process, report, total};
+use crate::unix::environment::grading_python;
+use crate::unix::templates::{RUN_AUTOGRADER, setup_script};
+use crate::unix::zipout::{Deflated, write_zip};
+use crate::unix::{Class, Interpreter, Question, grade_locally, process, report, total};
+use crate::{DIST, PARTS};
 
-/// The output folder next to the source notebook.
-pub const DIST: &str = "dist";
-/// The parts of `DIST` a build replaces.
-pub const PARTS: [&str; 2] = ["student", "autograder"];
 /// Otter's timestamp in the zip name, e.g. 2026_09_30T12_30_41_890583.
 const STAMP: &str = "%Y_%m_%dT%H_%M_%S_%f";
 
@@ -80,25 +76,33 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     let inputs = i.build_inputs(&assignment)?;
     let bundle = &inputs.grading.bundle;
     let config = &bundle.config;
-    let os = |error: io::Error, path: &Path| i.grade_error(GradeError::os(error, path));
 
-    let setup = setup_script(i, &config.python)?;
+    let setup = setup_script(&config.python);
     let mut data = Vec::new();
 
-    for (rel, source) in &inputs.data {
-        data.push((rel, fs::read(source).map_err(|e| os(e, source))?));
+    for (rel, source) in &inputs.grading.data {
+        data.push((rel, fs::read(source).map_err(|e| i.os(e, source))?));
     }
 
-    let mut entries: BTreeMap<String, &[u8]> = BTreeMap::from([
-        ("setup.sh".into(), setup.as_bytes()),
-        ("run_autograder".into(), RUN_AUTOGRADER.as_bytes()),
-        ("bundle.json".into(), inputs.bundle_json.as_bytes()),
-        ("requirements.txt".into(), inputs.requirements.as_bytes()),
-    ]);
-    entries.extend(
-        data.iter()
-            .map(|(rel, bytes)| (rel.to_string(), &bytes[..])),
-    );
+    // Each data file goes into both zips, deflated once.
+    let deflated = data
+        .iter()
+        .map(|(rel, bytes)| Ok((rel.as_str(), Deflated::new(i, bytes)?)))
+        .collect::<Result<Vec<_>, I::Error>>()?;
+    let scripts = [
+        ("setup.sh", setup.as_bytes()),
+        ("run_autograder", RUN_AUTOGRADER.as_bytes()),
+        ("bundle.json", inputs.bundle_json.as_bytes()),
+        ("requirements.txt", inputs.requirements.as_bytes()),
+    ]
+    .into_iter()
+    .map(|(name, bytes)| Ok((name, Deflated::new(i, bytes)?)))
+    .collect::<Result<Vec<_>, I::Error>>()?;
+    let entries: BTreeMap<String, &Deflated> = scripts
+        .iter()
+        .chain(&deflated)
+        .map(|(name, entry)| (name.to_string(), entry))
+        .collect();
 
     // As pathlib shows it, so `mogs build .` names `dist`, not `./dist`.
     let dist = i.path(&folder.join(DIST))?;
@@ -106,7 +110,7 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     let stage = tempfile::Builder::new()
         .prefix("mogs-build-")
         .tempdir()
-        .map_err(|error| i.grade_error(GradeError::from(error)))?;
+        .map_err(|error| i.io(error))?;
     let stage = stage.path();
 
     // Self-check, in an environment with what Gradescope installs.
@@ -119,15 +123,15 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     let check = stage.join("check");
     let student_path = check.join("student").join(&config.notebook);
     let solved_path = check.join("solved").join(&config.notebook);
-    fs::create_dir(&check).map_err(|e| os(e, &check))?;
+    fs::create_dir(&check).map_err(|e| i.os(e, &check))?;
 
     for (notebook, text) in [
         (&student_path, &inputs.student),
         (&solved_path, &inputs.solved),
     ] {
         let parent = notebook.parent().expect("the notebook is in a folder");
-        fs::create_dir(parent).map_err(|e| os(e, parent))?;
-        fs::write(notebook, text).map_err(|e| os(e, notebook))?;
+        fs::create_dir(parent).map_err(|e| i.os(e, parent))?;
+        fs::write(notebook, text).map_err(|e| i.os(e, notebook))?;
     }
 
     let mut warnings = inputs.warnings.clone();
@@ -137,42 +141,41 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     // The solved copy, not the source: it is what the instructor's test upload sends.
     let solution = grade_locally(
         i,
-        bundle,
+        &inputs.grading,
         &solved_path,
         &check.join("solution"),
-        folder,
         &python,
     )?;
-    let failed: Vec<Outcome> = solution
+    let failed: Vec<&Outcome> = solution
         .outcomes
         .values()
         .filter(|outcome| !outcome.passed)
-        .cloned()
         .collect();
 
     if !failed.is_empty() {
+        let listing = report::Listing::LoadFailuresCounted;
         let message = format!(
             "The solved copy of {} does not get full marks. Failing tests:\n{}",
             config.notebook,
-            report::failure_report(i, bundle, &failed, true)?.join("\n")
+            report::failure_report(i, bundle, &failed, listing)?.join("\n")
         );
         return Err(i.raise(Class::Build, message.into()));
     }
 
     let blank = grade_locally(
         i,
-        bundle,
+        &inputs.grading,
         &student_path,
         &check.join("blank"),
-        folder,
         &python,
     )?;
     warnings.extend(report::free_points_warnings(bundle, &blank.outcomes));
 
     // Output, written in full before it replaces the old one.
     let out = stage.join(DIST);
-    let student_zip = out.join("student").join(format!("{}.zip", config.name));
-    fs::create_dir_all(out.join("student")).map_err(|e| os(e, &out))?;
+    let student_name = format!("{}.zip", config.name);
+    let student_zip = out.join("student").join(&student_name);
+    fs::create_dir_all(out.join("student")).map_err(|e| i.os(e, &out))?;
 
     let mut files: BTreeMap<&str, &[u8]> = data
         .iter()
@@ -184,12 +187,23 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
             .iter()
             .map(|(rel, text)| (rel.as_str(), text.as_bytes())),
     );
-    let mut student: BTreeMap<String, &[u8]> = files
+    let mut texts = inputs
+        .tests
         .iter()
-        .map(|(rel, content)| (format!("{}/{rel}", config.name), *content))
+        .map(|(rel, text)| Ok((rel.as_str(), Deflated::new(i, text.as_bytes())?)))
+        .collect::<Result<Vec<_>, I::Error>>()?;
+    texts.push((
+        config.notebook.as_str(),
+        Deflated::new(i, inputs.student.as_bytes())?,
+    ));
+    // A test file takes the place of a data file of the same name, as in `files`.
+    let mut student: BTreeMap<&str, &Deflated> =
+        deflated.iter().map(|(rel, entry)| (*rel, entry)).collect();
+    student.extend(texts.iter().map(|(rel, entry)| (*rel, entry)));
+    let student: BTreeMap<String, &Deflated> = student
+        .into_iter()
+        .map(|(rel, entry)| (format!("{}/{rel}", config.name), entry))
         .collect();
-    let notebook = format!("{}/{}", config.name, config.notebook);
-    student.insert(notebook, inputs.student.as_bytes());
     write_zip(i, &student_zip, &student)?;
 
     let autograder = out.join("autograder");
@@ -198,32 +212,36 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     for (rel, content) in &files {
         let path = autograder.join(rel);
         let parent = path.parent().expect("the file is in a folder");
-        fs::create_dir_all(parent).map_err(|e| os(e, parent))?;
-        fs::write(&path, content).map_err(|e| os(e, &path))?;
+        fs::create_dir_all(parent).map_err(|e| i.os(e, parent))?;
+        fs::write(&path, content).map_err(|e| i.os(e, &path))?;
     }
 
     let requirements = autograder.join("requirements.txt");
-    fs::write(&requirements, &inputs.requirements).map_err(|e| os(e, &requirements))?;
+    fs::write(&requirements, &inputs.requirements).map_err(|e| i.os(e, &requirements))?;
     write_zip(i, &autograder.join(&zip_name), &entries)?;
 
     for part in PARTS {
         let target = dist.join(part);
 
         if target.exists() {
-            fs::remove_dir_all(&target).map_err(|e| os(e, &target))?;
+            fs::remove_dir_all(&target).map_err(|e| i.os(e, &target))?;
         }
 
-        fs::create_dir_all(&dist).map_err(|e| os(e, &dist))?;
-        move_folder(&out.join(part), &target).map_err(|e| os(e, &target))?;
+        fs::create_dir_all(&dist).map_err(|e| i.os(e, &dist))?;
+        move_folder(&out.join(part), &target).map_err(|e| i.os(e, &target))?;
     }
 
     Ok(Built {
-        student: dist.join("student").join(format!("{}.zip", config.name)),
+        student: dist.join("student").join(student_name),
         zip: dist.join("autograder").join(zip_name),
         solution: total(i, &solution.results)?,
         blank: total(i, &blank.results)?,
         warnings,
-        scores: scores(&inputs.questions, &solution.results, &blank.results),
+        scores: scores(
+            &questions(bundle, &inputs.prompts),
+            &solution.results,
+            &blank.results,
+        ),
     })
 }
 
@@ -287,6 +305,32 @@ fn copy_folder(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// The questions of `bundle`, in config order, with their tests counted and the `prompts`
+/// of the manual ones.
+fn questions(bundle: &Bundle, prompts: &HashMap<String, Vec<String>>) -> Vec<Question> {
+    let count = |id: &str, hidden: bool| -> usize {
+        let cells = bundle.cells.iter();
+        cells
+            .filter(|cell| cell.qid == id && cell.hidden == hidden)
+            .map(|cell| cell.tests.len())
+            .sum()
+    };
+
+    bundle
+        .config
+        .questions
+        .iter()
+        .map(|question| Question {
+            id: question.id.clone(),
+            title: question.title.clone(),
+            points: question.points,
+            public: count(&question.id, false),
+            hidden: count(&question.id, true),
+            prompts: prompts.get(&question.id).cloned().unwrap_or_default(),
+        })
+        .collect()
+}
+
 /// Each question's scores, from the rows of the two self-check results.
 fn scores(questions: &[Question], solution: &Results, blank: &Results) -> Vec<Score> {
     let score = |results: &Results, id: &str| {
@@ -308,7 +352,7 @@ fn scores(questions: &[Question], solution: &Results, blank: &Results) -> Vec<Sc
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fake::{Fake, script, spawning};
+    use crate::unix::fake::{Fake, script, spawning};
 
     /// A fake Python in `folder` that prints `output` and exits with `code`.
     fn fake_python(folder: &Path, output: &str, code: i32) -> PathBuf {
@@ -397,6 +441,45 @@ mod tests {
                 "`marimo check` on the solved notebook:\n{} -m marimo check hw.py",
                 folder.display()
             )]
+        );
+    }
+
+    #[test]
+    fn questions_count_the_tests_of_the_bundle() {
+        let bundle: Bundle = mogs_schema::decode(
+            r#"{"schema": 1, "config": {"name": "A", "notebook": "hw.py", "files": [],
+                "timeout": 1, "budget": 1, "memory_mb": 1, "python": "3.13", "questions": [
+                    {"id": "q1", "title": "One", "points": 4, "manual": false},
+                    {"id": "q2", "title": "Two", "points": 5, "manual": true}]},
+                "setup_code": "", "helpers": [], "cells": [
+                    {"qid": "q1", "label": "q1-tests", "hidden": false, "source": "",
+                     "tests": ["test_q1_a", "test_q1_b"], "uses": [], "needs": []},
+                    {"qid": "q1", "label": "q1-tests", "hidden": true, "source": "",
+                     "tests": ["test_q1_c"], "uses": [], "needs": []}]}"#,
+        )
+        .unwrap();
+        let prompts = HashMap::from([("q2".to_string(), vec!["## Two".to_string()])]);
+
+        let found = questions(&bundle, &prompts);
+
+        let counted: Vec<_> = found
+            .iter()
+            .map(|q| {
+                (
+                    q.id.as_str(),
+                    q.points,
+                    q.public,
+                    q.hidden,
+                    q.prompts.clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            counted,
+            [
+                ("q1", 4.0, 2, 1, vec![]),
+                ("q2", 5.0, 0, 0, vec!["## Two".to_string()]),
+            ]
         );
     }
 

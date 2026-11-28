@@ -13,10 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from mogs import __version__, _analysis
+from mogs import __version__, _analysis, _native
 from mogs._analysis import BuildError, data_files, find_notebook, source_notebook
 from mogs._native import main
-from mogs.config import read_config
+from mogs.config import ConfigError, read_config
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
 ZIP_RE = re.compile(r"hw-autograder-\d{4}_\d{2}_\d{2}T\d{2}_\d{2}_\d{2}_\d{6}\.zip")
@@ -687,6 +687,16 @@ def test_bad_python_version_is_refused(tmp_path):
     assert not (folder / "dist").exists()
 
 
+@pytest.mark.parametrize("python", ["3.13; rm -rf /", "latest", "3", "", "3.13\n"])
+def test_python_must_be_a_plain_version(python):
+    assert _analysis.PYTHON_RE.fullmatch(python) is None
+
+
+@pytest.mark.parametrize("python", ["3.13", "3.13.5"])
+def test_python_takes_a_minor_or_patch_version(python):
+    assert _analysis.PYTHON_RE.fullmatch(python) is not None
+
+
 def test_windows_is_refused(tmp_path, monkeypatch, capsys):
     folder = demo_copy(tmp_path / "demo")
     monkeypatch.setattr(sys, "platform", "win32")
@@ -699,7 +709,8 @@ def test_windows_is_refused(tmp_path, monkeypatch, capsys):
     )
 
 
-def test_cli_does_not_import_the_grader():
+def test_analysis_and_cli_import_nothing_posix_only():
+    # `edit` and the assignment summary use `_analysis` on Windows too.
     code = (
         "import sys, mogs._analysis\n"
         "from mogs._native import main\n"
@@ -744,27 +755,13 @@ def requirements_file_copy(target: Path, requirements: str) -> Path:
     return folder
 
 
-def test_tool_requirement_comes_from_the_environment(tmp_path, monkeypatch):
+def test_requirements_pin_this_version(tmp_path):
     folder = requirements_file_copy(tmp_path / "demo", "numpy==2.0\n")
-    monkeypatch.setenv("MOGS_TOOL_REQUIREMENT", "mogs @ file:///wheels/mogs.whl")
-
-    inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
-
-    assert inputs["requirements"] == "numpy==2.0\nmogs @ file:///wheels/mogs.whl\n"
-    assert inputs["grading_requirements"] == "numpy==2.0\n"
-
-
-@pytest.mark.parametrize("value", [None, ""])
-def test_tool_requirement_defaults_to_this_version(tmp_path, monkeypatch, value):
-    folder = requirements_file_copy(tmp_path / "demo", "numpy==2.0\n")
-    if value is None:
-        monkeypatch.delenv("MOGS_TOOL_REQUIREMENT", raising=False)
-    else:
-        monkeypatch.setenv("MOGS_TOOL_REQUIREMENT", value)
 
     inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
 
     assert inputs["requirements"] == f"numpy==2.0\nmogs=={__version__}\n"
+    assert inputs["grading_requirements"] == "numpy==2.0\n"
 
 
 @pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="root reads any file")
@@ -795,37 +792,12 @@ def test_os_error_names_dist_as_python_shows_it(tmp_path, monkeypatch):
     assert result.err == "Build failed.\n[Errno 17] File exists: 'dist'\n"
 
 
-def test_build_inputs_describe_the_questions(tmp_path):
+def test_build_inputs_give_the_prompts_of_written_questions(tmp_path):
     folder = requirements_file_copy(tmp_path / "demo", "")
 
     inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
 
-    assert inputs["questions"] == [
-        {
-            "id": "q1",
-            "title": "Average",
-            "points": 4,
-            "public": 2,
-            "hidden": 2,
-            "prompts": [],
-        },
-        {
-            "id": "q2",
-            "title": "Reading scores",
-            "points": 6,
-            "public": 2,
-            "hidden": 2,
-            "prompts": [],
-        },
-        {
-            "id": "q3",
-            "title": "Empty lists",
-            "points": 5,
-            "public": 0,
-            "hidden": 0,
-            "prompts": ["## Question 3: Empty lists"],
-        },
-    ]
+    assert inputs["prompts"] == {"q3": ["## Question 3: Empty lists"]}
     assert [rel for rel, _ in inputs["data"]] == ["data/scores.csv"]
     assert [rel for rel, _ in inputs["tests"]] == ["tests/q1.py", "tests/q2.py"]
 
@@ -836,7 +808,23 @@ def test_written_question_without_prompt_text_says_so(tmp_path, monkeypatch):
 
     inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
 
-    assert [q["prompts"] for q in inputs["questions"]] == [[], [], ["no question text"]]
+    assert inputs["prompts"] == {"q3": ["no question text"]}
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="needs a file system of bytes")
+def test_missing_data_file_names_a_folder_that_is_not_utf_8(tmp_path):
+    root = Path(os.fsdecode(bytes(tmp_path) + b"/\xff"))
+    try:
+        root.mkdir()
+    except OSError as error:
+        pytest.skip(f"the file system refuses the name: {error}")
+
+    with pytest.raises(ConfigError) as error:
+        _native.data_files(root, ["nope.csv"])
+
+    assert str(error.value) == (
+        f"mogs.assignment() `files`: data file 'nope.csv' not found in {root}."
+    )
 
 
 def test_data_files_skip_junk(tmp_path):

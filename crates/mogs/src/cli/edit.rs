@@ -2,11 +2,11 @@
 
 use std::path::Path;
 
-use pyo3::exceptions::{PyKeyboardInterrupt, PyOSError};
+use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PyString};
 
-use super::{fail, is_instance};
+use super::failed;
 
 /// Run `marimo edit --sandbox` on the source notebook at `path`, a file or its folder, and
 /// return marimo's exit code.
@@ -18,13 +18,7 @@ use super::{fail, is_instance};
 pub(super) fn edit(py: Python<'_>, path: &Path) -> PyResult<i64> {
     let marimo = match start(py, path) {
         Ok(marimo) => marimo,
-        Err(error)
-            if error.is_instance_of::<PyOSError>(py)
-                || is_instance(py, &error, "mogs._analysis", "BuildError")? =>
-        {
-            return fail(py, "Edit", error.value(py).str()?);
-        }
-        Err(error) => return Err(error),
+        Err(error) => return failed(py, "Edit", error),
     };
 
     // Ctrl+C reaches marimo too, and marimo asks whether to quit. Wait until it exits.

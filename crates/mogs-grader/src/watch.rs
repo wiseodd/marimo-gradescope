@@ -22,6 +22,20 @@ pub enum Ending {
     RetryWithoutRun,
 }
 
+/// How to fail what a child that died or got stuck was doing.
+struct Stop {
+    /// Why, in the messages of setup and loading, and as the load failure on a retry.
+    why: String,
+    /// The reason of the tests a failed setup fails.
+    setup: FailureReason,
+    /// The reason of the tests of a failed cell load or test.
+    unit: FailureReason,
+    /// The message of the test it was running.
+    test: String,
+    /// The time spent in that test.
+    seconds: f64,
+}
+
 /// What the child is doing, as far as its events tell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stage {
@@ -205,57 +219,55 @@ impl<'a> Watch<'a> {
 
     /// Fail what the child was doing when it died; respawn, or retry setup without the run.
     fn crashed(&mut self, status: &str, text: &dyn PyText) -> Ending {
-        match self.stage {
-            Stage::Setup if self.retry_load => {
-                self.load_failure = Some(status.into());
-                return Ending::RetryWithoutRun;
-            }
-            Stage::Setup => {
-                let message = format!("the grader stopped while loading your notebook: {status}");
-                self.fail_rest(&message, FailureReason::LoadFailed, text);
-                self.load_error = Some(message);
-                return Ending::Stop;
-            }
-            Stage::Loading => {
-                let message = format!("the grader stopped while loading the test cell: {status}");
-                self.fail_unit(&message, FailureReason::Killed, 0.0, text);
-            }
-            Stage::Test => {
-                let message = format!("the grader stopped during this test: {status}");
-                self.fail_unit(&message, FailureReason::Killed, 0.0, text);
-            }
-            Stage::Idle | Stage::Finishing => {}
-        }
+        let stop = Stop {
+            why: status.into(),
+            setup: FailureReason::LoadFailed,
+            unit: FailureReason::Killed,
+            test: format!("the grader stopped during this test: {status}"),
+            seconds: 0.0,
+        };
 
-        Ending::Respawn
+        self.stop(stop, text)
     }
 
     /// Fail what the child is stuck on; respawn, or retry setup without the run.
     fn overdue(&mut self, now: Instant, text: &dyn PyText) -> Ending {
-        let took = format!("it took longer than {} s", self.texts.timeout);
+        if self.stage == Stage::Finishing {
+            return Ending::Stop;
+        }
+
+        let stop = Stop {
+            why: format!("it took longer than {} s", self.texts.timeout),
+            setup: FailureReason::Timeout,
+            unit: FailureReason::Timeout,
+            test: format!("the test took longer than {} s", self.texts.timeout),
+            seconds: (now - self.since).as_secs_f64(),
+        };
+
+        self.stop(stop, text)
+    }
+
+    /// Fail what the child was doing as `stop` says; respawn, or retry setup without the run.
+    fn stop(&mut self, stop: Stop, text: &dyn PyText) -> Ending {
+        let why = stop.why;
 
         match self.stage {
             Stage::Setup if self.retry_load => {
-                self.load_failure = Some(took);
+                self.load_failure = Some(why);
                 return Ending::RetryWithoutRun;
             }
             Stage::Setup => {
-                let message = format!("the grader stopped while loading your notebook: {took}");
-                self.fail_rest(&message, FailureReason::Timeout, text);
+                let message = format!("the grader stopped while loading your notebook: {why}");
+                self.fail_rest(&message, stop.setup, text);
                 self.load_error = Some(message);
                 return Ending::Stop;
             }
             Stage::Loading => {
-                let message = format!("the grader stopped while loading the test cell: {took}");
-                self.fail_unit(&message, FailureReason::Timeout, 0.0, text);
+                let message = format!("the grader stopped while loading the test cell: {why}");
+                self.fail_unit(&message, stop.unit, 0.0, text);
             }
-            Stage::Test => {
-                let message = format!("the test took longer than {} s", self.texts.timeout);
-                let seconds = (now - self.since).as_secs_f64();
-                self.fail_unit(&message, FailureReason::Timeout, seconds, text);
-            }
-            Stage::Finishing => return Ending::Stop,
-            Stage::Idle => {}
+            Stage::Test => self.fail_unit(&stop.test, stop.unit, stop.seconds, text),
+            Stage::Idle | Stage::Finishing => {}
         }
 
         Ending::Respawn
@@ -279,12 +291,14 @@ pub fn fail(
     seconds: f64,
     text: &dyn PyText,
 ) {
+    let message = text.cap(message);
+
     for name in names {
         if !done.contains_key(name) {
             let outcome = Outcome {
                 name: name.clone(),
                 passed: false,
-                message: text.cap(message),
+                message: message.clone(),
                 reason: Some(reason),
                 seconds,
             };
@@ -294,7 +308,8 @@ pub fn fail(
 }
 
 /// `seconds` after `at`, at most a century, so an infinite budget works. The config allows
-/// only seconds > 0, and JSON has no NaN.
+/// only seconds > 0. NaN, which only an edited `bundle.json` holds, panics, and `mogs
+/// autograde` turns the panic into failure results.
 pub fn later(at: Instant, seconds: f64) -> Instant {
     let century = 100.0 * 365.0 * 24.0 * 3600.0;
 

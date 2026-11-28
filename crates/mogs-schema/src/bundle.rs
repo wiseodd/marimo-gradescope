@@ -21,6 +21,21 @@ pub struct Bundle {
     pub helpers: Vec<HiddenHelper>,
 }
 
+impl Bundle {
+    /// Every test name, in cell order.
+    pub fn tests(&self) -> impl Iterator<Item = &String> {
+        self.cells.iter().flat_map(|cell| &cell.tests)
+    }
+
+    /// The question `id` of the config.
+    pub fn question(&self, id: &str) -> Option<&BundleQuestion> {
+        self.config
+            .questions
+            .iter()
+            .find(|question| question.id == id)
+    }
+}
+
 /// The assignment config, without the host path of `requirements`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -34,8 +49,12 @@ pub struct BundleConfig {
     /// Data files and folders shipped with the notebook, relative to it.
     pub files: Vec<String>,
     /// Seconds per test.
+    #[serde(with = "crate::float::number")]
+    #[schemars(with = "f64")]
     pub timeout: f64,
     /// Seconds for the whole grading run.
+    #[serde(with = "crate::float::number")]
+    #[schemars(with = "f64")]
     pub budget: f64,
     /// MB per grading process.
     pub memory_mb: u32,
@@ -52,6 +71,8 @@ pub struct BundleQuestion {
     /// Question title.
     pub title: String,
     /// Points for the question.
+    #[serde(with = "crate::float::number")]
+    #[schemars(with = "f64")]
     pub points: f64,
     /// Whether the question is graded by hand.
     pub manual: bool,

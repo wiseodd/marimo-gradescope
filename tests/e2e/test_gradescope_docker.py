@@ -39,8 +39,6 @@ from mogs.source import BEGIN, parse_notebook
 from mogs.transform import pinned_requirement, student_notebook
 
 REPO = Path(__file__).parents[2]
-# The `mogs` command of this environment.
-MOGS = Path(sys.executable).with_name("mogs")
 DEMO = REPO / "examples" / "demo"
 DOCKERFILE = Path(__file__).with_name("Dockerfile")
 NOTEBOOK = "hw.py"
@@ -430,8 +428,11 @@ def wheel_requirement(wheel: Path) -> str:
     return f"mogs @ file://{WHEELS / wheel.name}"
 
 
-def build_context(context: Path, archive: Path) -> None:
+def build_context(context: Path, archive: Path, requirement: str) -> None:
     """Fill `context` with the Dockerfile and the zip unpacked into `source/`.
+
+    The mogs line of `requirements.txt` becomes `requirement`, so the image installs the
+    checkout's wheel.
 
     Raises:
         ValueError: If a zip entry would land outside `source/`.
@@ -454,6 +455,10 @@ def build_context(context: Path, archive: Path) -> None:
             target.write_bytes(zf.read(info))
             target.chmod(0o755 if info.filename in SCRIPTS else 0o644)
 
+    requirements = source / "requirements.txt"
+    lines = requirements.read_text(encoding="utf-8").splitlines()
+    pinned = [requirement if normalized_name(line) == "mogs" else line for line in lines]
+    requirements.write_text("".join(f"{line}\n" for line in pinned), encoding="utf-8")
     shutil.copyfile(DOCKERFILE, context / "Dockerfile")
 
 
@@ -491,12 +496,11 @@ def build_wheel(out: Path) -> Path:
     return wheel
 
 
-def build_image(runtime: str, assignment: Assignment, context: Path) -> str:
+def build_image(runtime: str, assignment: Assignment, context: Path, mogs: Path) -> str:
     """Build the autograder image and return its tag."""
 
     wheel = build_wheel(context / "wheels")
-    env = os.environ | {"MOGS_TOOL_REQUIREMENT": wheel_requirement(wheel)}
-    run([str(MOGS), "build", str(assignment.folder)], timeout=1800, env=env)
+    run([str(mogs), "build", str(assignment.folder)], timeout=1800)
     autograder = assignment.folder / "dist" / "autograder"
     [archive] = autograder.glob("*.zip")
 
@@ -505,7 +509,7 @@ def build_image(runtime: str, assignment: Assignment, context: Path) -> str:
     assert re.fullmatch(
         r"hw-autograder-\d{4}_\d{2}_\d{2}T\d{2}_\d{2}_\d{2}_\d{6}\.zip", archive.name
     )
-    build_context(context, archive)
+    build_context(context, archive, wheel_requirement(wheel))
 
     tag = f"localhost/mogs-e2e:{uuid.uuid4().hex[:12]}"
     command = [runtime, "build", "--platform", PLATFORM, "--tag", tag, str(context)]
@@ -772,7 +776,7 @@ def test_build_context_unpacks_the_zip_with_modes(tmp_path):
         "setup.sh": b"#!/bin/sh\n",
         "run_autograder": b"#!/bin/sh\n",
         "bundle.json": b"{}",
-        "requirements.txt": b"x\n",
+        "requirements.txt": b"x\nmogs==0.7.0\n",
         "data/scores.csv": b"name,score\n",
     }
     with zipfile.ZipFile(archive, "w") as zipped:
@@ -780,13 +784,15 @@ def test_build_context_unpacks_the_zip_with_modes(tmp_path):
             zipped.writestr(name, content)
     context = tmp_path / "context"
 
-    build_context(context, archive)
+    build_context(context, archive, "mogs @ file:///wheels/mogs.whl")
 
     assert (context / "Dockerfile").read_text(encoding="utf-8") == DOCKERFILE.read_text(
         encoding="utf-8"
     )
+    requirements = b"x\nmogs @ file:///wheels/mogs.whl\n"
     for rel, content in entries.items():
-        assert (context / "source" / rel).read_bytes() == content
+        expected = requirements if rel == "requirements.txt" else content
+        assert (context / "source" / rel).read_bytes() == expected
 
     def mode(rel: str) -> int:
         return stat.S_IMODE((context / "source" / rel).stat().st_mode)
@@ -802,7 +808,7 @@ def test_build_context_rejects_entries_outside(tmp_path):
         zf.writestr("../evil", b"x")
 
     with pytest.raises(ValueError, match="evil"):
-        build_context(tmp_path / "context", archive)
+        build_context(tmp_path / "context", archive, "mogs")
 
 
 def test_strings_are_unescaped():
@@ -888,7 +894,7 @@ def runtime() -> str:
 
 
 @pytest.fixture(scope="session")
-def image(runtime, assignment, tmp_path_factory) -> Iterator[str]:
-    tag = build_image(runtime, assignment, tmp_path_factory.mktemp("context"))
+def image(runtime, assignment, tmp_path_factory, mogs_script) -> Iterator[str]:
+    tag = build_image(runtime, assignment, tmp_path_factory.mktemp("context"), mogs_script)
     yield tag
     remove_image(runtime, tag)

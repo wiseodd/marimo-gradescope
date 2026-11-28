@@ -11,9 +11,10 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - `src/mogs/`: the Python package, imported and published on PyPI.
   `config.py` reads the config from the notebook's `mogs.assignment(...)` and
   `mogs.grade(...)` calls (statically, from the AST) and edits the PEP 723
-  header as text. `_analysis.py` gives `build` and `grade` what they need
-  from the notebook as plain data: the student notebook, the bundle, the
-  requirements, the data files and the warnings.
+  header as text. `_analysis.py` reads the notebook into plain data for the
+  Rust side: the student notebook, the bundle, the requirements, the data files
+  and the warnings for `build` and `grade`, and the source notebook for `edit`.
+  `assignment.py` uses it to check the data files.
 - `crates/mogs-pdf/`: the PDF of written answers, plain Rust with cargo tests.
   `src/mogs/_answers.py` builds the questions from the notebook; this crate
   finds the formulas, runs Typst and falls back to LaTeX source or plain text.
@@ -39,8 +40,8 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   enforces its deadlines and builds `results.json`. `crates/mogs/src/grader/`
   only converts values to and from Python. Text with Python's rules (`repr`,
   `:g`, `round`) comes from Python through the `PyText` trait. Its sandbox
-  tests run the real child on `$VIRTUAL_ENV/bin/python`, so run them through
-  `uv run`, as `make test` does.
+  tests run the real child on `.venv/bin/python`, which `.cargo/config.toml`
+  names, so a plain `cargo test` works after `uv sync`.
 - `crates/mogs-schema/`: the JSON messages between Rust and
   Python (job, events, bundle, `results.json`) as Rust types. Every
   message but `results.json` has `"schema": 1`: bump `SCHEMA` there and in
@@ -53,9 +54,8 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   through the real `/autograder/run_autograder`. They need docker or podman
   (`MOGS_CONTAINER=docker|podman` picks one) and network, and take several
   minutes. The wheel for the image comes from `maturin build --zig` for
-  manylinux_2_17 x86_64, so it builds on any host. `MOGS_TOOL_REQUIREMENT` makes
-  `mogs build` put that wheel in the autograder's `requirements.txt`. Without a
-  runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI) makes that a failure. The base image is amd64 only: on an arm64 host it runs
+  manylinux_2_17 x86_64, so it builds on any host. The test puts that wheel in
+  the unpacked autograder's `requirements.txt`. Without a runtime they skip; `MOGS_REQUIRE_CONTAINER=1` (set in CI) makes that a failure. The base image is amd64 only: on an arm64 host it runs
   under emulation, which is slow enough that grading timeouts may trip.
 - `.github/workflows/release.yml`: on a published GitHub release (tags like
   `0.7`, no `v`), checks the tag against the `Cargo.toml` version, builds the
@@ -71,8 +71,9 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 
 Always go through `uv` (never global Python). The Rust toolchain is
 `rust-toolchain.toml` (stable, with clippy and rustfmt). `uv sync` and
-`uv run` rebuild the extension when `Cargo.toml`, `Cargo.lock` or a `.rs`
-file changes.
+`uv run` rebuild the extension when a file in `cache-keys` of
+`pyproject.toml` changes: the Cargo files, the `.rs` and `.typ` files, the
+templates and the vendored Typst packages.
 
 ```bash
 make sync        # uv sync
@@ -102,6 +103,17 @@ make fix         # ruff fixes, then ruff format and cargo fmt
 - **Typing.** `ty` must be clean on `src` and `tests`. Justify any
   `# ty: ignore[...]` in one line.
 - **Tests first.** Every change comes with tests that fail before it.
+
+### Rust
+
+- No CPython emulation. When Rust needs Python's answer (`str()` of a path,
+  `repr`, `round`), it asks Python through the glue's trait.
+- Logic lives in plain crates that `cargo test` covers. Only `crates/mogs`
+  uses pyo3.
+- Long work releases the GIL and polls for signals.
+- A panic becomes a Python exception and never aborts. `autograde` turns it
+  into failure results instead.
+- `unsafe` appears only in `pre_exec`, with a `SAFETY:` comment.
 
 ## Style
 

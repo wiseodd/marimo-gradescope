@@ -37,7 +37,11 @@ WINDOWS_RESERVED = frozenset(
 )
 
 
-class ConfigError(Exception):
+class UsageError(Exception):
+    """An error in what the user gave, which fails a `mogs` command with its message."""
+
+
+class ConfigError(UsageError):
     """The notebook header or its config calls are invalid."""
 
 

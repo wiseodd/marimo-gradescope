@@ -7,9 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use mogs_grader::GradeError;
-
-use crate::{Class, Interpreter, process};
+use crate::unix::{Class, Interpreter, process};
 
 /// Create a virtual environment in `folder` and install the grading requirements.
 ///
@@ -44,8 +42,7 @@ pub fn grading_python<I: Interpreter>(
 
     let python = folder.join("bin").join("python");
     let listed = folder.join("requirements.txt");
-    fs::write(&listed, requirements)
-        .map_err(|error| i.grade_error(GradeError::os(error, &listed)))?;
+    fs::write(&listed, requirements).map_err(|error| i.os(error, &listed))?;
 
     // Gradescope installs with pip, which takes each package's best version from any index.
     let mut install = Command::new(&uv);
@@ -77,7 +74,7 @@ fn run_uv<I: Interpreter>(i: &I, command: &mut Command, action: &str) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fake::{Fake, script, spawning};
+    use crate::unix::fake::{Fake, script, spawning};
 
     /// A fake `uv` in `folder` that logs its arguments, one per line, then runs `body`.
     fn fake_uv(folder: &Path, body: &str) -> Fake {

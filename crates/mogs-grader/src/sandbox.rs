@@ -26,7 +26,7 @@ use std::time::Instant;
 use indexmap::IndexMap;
 use mogs_schema::{Bundle, FailureReason, Job, Outcome, SCHEMA};
 
-use crate::files::{SUBMISSION, data_files};
+use crate::files::SUBMISSION;
 use crate::process::{Child, check_user, kill_user, launch_options};
 use crate::watch::{Ending, Texts, Watch, fail, later};
 use crate::{GradeError, GradingUser, Host, Level};
@@ -63,14 +63,13 @@ pub struct Graded {
     pub load_error: Option<String>,
 }
 
-/// Where the data files come from and how the children run.
+/// The data files and how the children run.
 pub struct GradeOptions<'a> {
     /// Dedicated grading user to run student code as, or `None` to keep the current one.
     pub user: Option<&'a str>,
-    /// Folder the data files are relative to. Required when `files` is given.
-    pub files_root: Option<&'a Path>,
-    /// Data files or folders for the notebook, as relative paths.
-    pub files: &'a [String],
+    /// The data files, by path relative to the notebook, with their sources, as
+    /// [`data_files`](crate::files::data_files) resolves them.
+    pub data: &'a IndexMap<String, PathBuf>,
     /// Interpreter for the children. It must have mogs and the notebook's dependencies.
     pub python: &'a OsStr,
 }
@@ -78,14 +77,14 @@ pub struct GradeOptions<'a> {
 /// Run the public phase, then the hidden phase, within one time budget.
 ///
 /// Each phase gets a fresh `root_workdir/<phase>/` with a copy of the submission (as
-/// `submission.py`) and of each data file `files_root/<rel>` at `<rel>`. With a user, the
+/// `submission.py`) and of each data file at its relative path. With a user, the
 /// folder belongs to that user, and every process of the user is killed after each phase. The
 /// caller must make sure that the user can enter `root_workdir` but not write to it.
 ///
 /// # Errors
 ///
-/// [`GradeError::Value`] if the user is root or the user running the grader, `submission` is
-/// not a regular file, or a data path is absolute, leaves its root or is `submission.py`;
+/// [`GradeError::Value`] if the user is root or the user running the grader, or `submission`
+/// is not a regular file;
 /// [`GradeError::Os`] if a folder or file cannot be made; [`GradeError::Host`] if the host
 /// stops the run or has no such user.
 pub fn grade(
@@ -107,17 +106,12 @@ pub fn grade(
     let meta = fs::symlink_metadata(submission).map_err(|e| GradeError::os(e, submission))?;
 
     if !meta.file_type().is_file() {
-        return Err(GradeError::Value(format!(
-            "the submission must be a regular file: {}",
-            submission.display()
-        )));
+        let lead = "the submission must be a regular file: ".as_ref();
+        return Err(GradeError::Value(
+            [lead, submission.as_os_str()].into_iter().collect(),
+        ));
     }
 
-    let data = match (options.files, options.files_root) {
-        ([], _) => IndexMap::new(),
-        (_, None) => return Err(GradeError::Value("data files need a files_root".into())),
-        (files, Some(root)) => data_files(root, files, host)?,
-    };
     let texts = Texts {
         timeout: host.g(bundle.config.timeout),
         budget: host.g(bundle.config.budget),
@@ -128,16 +122,11 @@ pub fn grade(
     let mut load_error = None;
 
     for phase in [Phase::Public, Phase::Hidden] {
-        let workdir = prepare(
-            &root_workdir.join(phase.name()),
-            submission,
-            &data,
-            user.as_ref(),
-        )?;
+        let workdir = root_workdir.join(phase.name());
+        prepare(&workdir, submission, options.data, user.as_ref())?;
         let run = PhaseRun {
             bundle: &for_phase(bundle, phase),
             phase,
-            submission: &workdir.join(SUBMISSION),
             workdir: &workdir,
             user: user.as_ref(),
             python: options.python,
@@ -177,9 +166,11 @@ fn for_phase(bundle: &Bundle, phase: Phase) -> Bundle {
     };
 
     Bundle {
+        schema: bundle.schema,
+        config: bundle.config.clone(),
+        setup_code: bundle.setup_code.clone(),
         cells,
         helpers,
-        ..bundle.clone()
     }
 }
 
@@ -187,7 +178,6 @@ fn for_phase(bundle: &Bundle, phase: Phase) -> Bundle {
 struct PhaseRun<'a> {
     bundle: &'a Bundle,
     phase: Phase,
-    submission: &'a Path,
     workdir: &'a Path,
     user: Option<&'a GradingUser>,
     python: &'a OsStr,
@@ -205,12 +195,7 @@ struct Ran {
 impl PhaseRun<'_> {
     /// Run the phase's tests, starting from why the whole-notebook run failed, if it did.
     fn run(&self, mut run_failed: Option<String>, host: &dyn Host) -> Result<Ran, GradeError> {
-        let tests: Vec<String> = self
-            .bundle
-            .cells
-            .iter()
-            .flat_map(|cell| cell.tests.iter().cloned())
-            .collect();
+        let tests: Vec<String> = self.bundle.tests().cloned().collect();
         let mut done = IndexMap::new();
         let mut respawns = 0;
         let mut load_error = None;
@@ -256,18 +241,16 @@ impl PhaseRun<'_> {
             let job = Job {
                 schema: SCHEMA,
                 bundle: self.bundle.clone(),
-                submission: self.submission.to_path_buf(),
+                submission: self.workdir.join(SUBMISSION),
                 skip: done.keys().cloned().collect(),
                 run_failed: run_failed.clone(),
                 alarm: true,
             };
             // JSON strings are Unicode, so a path that is not UTF-8 cannot reach the child.
             // The job's only path is `workdir/submission.py`, so the folder is at fault.
-            let job = job_json(&job).map_err(|_| {
-                GradeError::Value(format!(
-                    "the grading folder must be a UTF-8 path: {}",
-                    self.workdir.display()
-                ))
+            let job = mogs_schema::encode(&job).map_err(|_| {
+                let lead = "the grading folder must be a UTF-8 path: ".as_ref();
+                GradeError::Value([lead, self.workdir.as_os_str()].into_iter().collect())
             })?;
             let options = launch_options(
                 self.workdir,
@@ -321,39 +304,6 @@ impl PhaseRun<'_> {
     }
 }
 
-/// `job` as JSON for the Python child, which reads `Infinity` and `NaN`.
-///
-/// The config accepts an infinite `timeout`, `budget` or `points`, and serde_json writes a
-/// number that is not finite as `null`. Each such `"<key>":null` is written as Python's
-/// `json.dumps` would. Compact JSON escapes every `"` inside a string, so `"<key>":null`
-/// occurs only as a key and its value, in the order the config fields serialize.
-///
-/// # Errors
-///
-/// If a path in the job is not UTF-8.
-fn job_json(job: &Job) -> Result<String, serde_json::Error> {
-    let config = &job.bundle.config;
-    let numbers = [("timeout", config.timeout), ("budget", config.budget)]
-        .into_iter()
-        .chain(config.questions.iter().map(|q| ("points", q.points)));
-    let mut text = serde_json::to_string(job)?;
-
-    for (key, value) in numbers.filter(|(_, value)| !value.is_finite()) {
-        let python = match value {
-            v if v.is_nan() => "NaN",
-            v if v > 0.0 => "Infinity",
-            _ => "-Infinity",
-        };
-        text = text.replacen(
-            &format!("\"{key}\":null"),
-            &format!("\"{key}\":{python}"),
-            1,
-        );
-    }
-
-    Ok(text)
-}
-
 /// Create `workdir` with copies of the submission and the data files.
 ///
 /// # Errors
@@ -364,7 +314,7 @@ fn prepare(
     submission: &Path,
     files: &IndexMap<String, PathBuf>,
     user: Option<&GradingUser>,
-) -> Result<PathBuf, GradeError> {
+) -> Result<(), GradeError> {
     fs::DirBuilder::new()
         .mode(0o700)
         .create(workdir)
@@ -382,7 +332,7 @@ fn prepare(
         hand_over(workdir, user)?;
     }
 
-    Ok(workdir.to_path_buf())
+    Ok(())
 }
 
 /// Copy the content of `source` to a new or emptied `target`, as `shutil.copyfile` does.
@@ -411,48 +361,4 @@ fn hand_over(workdir: &Path, user: &GradingUser) -> Result<(), GradeError> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn job_json_writes_infinite_numbers_as_python_does() {
-        let mut bundle: Bundle = serde_json::from_value(serde_json::json!({
-            "schema": 1,
-            "config": {
-                "name": "A", "notebook": "hw.py", "files": [], "timeout": 60.0,
-                "budget": 0.0, "memory_mb": 1, "python": "3.13",
-                "questions": [
-                    {"id": "q1", "title": "\"points\":null", "points": 0.0, "manual": false},
-                    {"id": "q2", "title": "Q", "points": 2.0, "manual": false},
-                ],
-            },
-            "setup_code": "",
-            "cells": [],
-            "helpers": [],
-        }))
-        .unwrap();
-        bundle.config.budget = f64::INFINITY;
-        bundle.config.questions[0].points = f64::INFINITY;
-        let job = Job {
-            schema: SCHEMA,
-            bundle,
-            submission: "submission.py".into(),
-            skip: Vec::new(),
-            run_failed: None,
-            alarm: true,
-        };
-
-        let text = job_json(&job).unwrap();
-
-        assert!(text.contains(r#""title":"\"points\":null""#), "{text}");
-        assert!(text.contains(r#""points":Infinity"#), "{text}");
-        assert!(text.contains(r#""points":2.0"#), "{text}");
-        assert!(
-            text.contains(r#""timeout":60.0,"budget":Infinity"#),
-            "{text}"
-        );
-    }
 }

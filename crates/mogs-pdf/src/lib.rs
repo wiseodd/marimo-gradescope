@@ -9,6 +9,7 @@ mod document;
 pub mod formulas;
 mod world;
 
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -16,7 +17,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-use document::{Failure, Typst};
+use document::Typst;
 pub use document::{PLAIN_NOTE, SOURCE_NOTE};
 
 /// The status message shown while the PDF is made.
@@ -79,6 +80,37 @@ pub enum Style {
     Note,
 }
 
+/// A name that is no [`Role`] or [`Style`]: which of the two was asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Unknown(pub &'static str);
+
+/// By the value of `mogs._answers.Role`.
+impl FromStr for Role {
+    type Err = Unknown;
+
+    fn from_str(name: &str) -> Result<Self, Unknown> {
+        match name {
+            "prompt" => Ok(Role::Prompt),
+            "answer" => Ok(Role::Answer),
+            _ => Err(Unknown("role")),
+        }
+    }
+}
+
+/// By the value of `mogs._answers.Style`.
+impl FromStr for Style {
+    type Err = Unknown;
+
+    fn from_str(name: &str) -> Result<Self, Unknown> {
+        match name {
+            "markdown" => Ok(Style::Markdown),
+            "plain" => Ok(Style::Plain),
+            "note" => Ok(Style::Note),
+            _ => Err(Unknown("style")),
+        }
+    }
+}
+
 /// Why `render` gave no PDF.
 #[derive(Debug, PartialEq, Eq)]
 pub enum RenderError {
@@ -91,7 +123,7 @@ pub enum RenderError {
 }
 
 /// What `render` needs from its caller.
-pub trait Host {
+pub trait Signals {
     /// Whether to stop now, asked about every `POLL` while Typst works.
     fn interrupted(&self) -> bool;
 }
@@ -100,7 +132,7 @@ pub trait Host {
 ///
 /// Typst runs on its own thread, so the caller can stop waiting at once when `host` says so;
 /// the thread then ends after the Typst run it is in.
-pub fn render(questions: Vec<Question>, host: &dyn Host) -> Result<Vec<u8>, RenderError> {
+pub fn render(questions: Vec<Question>, host: &dyn Signals) -> Result<Vec<u8>, RenderError> {
     stoppable(host, move |stop| {
         let pdf = Typst { stop }.pdf(&questions);
 
@@ -113,8 +145,8 @@ pub fn render(questions: Vec<Question>, host: &dyn Host) -> Result<Vec<u8>, Rend
 
 /// Run `work` on a new thread until it ends or `host` says to stop.
 fn stoppable<T: Send + 'static>(
-    host: &dyn Host,
-    work: impl FnOnce(&AtomicBool) -> Result<T, Failure> + Send + 'static,
+    host: &dyn Signals,
+    work: impl FnOnce(&AtomicBool) -> Result<T, RenderError> + Send + 'static,
 ) -> Result<T, RenderError> {
     let stop = Arc::new(AtomicBool::new(false));
     let (send, receive) = mpsc::channel();
@@ -134,10 +166,7 @@ fn stoppable<T: Send + 'static>(
             Ok(result) => {
                 let _ = worker.join();
 
-                return result.map_err(|failure| match failure {
-                    Failure::Typst(message) => RenderError::Typst(message),
-                    Failure::Stopped => RenderError::Interrupted,
-                });
+                return result;
             }
 
             Err(mpsc::RecvTimeoutError::Timeout) if host.interrupted() => {
@@ -175,7 +204,7 @@ mod tests {
 
     struct Never;
 
-    impl Host for Never {
+    impl Signals for Never {
         fn interrupted(&self) -> bool {
             false
         }
@@ -187,7 +216,7 @@ mod tests {
         after: u32,
     }
 
-    impl Host for StopAfter {
+    impl Signals for StopAfter {
         fn interrupted(&self) -> bool {
             self.asked.set(self.asked.get() + 1);
             self.asked.get() >= self.after
@@ -218,7 +247,7 @@ mod tests {
             while !stop.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(5));
             }
-            Err::<(), _>(Failure::Stopped)
+            Err::<(), _>(RenderError::Interrupted)
         });
 
         assert_eq!(result, Err(RenderError::Interrupted));
@@ -228,7 +257,7 @@ mod tests {
 
     #[test]
     fn a_panic_becomes_an_error() {
-        let result = stoppable(&Never, |_| -> Result<(), Failure> {
+        let result = stoppable(&Never, |_| -> Result<(), RenderError> {
             panic!("broken {}", 1)
         });
 
@@ -237,7 +266,7 @@ mod tests {
 
     #[test]
     fn a_typst_failure_keeps_its_message() {
-        let result = stoppable(&Never, |_| Err::<(), _>(Failure::Typst("boom".into())));
+        let result = stoppable(&Never, |_| Err::<(), _>(RenderError::Typst("boom".into())));
 
         assert_eq!(result, Err(RenderError::Typst("boom".into())));
     }

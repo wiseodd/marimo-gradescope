@@ -9,9 +9,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use mogs_grader::GradeError;
-
-use crate::{Class, Interpreter};
+use crate::unix::{Class, Interpreter};
 
 /// The entries that are executable.
 pub const SCRIPTS: [&str; 2] = ["setup.sh", "run_autograder"];
@@ -32,6 +30,31 @@ const ZIP64_LIMIT: usize = (1 << 31) - 1;
 /// Past this many entries, `zipfile` writes zip64 records.
 const ZIP_FILECOUNT_LIMIT: usize = 0xFFFF;
 
+/// The content of one entry, deflated.
+pub struct Deflated {
+    /// CRC-32 of the content.
+    crc: u32,
+    /// Size of the content.
+    size: usize,
+    /// The deflated content.
+    bytes: Vec<u8>,
+}
+
+impl Deflated {
+    /// `data`, deflated with Python's zlib.
+    ///
+    /// # Errors
+    ///
+    /// Any Python exception.
+    pub fn new<I: Interpreter>(i: &I, data: &[u8]) -> Result<Self, I::Error> {
+        Ok(Self {
+            crc: crc32fast::hash(data),
+            size: data.len(),
+            bytes: i.deflate(data)?,
+        })
+    }
+}
+
 /// Write `entries` to the zip `path`, by name in sorted order.
 ///
 /// # Errors
@@ -40,17 +63,17 @@ const ZIP_FILECOUNT_LIMIT: usize = 0xFFFF;
 pub fn write_zip<I: Interpreter>(
     i: &I,
     path: &Path,
-    entries: &BTreeMap<String, &[u8]>,
+    entries: &BTreeMap<String, &Deflated>,
 ) -> Result<(), I::Error> {
-    let os = |error| i.grade_error(GradeError::os(error, path));
+    let os = |error| i.os(error, path);
     let mut out = BufWriter::new(File::create(path).map_err(os)?);
     let mut offset = 0;
     let mut central = Vec::new();
 
-    for (name, data) in entries {
-        let compressed = i.deflate(data)?;
+    for (name, entry) in entries {
+        let compressed = &entry.bytes;
 
-        if needs_zip64(data.len(), compressed.len(), offset) {
+        if needs_zip64(entry.size, compressed.len(), offset) {
             return Err(too_large(i, path));
         }
 
@@ -61,9 +84,9 @@ pub fn write_zip<I: Interpreter>(
             0o644
         };
         let sizes = Sizes {
-            crc: crc32fast::hash(data),
+            crc: entry.crc,
             compressed: as_u32(compressed.len()),
-            size: as_u32(data.len()),
+            size: as_u32(entry.size),
             name: u16::try_from(name.len()).map_err(|_| too_large(i, path))?,
         };
 
@@ -72,7 +95,7 @@ pub fn write_zip<I: Interpreter>(
         sizes.push(&mut local, flags);
         local.extend(name.as_bytes());
         out.write_all(&local).map_err(os)?;
-        out.write_all(&compressed).map_err(os)?;
+        out.write_all(compressed).map_err(os)?;
 
         central.extend(b"PK\x01\x02");
         central.extend([VERSION as u8, UNIX]);
@@ -150,9 +173,11 @@ fn needs_zip64(size: usize, compressed: usize, offset: usize) -> bool {
 }
 
 fn too_large<I: Interpreter>(i: &I, path: &Path) -> I::Error {
-    let mut message = path.as_os_str().to_owned();
-    message.push(" would need zip64, which mogs does not write.");
-    i.raise(Class::Build, message)
+    let message = [
+        path.as_os_str(),
+        " would need zip64, which mogs does not write.".as_ref(),
+    ];
+    i.raise(Class::Build, message.into_iter().collect())
 }
 
 #[cfg(test)]
@@ -160,12 +185,25 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::fake::Fake;
+    use crate::unix::fake::Fake;
 
-    fn entries<'a>(pairs: &[(&str, &'a [u8])]) -> BTreeMap<String, &'a [u8]> {
+    /// `pairs` deflated by `Fake`, which keeps the data as it is.
+    fn deflated(pairs: &[(&str, &[u8])]) -> Vec<(String, Deflated)> {
         pairs
             .iter()
-            .map(|(name, data)| ((*name).to_string(), *data))
+            .map(|(name, data)| {
+                (
+                    (*name).to_string(),
+                    Deflated::new(&Fake::default(), data).unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    fn entries(deflated: &[(String, Deflated)]) -> BTreeMap<String, &Deflated> {
+        deflated
+            .iter()
+            .map(|(name, entry)| (name.clone(), entry))
             .collect()
     }
 
@@ -176,7 +214,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("a.zip");
 
-        write_zip(&Fake::default(), &path, &entries(&[("ab", b"hi")])).unwrap();
+        let zip = deflated(&[("ab", b"hi")]);
+        write_zip(&Fake::default(), &path, &entries(&zip)).unwrap();
 
         let crc = crc32fast::hash(b"hi").to_le_bytes();
         let mut expected = Vec::new();
@@ -197,9 +236,9 @@ mod tests {
     fn sorts_entries_and_makes_the_scripts_executable() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("a.zip");
-        let zip = entries(&[("setup.sh", b"#!"), ("bundle.json", b"{}"), ("é.txt", b"")]);
+        let zip = deflated(&[("setup.sh", b"#!"), ("bundle.json", b"{}"), ("é.txt", b"")]);
 
-        write_zip(&Fake::default(), &path, &zip).unwrap();
+        write_zip(&Fake::default(), &path, &entries(&zip)).unwrap();
 
         let data = fs::read(&path).unwrap();
         let start = data.windows(4).position(|w| w == b"PK\x01\x02").unwrap();

@@ -6,9 +6,9 @@ use std::process::{Command, ExitStatus, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use mogs_grader::GradeError;
+use mogs_grader::process::DROPPED;
 
-use crate::{Interpreter, interrupted};
+use crate::unix::{Interpreter, interrupted};
 
 /// How often a running command checks for Ctrl+C.
 const POLL: Duration = Duration::from_millis(50);
@@ -22,14 +22,18 @@ pub(crate) struct Output {
 
 /// Run `command` to its end and capture both streams.
 ///
-/// The environment is this process's without `PYTEST_CURRENT_TEST`, as `mogs._env.clean_env`
-/// makes it: marimo acts as if under test when that variable is set. If the host is
-/// interrupted, the command is killed and the host's error returned.
+/// The environment is the command's without the variables the grader's children drop
+/// ([`DROPPED`]). If the host is interrupted, the command is killed and the host's error
+/// returned.
 pub(crate) fn run<I: Interpreter>(i: &I, command: &mut Command) -> Result<Output, I::Error> {
     let program = PathBuf::from(command.get_program());
-    let os = |error| i.grade_error(GradeError::os(error, &program));
+    let os = |error| i.os(error, &program);
+
+    for key in DROPPED {
+        command.env_remove(key);
+    }
+
     let mut child = command
-        .env_remove("PYTEST_CURRENT_TEST")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -56,7 +60,7 @@ pub(crate) fn run<I: Interpreter>(i: &I, command: &mut Command) -> Result<Output
         reader
             .join()
             .expect("the pipe reader does not panic")
-            .map_err(|error| i.grade_error(GradeError::from(error)))
+            .map_err(|error| i.io(error))
     };
 
     Ok(Output {
@@ -82,7 +86,7 @@ fn drain(pipe: Option<impl Read + Send + 'static>) -> JoinHandle<io::Result<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fake::{Fake, spawning};
+    use crate::unix::fake::{Fake, spawning};
 
     fn ran(command: &mut Command) -> Result<Output, String> {
         let _spawning = spawning();

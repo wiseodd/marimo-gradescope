@@ -3,15 +3,15 @@
 //! For regrade requests and for finding out why a submission lost points. Unlike Gradescope's
 //! results, the report names failing hidden tests and shows their messages.
 
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use mogs_grader::GradeError;
 use mogs_grader::submission::find_submission;
 use mogs_schema::Bundle;
 
-use crate::environment::grading_python;
-use crate::{Class, Graded, Interpreter, grade_locally, text, total};
+use crate::unix::environment::grading_python;
+use crate::unix::{Class, Graded, Interpreter, grade_locally, text};
 
 /// How one submission did.
 #[derive(Clone, Debug, PartialEq)]
@@ -24,8 +24,19 @@ pub struct Regraded {
     /// The outcomes, the results and why the notebook did not load, if it did not. A hidden
     /// helper or test cell that fails is a test failure and leaves the load error `None`.
     pub graded: Graded,
-    /// Score and maximum over the tested questions.
-    pub score: (f64, f64),
+}
+
+impl Regraded {
+    /// `<submission> failed to load: <error>`, when the notebook did not load.
+    pub fn load_failure(&self) -> Option<OsString> {
+        let error = self.graded.load_error.as_ref()?;
+
+        Some(text(&[
+            self.submission.as_os_str(),
+            " failed to load: ".as_ref(),
+            error.as_ref(),
+        ]))
+    }
 }
 
 /// Grade `submission` against the source notebook in `folder`.
@@ -49,7 +60,7 @@ pub fn grade<I: Interpreter>(
     let stage = tempfile::Builder::new()
         .prefix("mogs-grade-")
         .tempdir()
-        .map_err(|error| i.grade_error(GradeError::from(error)))?;
+        .map_err(|error| i.io(error))?;
     let stage = stage.path();
 
     let notebook = i.notebook(&assignment)?;
@@ -57,21 +68,12 @@ pub fn grade<I: Interpreter>(
     let inputs = i.grade_inputs(&assignment)?;
     let config = &inputs.bundle.config;
     let python = grading_python(i, &inputs.requirements, &stage.join("env"), &config.python)?;
-    let graded = grade_locally(
-        i,
-        &inputs.bundle,
-        &path,
-        &stage.join("grade"),
-        folder,
-        &python,
-    )?;
-    let score = total(i, &graded.results)?;
+    let graded = grade_locally(i, &inputs, &path, &stage.join("grade"), &python)?;
 
     Ok(Regraded {
         submission: i.path(&submission)?,
         bundle: inputs.bundle,
         graded,
-        score,
     })
 }
 
@@ -102,8 +104,7 @@ fn find_notebook<I: Interpreter>(
 
     match suffix.as_deref() {
         Some("py") => {
-            let notebook = fs::canonicalize(submission)
-                .map_err(|error| i.grade_error(GradeError::os(error, submission)))?;
+            let notebook = fs::canonicalize(submission).map_err(|error| i.os(error, submission))?;
             Ok((notebook.clone(), notebook))
         }
         Some("zip") => {
@@ -131,22 +132,18 @@ fn search<I: Interpreter>(
     submission: &Path,
     name: &str,
 ) -> Result<PathBuf, I::Error> {
-    let found = find_submission(folder, name, None, i.host());
-
-    match (found.py, found.error) {
-        (Some(py), _) => Ok(py),
-        (None, error) => {
-            let error = error.expect("no notebook comes with an error");
+    find_submission(folder, name, None, i.host())
+        .py
+        .map_err(|error| {
             let message = text(&[submission.as_ref(), ": ".as_ref(), error.as_ref()]);
-            Err(i.raise(Class::Build, message))
-        }
-    }
+            i.raise(Class::Build, message)
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fake::Fake;
+    use crate::unix::fake::Fake;
 
     #[test]
     fn folder_is_searched() {

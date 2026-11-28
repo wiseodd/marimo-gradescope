@@ -1,6 +1,5 @@
 import ast
 import json
-import os
 import re
 import subprocess
 import sys
@@ -9,6 +8,7 @@ from pathlib import Path, PurePosixPath
 import pytest
 
 from mogs import __version__
+from mogs._env import clean_env
 from mogs.config import (
     AssignmentConfig,
     Question,
@@ -67,7 +67,7 @@ def config_of(src: str, path: Path) -> AssignmentConfig:
 def outside_pytest() -> dict[str, str]:
     """Environment without the variable that makes marimo act as if a test were running."""
 
-    return {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
+    return clean_env()
 
 
 def student(path: Path, *, solutions: bool = False) -> str:

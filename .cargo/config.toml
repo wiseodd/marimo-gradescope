@@ -1,0 +1,4 @@
+# The sandbox tests of mogs-grader run the real grading child on the Python that `uv sync`
+# makes, so a plain `cargo test` works after it.
+[env]
+MOGS_TEST_PYTHON = { value = ".venv/bin/python", relative = true }

@@ -6,11 +6,13 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use indexmap::IndexMap;
-use mogs_schema::{Bundle, FailureReason, Outcome, Results};
+use mogs_schema::{Bundle, FailureReason, Results};
 
+use crate::files::data_files;
 use crate::results::{build_results, inline_code};
 use crate::sandbox::{GradeOptions, grade};
-use crate::submission::find_submission;
+use crate::submission::{Answers, find_submission};
+use crate::watch::fail;
 use crate::{GradeError, Host, STUDENT_USER};
 
 /// Find the upload, grade it in the sandbox and build the results.
@@ -38,21 +40,35 @@ pub fn run(
 ) -> Result<Results, GradeError> {
     let config = &bundle.config;
     let found = find_submission(submission, &config.notebook, Some(&config.name), host);
-    let mut notices: Vec<String> = found.error.into_iter().collect();
+    let mut notices: Vec<String> = found.py.as_ref().err().cloned().into_iter().collect();
 
     if config.questions.iter().any(|question| question.manual) {
-        notices.extend(answers_notice(found.answers.as_deref()));
+        notices.extend(answers_notice(found.answers.as_ref()));
     }
 
     let outcomes = match found.py {
-        None => not_run(bundle),
-        Some(py) => {
+        Err(_) => {
+            let tests: Vec<String> = bundle.tests().cloned().collect();
+            let mut outcomes = IndexMap::new();
+            let reason = FailureReason::NotRun;
+            fail(
+                &mut outcomes,
+                &tests,
+                "not run: no notebook",
+                reason,
+                0.0,
+                host,
+            );
+            outcomes
+        }
+        Ok(py) => {
+            let data = data_files(source, &config.files)
+                .map_err(|error| GradeError::Value(error.message(host)))?;
             fresh_workdir(workdir)?;
             let root = rustix::process::geteuid().is_root();
             let options = GradeOptions {
                 user: root.then_some(STUDENT_USER),
-                files_root: Some(source),
-                files: &config.files,
+                data: &data,
                 python,
             };
             grade(bundle, &py, workdir, &options, host)?.outcomes
@@ -62,45 +78,23 @@ pub fn run(
     build_results(bundle, &outcomes, &notices, host)
 }
 
-/// Every test of `bundle`, failed as not run.
-fn not_run(bundle: &Bundle) -> IndexMap<String, Outcome> {
-    let tests = bundle.cells.iter().flat_map(|cell| &cell.tests);
-
-    tests
-        .map(|name| {
-            let outcome = Outcome {
-                name: name.clone(),
-                passed: false,
-                message: "not run: no notebook".into(),
-                reason: Some(FailureReason::NotRun),
-                seconds: 0.0,
-            };
-            (name.clone(), outcome)
-        })
-        .collect()
-}
-
 /// The warning about the written answers for manual questions, if any.
-fn answers_notice(answers: Option<&Path>) -> Option<String> {
-    let Some(answers) = answers else {
-        return Some(
+fn answers_notice(answers: Option<&Answers>) -> Option<String> {
+    match answers {
+        None => Some(
             "No PDF of your written answers found. Questions graded by hand need it: upload \
              the zip from the notebook's export button."
                 .into(),
-        );
-    };
-
-    let markdown = answers
-        .extension()
-        .is_some_and(|extension| extension.to_string_lossy().to_lowercase() == "md");
-    let name = answers.file_name().unwrap_or_default().to_string_lossy();
-
-    markdown.then(|| {
-        format!(
-            "No PDF of your written answers found; graders will read {} instead.",
-            inline_code(&name)
-        )
-    })
+        ),
+        Some(Answers::Pdf(_)) => None,
+        Some(Answers::Markdown(markdown)) => {
+            let name = markdown.file_name().unwrap_or_default().to_string_lossy();
+            Some(format!(
+                "No PDF of your written answers found; graders will read {} instead.",
+                inline_code(&name)
+            ))
+        }
+    }
 }
 
 /// Create an empty `workdir` that others can enter but not write to.

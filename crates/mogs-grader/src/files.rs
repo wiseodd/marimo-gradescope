@@ -2,12 +2,13 @@
 //!
 //! Shared by the build and the sandbox.
 
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use indexmap::IndexMap;
 
-use crate::{GradeError, PyText};
+use crate::PyText;
 
 /// The name the sandbox gives the submission in each phase folder.
 pub const SUBMISSION: &str = "submission.py";
@@ -20,6 +21,45 @@ pub const JUNK: [&str; 5] = [
     ".DS_Store",
 ];
 
+/// An entry of `files` that names no data file to ship.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DataFileError {
+    /// The path is absolute, has a `..` part or is empty.
+    NotRelative(String),
+    /// The path starts with `submission.py`.
+    Submission(String),
+    /// Nothing is at the path under `root`.
+    Missing {
+        /// The entry of `files`.
+        name: String,
+        /// The folder the entries are relative to.
+        root: PathBuf,
+    },
+}
+
+impl DataFileError {
+    /// The message, which names the entry as Python's `repr` does, and the folder as its
+    /// `str`, even when it is not UTF-8.
+    pub fn message(&self, text: &dyn PyText) -> OsString {
+        match self {
+            DataFileError::NotRelative(name) => format!(
+                "a data file must be a relative path inside its folder: {}",
+                text.repr(name)
+            )
+            .into(),
+            DataFileError::Submission(name) => format!(
+                "a data file must not be named {SUBMISSION}: {}",
+                text.repr(name)
+            )
+            .into(),
+            DataFileError::Missing { name, root } => {
+                let lead = format!("data file {} not found in ", text.repr(name));
+                [lead.as_ref(), root.as_os_str()].into_iter().collect()
+            }
+        }
+    }
+}
+
 /// The data files to ship, by POSIX path relative to `root`, with folders expanded.
 ///
 /// Files in `JUNK` folders, and `JUNK` files, are left out of a folder.
@@ -28,13 +68,12 @@ pub const JUNK: [&str; 5] = [
 ///
 /// # Errors
 ///
-/// [`GradeError::Value`] if a path is absolute, has a `..` part, is empty, starts with
-/// `submission.py`, or does not exist. The message names the path.
+/// [`DataFileError`] if a path is absolute, has a `..` part, is empty, starts with
+/// `submission.py`, or does not exist.
 pub fn data_files(
     root: &Path,
     files: &[String],
-    text: &dyn PyText,
-) -> Result<IndexMap<String, PathBuf>, GradeError> {
+) -> Result<IndexMap<String, PathBuf>, DataFileError> {
     let root = normalized(root);
     let mut out = IndexMap::new();
 
@@ -45,17 +84,11 @@ pub fn data_files(
             .collect();
 
         if name.starts_with('/') || parts.contains(&"..") || parts.is_empty() {
-            return Err(GradeError::Value(format!(
-                "a data file must be a relative path inside its folder: {}",
-                text.repr(name)
-            )));
+            return Err(DataFileError::NotRelative(name.clone()));
         }
 
         if parts[0] == SUBMISSION {
-            return Err(GradeError::Value(format!(
-                "a data file must not be named {SUBMISSION}: {}",
-                text.repr(name)
-            )));
+            return Err(DataFileError::Submission(name.clone()));
         }
 
         let rel = parts.join("/");
@@ -77,11 +110,10 @@ pub fn data_files(
                 }
             }
         } else {
-            return Err(GradeError::Value(format!(
-                "data file {} not found in {}",
-                text.repr(name),
-                root.display()
-            )));
+            return Err(DataFileError::Missing {
+                name: name.clone(),
+                root: root.to_path_buf(),
+            });
         }
     }
 
@@ -162,13 +194,8 @@ mod tests {
         }
         write(dir.path(), "x.csv");
 
-        let found = data_files(
-            dir.path(),
-            &names(&["./x.csv", "data/"]),
-            &FakeHost::default(),
-        );
+        let found = data_files(dir.path(), &names(&["./x.csv", "data/"])).unwrap();
 
-        let found = found.unwrap();
         let keys: Vec<&str> = found.keys().map(String::as_str).collect();
         assert_eq!(keys, ["x.csv", "data/a/c.txt", "data/b.txt"]);
         assert_eq!(found["x.csv"], dir.path().join("x.csv"));
@@ -198,12 +225,13 @@ mod tests {
         ];
 
         for (name, message) in cases {
-            let error = data_files(dir.path(), &names(&[name]), &host).unwrap_err();
-            assert_eq!(error.to_string(), message);
+            let error = data_files(dir.path(), &names(&[name])).unwrap_err();
+            assert_eq!(error.message(&host), message);
         }
 
-        let error = data_files(dir.path(), &names(&["nope.csv"]), &host).unwrap_err();
-        let expected = format!("data file 'nope.csv' not found in {}", dir.path().display());
-        assert_eq!(error.to_string(), expected);
+        let error = data_files(dir.path(), &names(&["nope.csv"])).unwrap_err();
+        let mut expected = OsString::from("data file 'nope.csv' not found in ");
+        expected.push(dir.path());
+        assert_eq!(error.message(&host), expected);
     }
 }

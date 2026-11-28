@@ -18,6 +18,7 @@ from mogs.config import (
     TOOL,
     AssignmentConfig,
     ConfigError,
+    UsageError,
     normalized_name,
     read_header,
     remove_dependency,
@@ -36,7 +37,7 @@ INDEX_OPTIONS = ("-i", "--index-url", "--extra-index-url")
 LEGACY_INDEX_KEYS = ("index-url", "extra-index-url", "find-links")
 
 
-class RequirementsError(Exception):
+class RequirementsError(UsageError):
     """`uv export` could not pin the header's dependencies."""
 
 

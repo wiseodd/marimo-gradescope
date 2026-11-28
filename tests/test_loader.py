@@ -1,5 +1,4 @@
 import operator
-import os
 import pickle
 import shutil
 import subprocess
@@ -10,6 +9,7 @@ from types import FunctionType
 
 import pytest
 
+from mogs._env import clean_env
 from mogs.config import read_config
 from mogs.loader import Missing, bind, load, unavailable
 from mogs.runner import run_test_source
@@ -626,7 +626,7 @@ def test_bind_across_marimo_versions(marimo, tmp_path):
         capture_output=True,
         text=True,
         check=False,
-        env={key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"},
+        env=clean_env(),
         cwd=Path(__file__).parent.parent,
     )
 

@@ -76,17 +76,30 @@ pub fn child_command(event_fd: i32, python: &OsStr) -> Vec<OsString> {
     std::iter::once(python.to_os_string()).chain(args).collect()
 }
 
+/// Set to `1` in the processes that grade, so `check` and `export` cells do nothing when the
+/// notebook runs. `mogs._env.GRADING` is the same name on the Python side.
+pub const GRADING: &str = "MOGS_GRADING";
+
+/// The variables no process that mogs starts keeps. `PYTEST_CURRENT_TEST` makes marimo act
+/// as if under test. `mogs._env.clean_env` drops the same ones for the processes Python
+/// starts.
+pub const DROPPED: [&str; 1] = ["PYTEST_CURRENT_TEST"];
+
+/// Whether a process that mogs starts keeps the variable `key` of its parent.
+pub fn inherited(key: &OsStr) -> bool {
+    !DROPPED.iter().any(|dropped| key == *dropped)
+}
+
 /// `base`, the current environment, made fit for student code that runs in `workdir`.
 ///
-/// It drops `PYTEST_CURRENT_TEST`, which makes marimo act as if under test, and sets
-/// `MOGS_GRADING=1`, so `check` and `export` cells do nothing when the notebook runs.
+/// It keeps only [`inherited`] variables and sets [`GRADING`] to `1`.
 pub fn child_env(
     base: impl IntoIterator<Item = (OsString, OsString)>,
     workdir: &Path,
 ) -> Vec<(OsString, OsString)> {
     let workdir = workdir.as_os_str();
     let set: [(&str, &OsStr); 6] = [
-        ("MOGS_GRADING", OsStr::new("1")),
+        (GRADING, OsStr::new("1")),
         ("MPLBACKEND", OsStr::new("Agg")),
         ("OMP_NUM_THREADS", OsStr::new("4")),
         ("HOME", workdir),
@@ -95,7 +108,7 @@ pub fn child_env(
     ];
     let mut env: Vec<(OsString, OsString)> = base
         .into_iter()
-        .filter(|(key, _)| key != "PYTEST_CURRENT_TEST" && !set.iter().any(|(k, _)| key == k))
+        .filter(|(key, _)| inherited(key) && !set.iter().any(|(k, _)| key == k))
         .collect();
 
     env.extend(set.map(|(key, value)| (key.into(), value.to_os_string())));
@@ -156,15 +169,15 @@ pub fn check_user(user: &GradingUser, text: &dyn PyText) -> Result<(), GradeErro
     let name = text.repr(&user.name);
 
     if user.uid == 0 {
-        return Err(GradeError::Value(format!(
-            "the grading user must not be root: {name} has uid 0"
-        )));
+        return Err(GradeError::Value(
+            format!("the grading user must not be root: {name} has uid 0").into(),
+        ));
     }
 
     if user.uid == rustix::process::getuid().as_raw() {
-        return Err(GradeError::Value(format!(
-            "the grading user must not be the user running the grader: {name}"
-        )));
+        return Err(GradeError::Value(
+            format!("the grading user must not be the user running the grader: {name}").into(),
+        ));
     }
 
     Ok(())
@@ -260,6 +273,8 @@ pub struct Child {
     process: std::process::Child,
     user: Option<String>,
     events: Option<OwnedFd>,
+    /// What `read` reads into, kept between reads.
+    chunk: Vec<u8>,
     buffer: Vec<u8>,
     output: Option<Tail>,
     /// How the child ended, once it has.
@@ -361,6 +376,7 @@ impl Child {
             process,
             user: options.user.as_ref().map(|user| user.name.clone()),
             events: Some(read),
+            chunk: vec![0; CHUNK],
             buffer: Vec::new(),
             output: Some(Tail::start(OwnedFd::from(output))?),
             exit: None,
@@ -447,16 +463,15 @@ impl Child {
         }
 
         // Bounded, so a child that writes without end cannot keep the parent from its deadlines.
-        let mut chunk = vec![0; CHUNK];
         let mut closed = false;
 
         for _ in 0..LINE_LIMIT / CHUNK {
-            match rustix::io::read(fd, &mut chunk) {
+            match rustix::io::read(fd, &mut self.chunk) {
                 Ok(0) => {
                     closed = true;
                     break;
                 }
-                Ok(count) => self.buffer.extend_from_slice(&chunk[..count]),
+                Ok(count) => self.buffer.extend_from_slice(&self.chunk[..count]),
                 Err(Errno::INTR) => {}
                 Err(Errno::AGAIN) => break,
                 Err(errno) => return Err(errno.into()),
@@ -468,24 +483,27 @@ impl Child {
         }
 
         let mut events = Vec::new();
-        // The complete lines, without the newline that ends the last one.
-        let complete: Option<Vec<u8>> = self
-            .buffer
-            .iter()
-            .rposition(|&byte| byte == b'\n')
-            .map(|end| self.buffer.drain(..=end).take(end).collect());
-        let lines = complete
-            .iter()
-            .flat_map(|lines| lines.split(|&byte| byte == b'\n'));
 
-        // Events before a bad line still count, so blame goes to what the child was doing.
-        for line in lines {
-            match decode(&String::from_utf8_lossy(line), text) {
-                Ok(event) => events.push(event),
-                Err(error) => {
-                    self.error = Some(error);
-                    return Ok(events);
+        // The complete lines, without the newline that ends the last one. Events before a bad
+        // line still count, so blame goes to what the child was doing.
+        if let Some(end) = self.buffer.iter().rposition(|&byte| byte == b'\n') {
+            let mut bad = None;
+
+            for line in self.buffer[..end].split(|&byte| byte == b'\n') {
+                match decode(&String::from_utf8_lossy(line), text) {
+                    Ok(event) => events.push(event),
+                    Err(error) => {
+                        bad = Some(error);
+                        break;
+                    }
                 }
+            }
+
+            self.buffer.drain(..=end);
+
+            if bad.is_some() {
+                self.error = bad;
+                return Ok(events);
             }
         }
 

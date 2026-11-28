@@ -11,7 +11,7 @@ use serde::Serialize;
 
 use crate::formulas::{Formula, as_code, delimited, find_formulas};
 use crate::world;
-use crate::{Part, Question, Style};
+use crate::{Part, Question, RenderError, Style};
 
 /// The packages and math helpers both documents start with.
 ///
@@ -45,15 +45,6 @@ pub const SOURCE_NOTE: &str =
 /// The note under a cell that shows as plain text.
 pub const PLAIN_NOTE: &str = "This cell could not be rendered and is shown as plain text.";
 
-/// Why a document was not made.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Failure {
-    /// Typst failed, with its error messages.
-    Typst(String),
-    /// The caller stopped the work.
-    Stopped,
-}
-
 /// Typst runs that end early once `stop` is set.
 pub(crate) struct Typst<'a> {
     pub(crate) stop: &'a AtomicBool,
@@ -61,7 +52,7 @@ pub(crate) struct Typst<'a> {
 
 impl Typst<'_> {
     /// The PDF of `questions`; parts that break the document are rendered with less.
-    pub(crate) fn pdf(&self, questions: &[Question]) -> Result<Vec<u8>, Failure> {
+    pub(crate) fn pdf(&self, questions: &[Question]) -> Result<Vec<u8>, RenderError> {
         fallbacks(
             questions,
             |questions| self.document(questions),
@@ -70,15 +61,15 @@ impl Typst<'_> {
     }
 
     /// The PDF of `questions` as they are.
-    fn document(&self, questions: &[Question]) -> Result<Vec<u8>, Failure> {
-        let doc: Vec<DocQuestion<'_>> = questions.iter().map(DocQuestion::of).collect();
-        let doc = serde_json::to_string(&doc).expect("the document is plain JSON");
+    fn document(&self, questions: &[Question]) -> Result<Vec<u8>, RenderError> {
+        self.go_on()?;
 
-        self.compile("main.typ", TEMPLATE, &[("doc", &doc)])
+        world::compile("main.typ", TEMPLATE, &[("doc", &doc(questions))])
+            .map_err(RenderError::Typst)
     }
 
     /// `part`, or a version of it that Typst can render, with a note when it changed.
-    fn rescue(&self, part: &Part) -> Result<Part, Failure> {
+    fn rescue(&self, part: &Part) -> Result<Part, RenderError> {
         if self.renders(part)? {
             return Ok(part.clone());
         }
@@ -106,8 +97,9 @@ impl Typst<'_> {
         Ok(as_plain(part))
     }
 
-    /// Whether `part` alone, under an empty title, renders.
-    fn renders(&self, part: &Part) -> Result<bool, Failure> {
+    /// Whether `part` alone, under an empty title, renders. The PDF is made too, as a part
+    /// can lay out and still fail to export.
+    fn renders(&self, part: &Part) -> Result<bool, RenderError> {
         let question = Question {
             title: String::new(),
             parts: vec![part.clone()],
@@ -116,20 +108,28 @@ impl Typst<'_> {
         succeeded(self.document(&[question]))
     }
 
-    fn formula_renders(&self, formula: &Formula) -> Result<bool, Failure> {
+    fn formula_renders(&self, formula: &Formula) -> Result<bool, RenderError> {
         let display = if formula.display { "true" } else { "false" };
         let inputs = [("formula", formula.source.as_str()), ("display", display)];
+        self.go_on()?;
 
-        succeeded(self.compile("formula.typ", FORMULA, &inputs))
+        succeeded(world::compile("formula.typ", FORMULA, &inputs).map_err(RenderError::Typst))
     }
 
-    fn compile(&self, name: &str, text: &str, inputs: &[(&str, &str)]) -> Result<Vec<u8>, Failure> {
-        if self.stop.load(Ordering::Relaxed) {
-            return Err(Failure::Stopped);
+    /// `Err(Interrupted)` once the caller stopped the work, so no more Typst runs start.
+    fn go_on(&self) -> Result<(), RenderError> {
+        match self.stop.load(Ordering::Relaxed) {
+            true => Err(RenderError::Interrupted),
+            false => Ok(()),
         }
-
-        world::compile(name, text, inputs).map_err(Failure::Typst)
     }
+}
+
+/// `questions` as the template's `sys.inputs.doc`.
+fn doc(questions: &[Question]) -> String {
+    let doc: Vec<DocQuestion<'_>> = questions.iter().map(DocQuestion::of).collect();
+
+    serde_json::to_string(&doc).expect("the document is plain JSON")
 }
 
 /// The document of `questions`, else of the rescued parts, else of plain text.
@@ -138,9 +138,9 @@ impl Typst<'_> {
 /// a link to them: the plain-text document follows the rescued one then.
 fn fallbacks(
     questions: &[Question],
-    mut document: impl FnMut(&[Question]) -> Result<Vec<u8>, Failure>,
-    mut rescue: impl FnMut(&Part) -> Result<Part, Failure>,
-) -> Result<Vec<u8>, Failure> {
+    mut document: impl FnMut(&[Question]) -> Result<Vec<u8>, RenderError>,
+    mut rescue: impl FnMut(&Part) -> Result<Part, RenderError>,
+) -> Result<Vec<u8>, RenderError> {
     if let Some(pdf) = unless_typst_failed(document(questions))? {
         return Ok(pdf);
     }
@@ -174,17 +174,20 @@ fn fallbacks(
     document(&plain)
 }
 
-/// The PDF, or `None` when Typst failed; a stop stays an error.
-fn unless_typst_failed(result: Result<Vec<u8>, Failure>) -> Result<Option<Vec<u8>>, Failure> {
-    match result {
-        Ok(pdf) => Ok(Some(pdf)),
-        Err(Failure::Typst(_)) => Ok(None),
-        Err(Failure::Stopped) => Err(Failure::Stopped),
-    }
+/// Whether Typst made the PDF; any error but Typst's stays one.
+fn succeeded(result: Result<Vec<u8>, RenderError>) -> Result<bool, RenderError> {
+    unless_typst_failed(result).map(|pdf| pdf.is_some())
 }
 
-fn succeeded(result: Result<Vec<u8>, Failure>) -> Result<bool, Failure> {
-    unless_typst_failed(result).map(|pdf| pdf.is_some())
+/// The PDF, or `None` when Typst failed; any other error stays one.
+fn unless_typst_failed(
+    result: Result<Vec<u8>, RenderError>,
+) -> Result<Option<Vec<u8>>, RenderError> {
+    match result {
+        Ok(pdf) => Ok(Some(pdf)),
+        Err(RenderError::Typst(_)) => Ok(None),
+        Err(error) => Err(error),
+    }
 }
 
 fn as_plain(part: &Part) -> Part {
@@ -273,7 +276,7 @@ mod tests {
             |questions| {
                 calls.push(questions.to_vec());
                 match calls.len() {
-                    1 | 2 => Err(Failure::Typst("boom".into())),
+                    1 | 2 => Err(RenderError::Typst("boom".into())),
                     _ => Ok(b"%PDF".to_vec()),
                 }
             },
@@ -295,11 +298,14 @@ mod tests {
     fn a_document_that_never_compiles_fails_with_typst_s_message() {
         let result = fallbacks(
             &[question(&["x"])],
-            |_| Err(Failure::Typst("unknown variable: boom".into())),
+            |_| Err(RenderError::Typst("unknown variable: boom".into())),
             |part| Ok(part.clone()),
         );
 
-        assert_eq!(result, Err(Failure::Typst("unknown variable: boom".into())));
+        assert_eq!(
+            result,
+            Err(RenderError::Typst("unknown variable: boom".into()))
+        );
     }
 
     #[test]
@@ -310,12 +316,12 @@ mod tests {
             &[question(&["x"])],
             |_| {
                 calls += 1;
-                Err(Failure::Typst("boom".into()))
+                Err(RenderError::Typst("boom".into()))
             },
-            |_| Err(Failure::Stopped),
+            |_| Err(RenderError::Interrupted),
         );
 
-        assert_eq!(result, Err(Failure::Stopped));
+        assert_eq!(result, Err(RenderError::Interrupted));
         assert_eq!(calls, 1);
     }
 
@@ -325,7 +331,7 @@ mod tests {
 
         let result = Typst { stop: &stop }.pdf(&[question(&["x"])]);
 
-        assert_eq!(result, Err(Failure::Stopped));
+        assert_eq!(result, Err(RenderError::Interrupted));
     }
 
     #[test]

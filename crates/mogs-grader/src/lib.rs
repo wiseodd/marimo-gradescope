@@ -23,6 +23,7 @@ pub mod submission;
 #[cfg(unix)]
 mod watch;
 
+use std::ffi::OsString;
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
@@ -86,8 +87,8 @@ pub struct GradingUser {
 /// Why grading or building the results failed. Each variant stands for a Python exception.
 #[derive(Debug)]
 pub enum GradeError {
-    /// `ValueError` with this text.
-    Value(String),
+    /// `ValueError` with this text, which may hold a path that is not UTF-8.
+    Value(OsString),
     /// `KeyError` of this key.
     Key(String),
     /// `OSError` (a subclass by `errno`) from an operation on `path`.
@@ -127,13 +128,14 @@ impl From<rustix::io::Errno> for GradeError {
 impl fmt::Display for GradeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            GradeError::Value(message) | GradeError::Key(message) => write!(f, "{message}"),
+            GradeError::Value(message) => write!(f, "{}", message.to_string_lossy()),
+            GradeError::Key(key) => write!(f, "{key}"),
             GradeError::Os { error, path: None } => write!(f, "{error}"),
             GradeError::Os {
                 error,
                 path: Some(path),
             } => write!(f, "{error}: {}", path.display()),
-            GradeError::Host => write!(f, "the caller stopped the grader"),
+            GradeError::Host => write!(f, "the work stopped without a Python error"),
         }
     }
 }

@@ -1,6 +1,5 @@
 import copy
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -9,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from mogs._env import clean_env
 from mogs.config import AssignmentConfig, Question, read_config
 from mogs.grader.bundle import (
     GradingBundle,
@@ -116,7 +116,7 @@ def run_child(tmp_path: Path, job: Job) -> list[Event]:
     """Run the child on `job`; events go to a file, so no pipe can fill up."""
 
     events = tmp_path / "events.jsonl"
-    env = {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
+    env = clean_env()
 
     with events.open("w") as sink:
         result = subprocess.run(
@@ -721,7 +721,7 @@ def test_child_rejects_standard_descriptors(tmp_path, fd):
         input=job.to_json(),
         capture_output=True,
         text=True,
-        env={key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"},
+        env=clean_env(),
         timeout=60,
     )
 

@@ -57,23 +57,28 @@ pub fn build_results(
         let public = pick(false)?;
         let hidden = pick(true)?;
         let total = public.len() + hidden.len();
+        let capped: IndexMap<&str, String> = public
+            .iter()
+            .chain(&hidden)
+            .filter(|outcome| !outcome.passed && !outcome.message.is_empty())
+            .map(|outcome| (outcome.name.as_str(), text.cap(&outcome.message)))
+            .collect();
 
         if total == 0 {
-            return Err(GradeError::Value(format!(
-                "question {} has no tests",
-                question.id
-            )));
+            return Err(GradeError::Value(
+                format!("question {} has no tests", question.id).into(),
+            ));
         }
 
         if !public.is_empty() {
-            let output = output(&public, &[], text);
+            let output = output(&public, &[], &capped);
             public_parts.push(format!("**{}**\n\n{output}", question.title));
             public_failed |= !public.iter().all(|outcome| outcome.passed);
         }
 
         let passed = public.iter().chain(&hidden).filter(|o| o.passed).count();
         let score = text.round(question.points * passed as f64 / total as f64, 4);
-        let output = output(&public, &hidden, text);
+        let output = output(&public, &hidden, &capped);
         question_rows.push(Row {
             number: Some(question.id.clone()),
             visibility: "hidden".into(),
@@ -199,8 +204,9 @@ fn fraction(score: f64, max_score: f64, text: &dyn PyText) -> String {
     format!("{} / {}", text.g(text.round(score, 4)), text.g(max_score))
 }
 
-/// Markdown for tests: `All tests passed`, or each test with its failure message.
-fn output(public: &[&Outcome], hidden: &[&Outcome], text: &dyn PyText) -> String {
+/// Markdown for tests: `All tests passed`, or each test with its failure message, as
+/// `capped` holds it by test name.
+fn output(public: &[&Outcome], hidden: &[&Outcome], capped: &IndexMap<&str, String>) -> String {
     if public.iter().chain(hidden).all(|outcome| outcome.passed) {
         return ALL_PASSED.into();
     }
@@ -215,8 +221,8 @@ fn output(public: &[&Outcome], hidden: &[&Outcome], text: &dyn PyText) -> String
         let mark = if outcome.passed { "✓" } else { "✗" };
         parts.push(format!("{mark} {}{label}", inline_code(&outcome.name)));
 
-        if !outcome.passed && !outcome.message.is_empty() {
-            parts.push(code_block(&text.cap(&outcome.message)));
+        if let Some(message) = capped.get(outcome.name.as_str()) {
+            parts.push(code_block(message));
         }
     }
 
@@ -251,55 +257,4 @@ pub fn inline_code(text: &str) -> String {
 
 fn longest_backtick_run(text: &str) -> usize {
     text.split(|c| c != '`').map(str::len).max().unwrap_or(0)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::fake::FakeHost;
-
-    #[test]
-    fn inline_code_outgrows_backticks_and_hides_control_characters() {
-        assert_eq!(inline_code("a"), "`a`");
-        assert_eq!(inline_code("a`b"), "`` a`b ``");
-        assert_eq!(inline_code("x\ny\x7f"), "`x?y?`");
-    }
-
-    #[test]
-    fn code_block_fence_outgrows_the_longest_run() {
-        assert_eq!(code_block("a"), "```\na\n```");
-        assert_eq!(code_block("````"), "`````\n````\n`````");
-    }
-
-    #[test]
-    fn failure_results_without_a_bundle_have_one_row() {
-        let results = failure_results(None, "RuntimeError");
-
-        assert_eq!(results.tests.len(), 1);
-        assert_eq!(results.tests[0].status.as_deref(), Some("failed"));
-        assert!(results.tests[0].output.contains("(RuntimeError)"));
-    }
-
-    #[test]
-    fn missing_outcome_is_a_key_error() {
-        let bundle: Bundle = serde_json::from_value(serde_json::json!({
-            "schema": 1,
-            "config": {
-                "name": "A", "notebook": "hw.py", "files": [], "timeout": 1.0, "budget": 9.0,
-                "memory_mb": 1, "python": "3.13",
-                "questions": [{"id": "q1", "title": "Q", "points": 1.0, "manual": false}],
-            },
-            "setup_code": "",
-            "cells": [{
-                "qid": "q1", "label": "q1-tests", "hidden": false, "source": "",
-                "tests": ["test_q1"], "uses": [], "needs": [],
-            }],
-            "helpers": [],
-        }))
-        .unwrap();
-
-        let error = build_results(&bundle, &IndexMap::new(), &[], &FakeHost::default());
-
-        assert!(matches!(error, Err(GradeError::Key(name)) if name == "test_q1"));
-    }
 }

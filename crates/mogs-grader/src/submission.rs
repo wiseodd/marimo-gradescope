@@ -16,14 +16,21 @@ pub const TESTS_FOLDER: &str = "tests";
 /// The files found in an upload.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Submission {
-    /// The notebook to grade, or `None` when there is none or it is ambiguous.
-    pub py: Option<PathBuf>,
-    /// The written answers: a PDF, else the export's Markdown fallback
-    /// `<notebook stem>_answers.md`, else `None`. Only tells whether the student sent any;
-    /// graders see every uploaded file.
-    pub answers: Option<PathBuf>,
-    /// Why `py` is `None`, ready to show the student.
-    pub error: Option<String>,
+    /// The notebook to grade, or why there is none or it is ambiguous, ready to show the
+    /// student.
+    pub py: Result<PathBuf, String>,
+    /// The written answers, if any. Only tells whether the student sent any; graders see
+    /// every uploaded file.
+    pub answers: Option<Answers>,
+}
+
+/// The written answers of an upload.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Answers {
+    /// A PDF.
+    Pdf(PathBuf),
+    /// The export's Markdown fallback `<name>_answers.md`, with no PDF.
+    Markdown(PathBuf),
 }
 
 /// Find the notebook and the written answers anywhere under `sub_dir`.
@@ -68,46 +75,38 @@ pub fn find_submission(
         .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let fallback = text.casefold(&format!(
-        "{}_answers.md",
-        name.filter(|name| !name.is_empty()).unwrap_or(&stem)
-    ));
     let pdf = files
         .iter()
         .find(|path| suffix(path).to_lowercase() == ".pdf");
-    let markdown = files.iter().find(|path| {
-        path.file_name()
-            .and_then(|file| file.to_str())
-            .is_some_and(|file| text.casefold(file) == fallback)
+    let answers = pdf.cloned().map(Answers::Pdf).or_else(|| {
+        let name = name.filter(|name| !name.is_empty()).unwrap_or(&stem);
+        let fallback = text.casefold(&format!("{name}_answers.md"));
+        let markdown = files.iter().find(|path| {
+            path.file_name()
+                .and_then(|file| file.to_str())
+                .is_some_and(|file| text.casefold(file) == fallback)
+        });
+        markdown.cloned().map(Answers::Markdown)
     });
-    let answers = pdf.or(markdown).cloned();
     let wanted = inline_code(notebook);
 
-    let error = match (exact.as_slice(), others.as_slice()) {
-        ([py], _) | ([], [py]) => {
-            return Submission {
-                py: Some(py.to_path_buf()),
-                answers,
-                error: None,
-            };
-        }
-        ([], []) => format!("No `.py` file found in your upload. Upload {wanted}."),
-        ([], several) => format!(
+    let py = match (exact.as_slice(), others.as_slice()) {
+        ([py], _) | ([], [py]) => Ok(py.to_path_buf()),
+        ([], []) => Err(format!(
+            "No `.py` file found in your upload. Upload {wanted}."
+        )),
+        ([], several) => Err(format!(
             "No {wanted} in your upload, and several other `.py` files: {}. Upload {wanted}, \
              or a single `.py` file.",
             names(several, &root)
-        ),
-        (several, _) => format!(
+        )),
+        (several, _) => Err(format!(
             "Found {wanted} more than once: {}. Upload one.",
             names(several, &root)
-        ),
+        )),
     };
 
-    Submission {
-        py: None,
-        answers,
-        error: Some(error),
-    }
+    Submission { py, answers }
 }
 
 /// The paths relative to `root`, as inline code, comma separated.
@@ -178,9 +177,11 @@ mod tests {
 
         let found = find_submission(dir.path(), "other.py", None, &FakeHost::default());
 
-        assert_eq!(found.py, Some(dir.path().join("hw.py")));
-        assert_eq!(found.answers, Some(dir.path().join("answers.PDF")));
-        assert_eq!(found.error, None);
+        assert_eq!(found.py, Ok(dir.path().join("hw.py")));
+        assert_eq!(
+            found.answers,
+            Some(Answers::Pdf(dir.path().join("answers.PDF")))
+        );
     }
 
     #[test]
@@ -191,10 +192,9 @@ mod tests {
 
         // Relative paths use the platform's separator, as `str(path)` did in v0.7.
         let nested = Path::new("b").join("x.py").display().to_string();
-        assert_eq!(found.py, None);
         assert_eq!(
-            found.error,
-            Some(format!(
+            found.py,
+            Err(format!(
                 "No `hw.py` in your upload, and several other `.py` files: `a.py`, `{nested}`. \
                  Upload `hw.py`, or a single `.py` file."
             ))
@@ -217,9 +217,11 @@ mod tests {
 
         let found = found(dir.path(), "hw.py");
 
-        assert_eq!(found.py, Some(dir.path().join("upload/hw.py")));
-        assert_eq!(found.answers, Some(dir.path().join("upload/a.pdf")));
-        assert_eq!(found.error, None);
+        assert_eq!(found.py, Ok(dir.path().join("upload/hw.py")));
+        assert_eq!(
+            found.answers,
+            Some(Answers::Pdf(dir.path().join("upload/a.pdf")))
+        );
     }
 
     #[test]
@@ -233,9 +235,8 @@ mod tests {
 
         let found = found(dir.path(), "hw.py");
 
-        assert_eq!(found.py, Some(dir.path().join("folder/my_homework.py")));
+        assert_eq!(found.py, Ok(dir.path().join("folder/my_homework.py")));
         assert_eq!(found.answers, None);
-        assert_eq!(found.error, None);
     }
 
     #[test]
@@ -244,8 +245,7 @@ mod tests {
 
         let found = found(dir.path(), "hw.py");
 
-        assert_eq!(found.py, None);
-        let error = found.error.unwrap();
+        let error = found.py.unwrap_err();
         for part in ["one.py", "two.py", "No `hw.py`"] {
             assert!(error.contains(part), "{error}");
         }
@@ -258,7 +258,7 @@ mod tests {
 
         let found = found(dir.path(), "hw.py");
 
-        assert_eq!(found.py, Some(dir.path().join("hw2/student_file.py")));
+        assert_eq!(found.py, Ok(dir.path().join("hw2/student_file.py")));
     }
 
     #[test]
@@ -267,7 +267,7 @@ mod tests {
 
         assert_eq!(
             found(dir.path(), "q1.py").py,
-            Some(dir.path().join("hw/q1.py"))
+            Ok(dir.path().join("hw/q1.py"))
         );
     }
 
@@ -277,7 +277,7 @@ mod tests {
 
         assert_eq!(
             found(dir.path(), "hw.py").py,
-            Some(dir.path().join("tests/hw.py"))
+            Ok(dir.path().join("tests/hw.py"))
         );
     }
 
@@ -287,7 +287,7 @@ mod tests {
 
         let found = found(dir.path(), "hw.py");
 
-        assert_eq!(found.py, Some(dir.path().join("tests/my_homework.py")));
+        assert_eq!(found.py, Ok(dir.path().join("tests/my_homework.py")));
     }
 
     #[test]
@@ -301,7 +301,8 @@ mod tests {
             &FakeHost::default(),
         );
 
-        assert_eq!(found.answers, Some(dir.path().join("homework2_answers.md")));
+        let markdown = dir.path().join("homework2_answers.md");
+        assert_eq!(found.answers, Some(Answers::Markdown(markdown)));
     }
 
     #[test]
@@ -310,8 +311,7 @@ mod tests {
 
         let found = found(dir.path(), "hw.py");
 
-        assert_eq!(found.py, None);
-        assert!(found.error.unwrap().contains("hw.py"));
+        assert!(found.py.unwrap_err().contains("hw.py"));
     }
 
     #[test]
@@ -322,8 +322,9 @@ mod tests {
         fs::write(dir.path().join("answers.pdf"), "").unwrap();
         let pdf = found(dir.path(), "hw.py").answers;
 
-        assert_eq!(markdown, Some(dir.path().join("folder/HW_Answers.md")));
-        assert_eq!(pdf, Some(dir.path().join("answers.pdf")));
+        let fallback = dir.path().join("folder/HW_Answers.md");
+        assert_eq!(markdown, Some(Answers::Markdown(fallback)));
+        assert_eq!(pdf, Some(Answers::Pdf(dir.path().join("answers.pdf"))));
     }
 
     #[test]
@@ -354,7 +355,7 @@ mod tests {
 
         let found = found(&sub, "hw.py");
 
-        assert_eq!(found.py, Some(sub.join("mine.py")));
+        assert_eq!(found.py, Ok(sub.join("mine.py")));
         assert_eq!(found.answers, None);
     }
 
@@ -364,7 +365,7 @@ mod tests {
     fn names_in_messages_cannot_break_markdown() {
         let dir = upload(&["a`` **b**.py", "c.py"]);
 
-        let error = found(dir.path(), "hw.py").error.unwrap();
+        let error = found(dir.path(), "hw.py").py.unwrap_err();
 
         assert!(error.contains("``` a`` **b**.py ```"), "{error}");
     }
@@ -375,8 +376,7 @@ mod tests {
 
         let found = found(dir.path(), "hw.py");
 
-        assert_eq!(found.py, None);
         let nested = Path::new("a").join("hw.py").display().to_string();
-        assert!(found.error.unwrap().contains(&nested));
+        assert!(found.py.unwrap_err().contains(&nested));
     }
 }

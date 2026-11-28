@@ -12,6 +12,7 @@ import pytest
 
 import mogs
 from mogs import grade
+from mogs._env import clean_env
 from mogs.check import question_title
 from mogs.config import ConfigError, read_config
 
@@ -400,9 +401,8 @@ def test_import_stays_light():
 
 
 def outside_pytest() -> dict[str, str]:
-    import os
 
-    return {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
+    return clean_env()
 
 
 def export_html(notebook: Path) -> str:
