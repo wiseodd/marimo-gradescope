@@ -10,7 +10,7 @@ OFFLINE ?=
 CARGO_TEST_ARGS = $(if $(OFFLINE),,-- --include-ignored)
 PYTEST_MARKS = $(if $(OFFLINE),-m 'not slow and not network',)
 
-.PHONY: sync test lint fix typecheck check docs docs-serve
+.PHONY: sync test test-rust test-python lint fix typecheck check docs docs-serve
 
 sync:
 	uv sync
@@ -21,8 +21,16 @@ sync:
 #   make test TESTS=tests/test_config.py ARGS='-k header'
 #   make test ARGS='-m docker'
 #   make test OFFLINE=1
+# Runs the Rust tests, then pytest. Never both at once: the sandbox tests have time limits.
+# CI runs each half in its own job.
 test:
+	@$(MAKE) --no-print-directory test-rust
+	@$(MAKE) --no-print-directory test-python
+
+test-rust:
 	$(UV) cargo test --workspace $(CARGO_TEST_ARGS)
+
+test-python:
 	$(UV) pytest $(TESTS) -q $(PYTEST_MARKS) $(ARGS)
 
 lint:

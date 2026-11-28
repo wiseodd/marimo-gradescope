@@ -85,6 +85,7 @@ make check       # ruff, cargo fmt + clippy, ty, cargo test, pytest (the CI gate
 make docs        # build the docs site into docs/dist (needs Bun)
 make docs-serve  # live preview at localhost:4321
 make test TESTS=tests/test_config.py ARGS="-k header"
+make test-rust               # only `cargo test`; `make test-python` runs only pytest
 make test ARGS="-m slow"      # only the slow tests (marimo via `uv run --with`; included by default)
 make test ARGS="-m network"   # only the tests that resolve packages through uv or render a PDF (included by default)
 make test OFFLINE=1           # offline: no Rust tests ignored for network, no `slow` or `network` pytest tests
