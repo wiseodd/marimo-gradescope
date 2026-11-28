@@ -195,3 +195,121 @@ def test_no_help_without_a_close_name():
     error = config_error(notebook('mogs.grade("q1", points=10, colour="red")'))
 
     assert error.help is None
+
+
+# The command line
+
+
+def test_cli_draws_a_located_config_error(tmp_path, monkeypatch):
+    code, err = build(tmp_path, monkeypatch, notebook('mogs.grade("q1", points="10")'))
+
+    assert code == 1
+    assert (
+        err
+        == """\
+Build failed.
+error: `points` must be a number >= 0, got '10'.
+  --> hw/hw.py:17:29
+   |
+17 |     mogs.grade("q1", points="10")
+   |                             ^^^^ a string
+   |
+help: drop the quotes: points=10
+"""
+    )
+
+
+def test_cli_draws_a_syntax_error(tmp_path, monkeypatch):
+    code, err = build(tmp_path, monkeypatch, notebook("x = (1 +"))
+
+    assert code == 1
+    assert (
+        err
+        == """\
+Build failed.
+error: The notebook is not valid Python: '(' was never closed
+  --> hw/hw.py:17:9
+   |
+17 |     x = (1 +
+   |         ^
+"""
+    )
+
+
+def test_cli_draws_a_located_source_error(tmp_path, monkeypatch):
+    src = notebook() + "\n\n@app.cel\ndef _():\n    return\n"
+
+    code, err = build(tmp_path, monkeypatch, src)
+
+    assert code == 1
+    assert (
+        err
+        == """\
+Build failed.
+error: unexpected `@app.cel` here.
+  --> hw/hw.py:21:2
+   |
+21 | @app.cel
+   |  ^^^^^^^
+"""
+    )
+
+
+def test_cli_lines_up_the_caret_after_a_tab_and_non_ascii(tmp_path, monkeypatch):
+    grade = 'mogs.grade("q1", title="é",\tpoints="10")'
+    code, err = build(tmp_path, monkeypatch, notebook(grade))
+
+    assert code == 1
+    assert (
+        err
+        == """\
+Build failed.
+error: `points` must be a number >= 0, got '10'.
+  --> hw/hw.py:17:40
+   |
+17 |     mogs.grade("q1", title="é",    points="10")
+   |                                           ^^^^ a string
+   |
+help: drop the quotes: points=10
+"""
+    )
+
+
+def test_cli_keeps_the_plain_form_without_a_location(tmp_path, monkeypatch):
+    src = notebook().replace('mogs.grade("q1", points=10)', "pass")
+
+    code, err = build(tmp_path, monkeypatch, src)
+
+    assert code == 1
+    assert err == (
+        "Build failed.\nThe notebook has no questions. End each one with a "
+        '`mogs.grade("q1", points=...)` cell.\n'
+    )
+
+
+class Terminal(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+def test_cli_colors_only_a_terminal_without_no_color(tmp_path, monkeypatch):
+    src = notebook('mogs.grade("q1", points="10")')
+    (tmp_path / "hw").mkdir()
+    (tmp_path / "hw" / "hw.py").write_text(src, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("NO_COLOR", raising=False)
+
+    terminal = Terminal()
+    monkeypatch.setattr(sys, "stderr", terminal)
+    assert main(["build", "hw"]) == 1
+    colored = terminal.getvalue()
+
+    monkeypatch.setenv("NO_COLOR", "1")
+    terminal = Terminal()
+    monkeypatch.setattr(sys, "stderr", terminal)
+    assert main(["build", "hw"]) == 1
+    plain = terminal.getvalue()
+
+    assert colored.startswith("Build failed.\n\x1b[")
+    assert "\x1b[" not in plain
+    assert plain.startswith("Build failed.\nerror: `points` must be")

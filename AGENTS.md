@@ -29,7 +29,9 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   in `Cargo.toml`.
 - `crates/mogs-cli/`: the clap definition of the command line and
   `mogs init`, plain Rust with cargo tests. Python's text, checks and file
-  operations come in through its `Interpreter` trait.
+  operations come in through its `Interpreter` trait. `diagnostic.rs` draws a
+  `UsageError` whose `span` Python filled in (`mogs.config.Span`) on the
+  notebook's lines, with `annotate-snippets`.
 - `crates/mogs-build/`: `mogs build` and `mogs grade`, plain Rust with cargo
   tests. It writes the zips and grades the solved and blank copies. The
   notebook's analysis and Python's text and exceptions come in through its
