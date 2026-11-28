@@ -31,7 +31,6 @@ RUNNING_PYTHON = f"{sys.version_info.major}.{sys.version_info.minor}"
 
 # The reference regex from PEP 723, for the `script` block.
 HEADER_RE = re.compile(r"(?m)^# /// script$\s(?P<content>(^#(| .*)$\s)+)^# ///$")
-TABLE_RE = re.compile(r"^\[\[?\s*([A-Za-z0-9_-]+(?:\s*\.\s*[A-Za-z0-9_-]+)*)\s*\]\]?\s*(#.*)?$")
 NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 QID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
 # Characters Windows forbids in file names.
@@ -752,11 +751,10 @@ def _memory(where: Where, value: object) -> int:
 
 
 def replace_header(src: str, body: list[str]) -> str:
-    """Put the TOML lines `body` in the PEP 723 header of `src`.
+    """Put the TOML lines `body` in the PEP 723 header of `src`, in place of the old header.
 
-    The old header's `[tool.*]` tables stay after `body`, except uv's (`[tool.uv]` and its
-    subtables), which `body` replaces. Everything else in the old header goes. Without a
-    header, the new one goes at the top, followed by a blank line.
+    mogs owns the header, so nothing of the old one stays. Without a header, the new one goes
+    at the top, followed by a blank line.
 
     Raises:
         ConfigError: If the old header is not valid TOML.
@@ -768,24 +766,9 @@ def replace_header(src: str, body: list[str]) -> str:
         return _join("# /// script\n", body, "# ///\n\n" + src)
 
     read_header(src)
-    before, old, after = _split(src)
-    kept: list[str] = []
-    keep = False
+    before, _, after = _split(src)
 
-    for line in old:
-        name = _table_name(line)
-
-        if name is not None:
-            uv = name == "tool.uv" or name.startswith("tool.uv.")
-            keep = name.startswith("tool.") and not uv
-
-        if keep:
-            kept.append(line)
-
-    while kept and not kept[-1].strip():
-        kept.pop()
-
-    return _join(before, body + ([""] + kept if kept else []), after)
+    return _join(before, body, after)
 
 
 def normalized_name(requirement: str) -> str | None:
@@ -816,10 +799,3 @@ def _join(before: str, body: list[str], after: str) -> str:
 
     lines = [f"# {line}" if line else "#" for line in body]
     return before + "".join(line + "\n" for line in lines) + after
-
-
-def _table_name(line: str) -> str | None:
-    """Dotted name of a TOML table header line, with spaces around dots removed."""
-
-    match = TABLE_RE.match(line.strip())
-    return re.sub(r"\s+", "", match.group(1)) if match else None
