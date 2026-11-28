@@ -12,10 +12,12 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use mogs_grader::{GradeError, GradingUser, Host, Level, PyText};
+#[cfg(unix)]
 use mogs_schema::Bundle;
 use pyo3::exceptions::{PyKeyError, PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString, PyTuple};
+#[cfg(unix)]
 use serde::Serialize;
 
 /// The logger of the supervisor's messages, as in v0.7.
@@ -41,6 +43,7 @@ pub fn data_files<'py>(
 }
 
 /// A `mogs.grader.bundle.GradingBundle` as the Rust type, through its JSON.
+#[cfg(unix)]
 pub(crate) fn bundle_from_py(bundle: &Bound<'_, PyAny>) -> PyResult<Bundle> {
     bundle_from_dict(&bundle.call_method0("to_dict")?)
 }
@@ -50,6 +53,7 @@ pub(crate) fn bundle_from_py(bundle: &Bound<'_, PyAny>) -> PyResult<Bundle> {
 ///
 /// The numbers go around JSON: the config accepts infinity (such as `budget=1e999`), which
 /// Python's JSON writes as `Infinity` and serde_json rejects.
+#[cfg(unix)]
 pub(crate) fn bundle_from_dict(data: &Bound<'_, PyAny>) -> PyResult<Bundle> {
     let config = data.get_item("config")?;
     let timeout: f64 = config.get_item("timeout")?.extract()?;
@@ -82,6 +86,7 @@ pub(crate) fn bundle_from_dict(data: &Bound<'_, PyAny>) -> PyResult<Bundle> {
 }
 
 /// `results` as Python values. Scores keep infinity and NaN, which JSON cannot carry.
+#[cfg(unix)]
 pub(crate) fn results_to_py<'py>(
     py: Python<'py>,
     results: &mogs_schema::Results,
@@ -99,6 +104,7 @@ pub(crate) fn results_to_py<'py>(
 }
 
 /// A Rust value as plain Python values, through `json.loads`.
+#[cfg(unix)]
 pub(crate) fn to_py<'py, T: Serialize>(py: Python<'py>, value: &T) -> PyResult<Bound<'py, PyAny>> {
     let text = serde_json::to_string(value).expect("the value is plain JSON");
 

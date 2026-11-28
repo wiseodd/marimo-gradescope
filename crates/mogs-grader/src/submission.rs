@@ -358,6 +358,8 @@ mod tests {
         assert_eq!(found.answers, None);
     }
 
+    // Windows refuses `*` in file names.
+    #[cfg(unix)]
     #[test]
     fn names_in_messages_cannot_break_markdown() {
         let dir = upload(&["a`` **b**.py", "c.py"]);

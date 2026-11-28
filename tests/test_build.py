@@ -767,7 +767,7 @@ def test_tool_requirement_defaults_to_this_version(tmp_path, monkeypatch, value)
     assert inputs["requirements"] == f"numpy==2.0\nmogs=={__version__}\n"
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root reads any file")
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="root reads any file")
 def test_bad_python_version_comes_before_an_unreadable_data_file(tmp_path):
     folder = requirements_file_copy(tmp_path / "demo", "")
     edit(folder / "hw.py", "mogs.assignment(", 'mogs.assignment(python="latest", ')
