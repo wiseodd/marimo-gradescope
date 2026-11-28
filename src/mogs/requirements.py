@@ -77,9 +77,9 @@ def read_requirements(cfg: AssignmentConfig) -> Requirements:
 
     Raises:
         ValueError: If `cfg` was not read from a notebook, so it names no file.
-        ConfigError: If the file is missing, or has a line other than a requirement, an
-            `--index-url` or `--extra-index-url` option, a comment or a blank line. The
-            message names the file and the line.
+        ConfigError: If the file is missing, has a line other than a requirement, an
+            `--index-url` or `--extra-index-url` option, a comment or a blank line, or has
+            more than one `--index-url`. The message names the file and the line.
     """
 
     if cfg.requirements is None:
@@ -99,6 +99,11 @@ def read_requirements(cfg: AssignmentConfig) -> Requirements:
         match _parse_line(line, path):
             case None:
                 pass
+            case Index(default=True) if any(index.default for index in indexes):
+                raise ConfigError(
+                    f"{ASSIGNMENT} `requirements`: {path} has more than one `--index-url`. "
+                    "Keep one, and add the others with `--extra-index-url`."
+                )
             case Index() as index:
                 indexes.append(index)
             case str() as package if normalized_name(package) != TOOL:

@@ -805,9 +805,6 @@ def test_header_comes_from_the_requirements():
         '#     "numpy==2.0",\n'
         '#     "mogs==9.9.9",\n'
         "# ]\n"
-        "#\n"
-        "# [tool.marimo.runtime]\n"
-        "# reactive_tests = false\n"
         "# ///\n"
     )
 
