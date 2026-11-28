@@ -538,10 +538,12 @@ def test_unreadable_notebook_gives_pdf_unavailable(tmp_path):
         render_manual_pdf(broken, ["q1"], {}, tmp_path / "out.pdf")
 
 
-def test_unwritable_output_gives_pdf_unavailable(tmp_path):
+def test_unwritable_output_gives_pdf_unavailable(tmp_path, monkeypatch):
     notebook = write_notebook(tmp_path, {"q1": "x"})
+    # Only the write is under test: no Typst run, so no package download.
+    monkeypatch.setattr(_native, "render_pdf", lambda questions: b"%PDF-stub")
 
-    with pytest.raises(PdfUnavailable, match="failed"):
+    with pytest.raises(PdfUnavailable, match=r"^writing the PDF failed \(FileNotFoundError: .+\)$"):
         render_manual_pdf(notebook, ["q1"], {}, tmp_path / "no" / "such" / "out.pdf")
 
 
