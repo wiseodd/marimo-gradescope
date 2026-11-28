@@ -11,7 +11,7 @@ import tokenize
 from collections.abc import Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from enum import StrEnum
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from mogs import __version__
 from mogs.config import (
@@ -19,6 +19,7 @@ from mogs.config import (
     TESTS_FOLDER,
     AssignmentConfig,
     Span,
+    located,
     normalize_newlines,
     set_dependency,
     split_lines,
@@ -76,6 +77,7 @@ def student_notebook(
     tool_requirement: str,
     *,
     solutions: bool = False,
+    path: Path | None = None,
 ) -> str:
     r"""Turn a source notebook into the notebook students get.
 
@@ -113,6 +115,7 @@ def student_notebook(
         tool_requirement: Requirement on this package for the header, such as
             `pinned_requirement()`.
         solutions: Keep the solutions.
+        path: The source notebook, for the spans of errors that point at its lines.
 
     Returns:
         The student notebook, with `\n` line ends.
@@ -134,12 +137,16 @@ def student_notebook(
             "itself; remove yours."
         )
 
-    text = _edited(nb, cfg, tool_requirement, solutions=solutions)
+    # Only errors from the source's lines point at the notebook, not those from the copies.
+    with located(path):
+        text = _edited(nb, cfg, tool_requirement, solutions=solutions)
+        blank = _edited(nb, cfg, tool_requirement) if solutions else text
+
     manual = [question.id for question in cfg.questions.values() if question.manual]
     # The copy, not the source: the edits may have removed an import or a name. Placeholders
     # come from the student copy, so the solved copy's answers do not count as untouched.
     copy = parse_notebook(text)
-    student = parse_notebook(_edited(nb, cfg, tool_requirement)) if solutions else copy
+    student = parse_notebook(blank) if solutions else copy
     placeholders = answer_placeholders(student, manual)
     cells = export_cells(cfg, package_alias(copy), placeholders, marimo=marimo_import(copy))
 
@@ -426,20 +433,24 @@ def _edited(
     lines = split_lines(nb.src)
     edits: Edits = {}
 
-    for cell in nb.cells:
-        if cell.hidden or cell.tests or cell.assignment or cell.instructor:
-            _drop_cell(edits, lines, cell)
+    try:
+        for cell in nb.cells:
+            if cell.hidden or cell.tests or cell.assignment or cell.instructor:
+                _drop_cell(edits, lines, cell)
 
-    regions = _solution_regions(edits, lines, solutions, nb.markdown_lines())
-    _inline_solutions(edits, lines, nb.src, solutions, regions)
+        regions = _solution_regions(edits, lines, solutions, nb.markdown_lines())
+        _inline_solutions(edits, lines, nb.src, solutions, regions)
 
-    for cell in nb.cells:
-        if cell.grade_qid is not None and not cell.hidden and not cell.instructor:
-            _rewrite_grade(edits, lines, nb, cell, cfg)
+        for cell in nb.cells:
+            if cell.grade_qid is not None and not cell.hidden and not cell.instructor:
+                _rewrite_grade(edits, lines, nb, cell, cfg)
 
-    for question in cfg.questions.values():
-        if question.manual:
-            _name_written_cells(edits, lines, nb, question.id)
+        for question in cfg.questions.values():
+            if question.manual:
+                _name_written_cells(edits, lines, nb, question.id)
+    except _Overlap as overlap:
+        message = "two student-copy edits touch this line."
+        raise _line_error(lines, overlap.line, message) from None
 
     copied = [
         pair
@@ -498,9 +509,12 @@ def _check_python(text: str, origin: list[int], lines: list[str]) -> None:
         msg = re.sub(r"\bline (\d+)", lambda m: f"line {source(int(m[1]))}", e.msg)
         code = lines[number - 1].strip()
 
+        advice = f"Check the `{SOLUTION}` and `{BEGIN}` edits around that line."
         raise SourceError(
             f"The student notebook is not valid Python at source line {number} (`{code}`): "
-            f"{msg}. Check the `{SOLUTION}` and `{BEGIN}` edits around that line."
+            f"{msg}. {advice}",
+            message=f"The student notebook is not valid Python: {msg}. {advice}",
+            span=Span.of_line(lines, number),
         ) from e
 
 
@@ -564,6 +578,15 @@ def _solution_regions(
         raise _line_error(lines, start, f"`{BEGIN}` without a matching `{END}`.")
 
     return inside
+
+
+class _Overlap(Exception):
+    """Two edits of `_replace` touch source line `line`; `_edited` reports it."""
+
+    def __init__(self, line: int) -> None:
+        super().__init__(line)
+
+        self.line = line
 
 
 def _line_error(lines: list[str], number: int, message: str) -> SourceError:
@@ -680,7 +703,7 @@ def _rewrite_grade(
     qid = cell.grade_qid
     question = cfg.questions.get(qid) if qid is not None else None
     if qid is None or question is None:
-        raise SourceError(f"line {call.lineno}: grade() names an unknown question {qid!r}.")
+        raise _line_error(lines, call.lineno, f"grade() names an unknown question {qid!r}.")
 
     _, hidden = nb.tests_by_question().get(qid, ([], []))
     students = nb.student_names()
@@ -721,7 +744,7 @@ def _name_written_cells(edits: Edits, lines: list[str], nb: Notebook, qid: str) 
             number = next((n for n in range(cell.start, cell.end + 1) if old in lines[n - 1]), None)
 
             if number is None:
-                raise SourceError(f"line {cell.start}: cannot name the cell `{name}`.")
+                raise _line_error(lines, cell.start, f"cannot name the cell `{name}`.")
 
             _replace(edits, number, number, [lines[number - 1].replace(old, f"def {name}(", 1)])
 
@@ -747,7 +770,7 @@ def _replace(
 
     taken = [number for number in range(first, last + 1) if number in edits]
     if taken:
-        raise SourceError(f"line {taken[0]}: two student-copy edits touch this line.")
+        raise _Overlap(taken[0])
 
     if origins is None:
         parts = "\n".join(new).split("\n") if new else []

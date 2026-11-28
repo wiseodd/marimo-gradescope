@@ -603,8 +603,9 @@ def _call_qid(tree: ast.Module, node: ast.stmt, api: Api) -> str | None:
     """Question id of the single `api` call in a cell, or None if it has none."""
 
     found: list[str] = []
+    calls = api_calls(tree, node, api)
 
-    for call in api_calls(tree, node, api):
+    for call in calls:
         match call.args:
             case [ast.Constant(value=str() as qid), *_]:
                 found.append(qid)
@@ -629,7 +630,7 @@ def _call_qid(tree: ast.Module, node: ast.stmt, api: Api) -> str | None:
             raise SourceError(
                 f"line {node.lineno}: {message}",
                 message=message,
-                span=Span.of(api_calls(tree, node, api)[1].func),
+                span=Span.of(calls[1].func),
             )
 
 

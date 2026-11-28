@@ -8,13 +8,12 @@ errors are part of the error messages.
 """
 
 import ast
-import contextlib
 import importlib.metadata
 import io
 import json
 import re
 import zipfile
-from collections.abc import Generator, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TypedDict
@@ -31,6 +30,7 @@ from mogs.config import (
     ConfigError,
     UsageError,
     api_calls,
+    located,
     normalized_name,
     read_config,
 )
@@ -137,16 +137,6 @@ def read_assignment(assignment_dir: Path) -> Assignment:
     return Assignment(path, src, cfg, nb)
 
 
-@contextlib.contextmanager
-def located(path: Path) -> Generator[None]:
-    """Give the spans of the `UsageError`s raised inside the notebook at `path`."""
-
-    try:
-        yield
-    except UsageError as error:
-        raise error.at(path) from error.__cause__
-
-
 def build_inputs(assignment: Assignment) -> BuildInputs:
     """What a build writes and checks, from the notebook.
 
@@ -162,10 +152,9 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
 
     data = data_files(assignment.path.parent, cfg)
 
-    with located(assignment.path):
-        student = student_notebook(src, nb, cfg, pinned_requirement())
-        solved = student_notebook(src, nb, cfg, pinned_requirement(), solutions=True)
-
+    path = assignment.path
+    student = student_notebook(src, nb, cfg, pinned_requirement(), path=path)
+    solved = student_notebook(src, nb, cfg, pinned_requirement(), solutions=True, path=path)
     bundle = bundle_from_notebook(nb, cfg)
     tests = public_test_files(nb)
     requirements, warnings = gradescope_requirements(src, cfg, f"{TOOL}=={__version__}")

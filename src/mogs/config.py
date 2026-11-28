@@ -7,13 +7,14 @@ outside the edited part survive.
 """
 
 import ast
+import contextlib
 import copy
 import difflib
 import json
 import re
 import tomllib
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Callable, Generator, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -32,7 +33,7 @@ TABLE_RE = re.compile(r"^\[\[?\s*([A-Za-z0-9_-]+(?:\s*\.\s*[A-Za-z0-9_-]+)*)\s*\
 NAME_RE = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 QID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
 # A number in quotes, such as `"10"` for `points=10`.
-NUMBER_RE = re.compile(r"\d+(\.\d*)?|\.\d+")
+NUMBER_RE = re.compile(r"\d+(\.\d*)?|\.\d+", re.ASCII)
 # Characters Windows forbids in file names.
 WINDOWS_FORBIDDEN = frozenset('<>:"|?*')
 # Device names Windows reserves in any case, with or without an extension.
@@ -81,17 +82,28 @@ class Span:
         return Span(None, number, start, number, max(end, start))
 
 
-class UsageError(Exception):
-    """An error in what the user gave, which fails a `mogs` command with its message.
-
-    `str()` of the error is its full text, which panels and the self-check show. The other
-    fields let the command line point at the notebook line instead.
+@dataclass(frozen=True, slots=True)
+class Diagnostic:
+    """What the command line shows of an error: the notebook line it points at.
 
     Attributes:
         message: The text without the call or line it names, which `span` shows instead.
         span: Where the error is, if known.
         label: A short note at the span.
         help: A fix for a common mistake.
+    """
+
+    message: str
+    span: Span | None = None
+    label: str | None = None
+    help: str | None = None
+
+
+class UsageError(Exception):
+    """An error in what the user gave, which fails a `mogs` command with its message.
+
+    `str()` of the error is its full text, which panels and the self-check show.
+    `diagnostic` lets the command line point at the notebook line instead.
     """
 
     def __init__(
@@ -105,30 +117,36 @@ class UsageError(Exception):
     ) -> None:
         super().__init__(text)
 
-        self.message = text if message is None else message
-        self.span = span
-        self.label = label
-        self.help = help
+        self.diagnostic = Diagnostic(text if message is None else message, span, label, help)
 
     def at(self, path: Path) -> Self:
-        """This error with its span in the notebook at `path`.
+        """Place the span of this error in the notebook at `path`, and return the error.
 
-        An error without a span, or whose span names a file already, comes back as it is.
+        An error without a span, or whose span names a file already, stays as it is.
         """
 
-        if self.span is None or self.span.path is not None:
-            return self
+        match self.diagnostic.span:
+            case Span(path=None) as span:
+                span = copy.replace(span, path=path)
+                self.diagnostic = copy.replace(self.diagnostic, span=span)
 
-        error = type(self)(
-            str(self),
-            message=self.message,
-            span=copy.replace(self.span, path=path),
-            label=self.label,
-            help=self.help,
-        )
-        error.__cause__ = self.__cause__
+        return self
 
-        return error
+
+@contextlib.contextmanager
+def located(path: Path | None) -> Generator[None]:
+    """Place the spans of the `UsageError`s raised inside in the notebook at `path`.
+
+    Wrap only code whose spans count lines of that notebook. With `path` None, nothing
+    changes.
+    """
+
+    try:
+        yield
+    except UsageError as error:
+        if path is not None:
+            error.at(path)
+        raise
 
 
 def syntax_span(src: str, error: SyntaxError) -> Span | None:
@@ -309,11 +327,10 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
         if question.id in questions:
             first = lines[question.id]
             where = _where(call).at(call.args[0])
-            first_call = f'{ast.unparse(call.func)}("{question.id}", ...)'
 
             raise where.error(
                 f"question `{question.id}` is declared more than once (first at line {first}).",
-                help=f"the first `{first_call}` is at line {first}; give each question its own id",
+                help="give each question its own id",
             )
 
         questions[question.id] = question
@@ -532,10 +549,19 @@ def _question(call: ast.Call) -> Question:
     match call.args:
         case [ast.Constant(value=str() as qid)]:
             pass
-        case [ast.Constant(value=str()), second]:
+        case [ast.Constant(value=str()), ast.Constant(value=bool())]:
+            raise where.at(call.args[1]).error(
+                f"pass `points` and `title` as keywords, e.g. {example}."
+            )
+        case [ast.Constant(value=str()), ast.Constant(value=int() | float()) as second]:
             raise where.at(second).error(
                 f"pass `points` and `title` as keywords, e.g. {example}.",
                 help=f"write it as a keyword: points={ast.unparse(second)}",
+            )
+        case [ast.Constant(value=str()), ast.Constant(value=str()) as second]:
+            raise where.at(second).error(
+                f"pass `points` and `title` as keywords, e.g. {example}.",
+                help=f"write it as a keyword: title={ast.unparse(second)}",
             )
         case [ast.Constant(value=str()), second, *_]:
             raise where.at(second).error(f"pass `points` and `title` as keywords, e.g. {example}.")
@@ -576,14 +602,17 @@ def _points(where: Where, value: object) -> float:
             pass
         case int() | float() if value >= 0:
             return float(value)
-    raise _number_error(where, "points", f"`points` must be a number >= 0, got {value!r}.", value)
+    text = f"`points` must be a number >= 0, got {value!r}."
+    raise _number_error(where, "points", text, value, lambda text: float(text) >= 0)
 
 
-def _number_error(where: Where, key: str, text: str, value: object) -> ConfigError:
-    """The error for a bad number, with a help line when `value` is a number in quotes."""
+def _number_error(
+    where: Where, key: str, text: str, value: object, valid: Callable[[str], bool]
+) -> ConfigError:
+    """The error for a bad number, with a help line when `value` is a valid number in quotes."""
 
     match value:
-        case str() if NUMBER_RE.fullmatch(value):
+        case str() if NUMBER_RE.fullmatch(value) and valid(value):
             return where.error(text, label="a string", help=f"drop the quotes: {key}={value}")
         case _:
             return where.error(text)
@@ -656,9 +685,8 @@ def _seconds(where: Where, key: str, value: object) -> float:
             pass
         case int() | float() if value > 0:
             return float(value)
-    raise _number_error(
-        where, key, f"`{key}` must be a number of seconds > 0, got {value!r}.", value
-    )
+    text = f"`{key}` must be a number of seconds > 0, got {value!r}."
+    raise _number_error(where, key, text, value, lambda text: float(text) > 0)
 
 
 def _memory(where: Where, value: object) -> int:
@@ -667,11 +695,9 @@ def _memory(where: Where, value: object) -> int:
             pass
         case int() if value >= MIN_MEMORY_MB:
             return value
+    text = f"`memory` must be a whole number of MB >= {MIN_MEMORY_MB}, got {value!r}."
     raise _number_error(
-        where,
-        "memory",
-        f"`memory` must be a whole number of MB >= {MIN_MEMORY_MB}, got {value!r}.",
-        value,
+        where, "memory", text, value, lambda text: text.isdigit() and int(text) >= MIN_MEMORY_MB
     )
 
 
