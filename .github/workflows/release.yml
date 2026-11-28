@@ -71,13 +71,9 @@ jobs:
           name: wheels-linux-${{ matrix.target }}
           path: dist
 
-  # Both wheels are built on an arm64 runner. Only the arm64 one runs there.
+  # Apple Silicon only.
   macos:
     needs: version
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [aarch64, x86_64]
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,12 +83,10 @@ jobs:
           python-version: "3.11"
       - uses: PyO3/maturin-action@v1
         with:
-          target: ${{ matrix.target }}
+          target: aarch64
           args: --release --out dist
-      - if: matrix.target == 'aarch64'
-        uses: astral-sh/setup-uv@v6
-      - if: matrix.target == 'aarch64'
-        env:
+      - uses: astral-sh/setup-uv@v6
+      - env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           for python in 3.11 3.14; do
@@ -102,7 +96,7 @@ jobs:
           done
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-macos-${{ matrix.target }}
+          name: wheels-macos-aarch64
           path: dist
 
   windows:
