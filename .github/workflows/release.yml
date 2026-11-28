@@ -34,7 +34,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-  # One abi3 wheel per platform serves Python 3.13 and newer. Each wheel is built on a runner
+  # One abi3 wheel per platform serves Python 3.11 and newer. Each wheel is built on a runner
   # of its architecture, so the smoke test can run it.
   linux:
     needs: version
@@ -60,12 +60,12 @@ jobs:
         uses: astral-sh/setup-uv@v6
       # `mogs --version` imports nothing outside `mogs` and the standard library, so the wheel
       # installs without its dependencies.
-      # Python 3.14 runs the abi3 wheel too.
+      # The one abi3 wheel runs on the oldest and the newest Python mogs supports.
       - if: startsWith(matrix.compatibility, 'manylinux')
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          for python in 3.13 3.14; do
+          for python in 3.11 3.14; do
             uv venv --python "$python" "smoke-$python"
             uv pip install --python "smoke-$python" --no-deps dist/*.whl
             test "$("smoke-$python/bin/mogs" --version)" = "mogs $VERSION"
@@ -74,10 +74,12 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          docker run --rm -v "$PWD/dist:/dist" -e VERSION python:3.13-alpine sh -euc '
-            pip install --quiet --root-user-action=ignore --no-deps /dist/*.whl
-            test "$(mogs --version)" = "mogs $VERSION"
-          '
+          for image in python:3.11-alpine python:3.14-alpine; do
+            docker run --rm -v "$PWD/dist:/dist" -e VERSION "$image" sh -euc '
+              pip install --quiet --root-user-action=ignore --no-deps /dist/*.whl
+              test "$(mogs --version)" = "mogs $VERSION"
+            '
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-linux-${{ matrix.target }}-${{ matrix.compatibility }}
@@ -93,10 +95,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      # PyO3 builds against a Python 3.13 or newer, as `abi3-py313` needs.
+      # PyO3 builds against a Python 3.11 or newer, as `abi3-py311` needs.
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.11"
       - uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
@@ -107,9 +109,11 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          uv venv --python 3.13 smoke
-          uv pip install --python smoke --no-deps dist/*.whl
-          test "$(smoke/bin/mogs --version)" = "mogs $VERSION"
+          for python in 3.11 3.14; do
+            uv venv --python "$python" "smoke-$python"
+            uv pip install --python "smoke-$python" --no-deps dist/*.whl
+            test "$("smoke-$python/bin/mogs" --version)" = "mogs $VERSION"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-macos-${{ matrix.target }}
@@ -128,10 +132,11 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      # The abi3 module links against the import library of a Python 3.13 or newer.
+      # The abi3 module links against the import library of a Python 3.11 or newer. 3.11 is
+      # the first Python with a Windows arm64 build.
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.11"
       - uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
@@ -141,9 +146,11 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          uv venv --python 3.13 smoke
-          uv pip install --python smoke --no-deps dist/*.whl
-          test "$(smoke/Scripts/mogs.exe --version | tr -d '\r')" = "mogs $VERSION"
+          for python in 3.11 3.14; do
+            uv venv --python "$python" "smoke-$python"
+            uv pip install --python "smoke-$python" --no-deps dist/*.whl
+            test "$("smoke-$python/Scripts/mogs.exe" --version | tr -d '\r')" = "mogs $VERSION"
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-windows-${{ matrix.target }}
