@@ -1,9 +1,16 @@
 [workspace]
-members = ["crates/mogs", "crates/mogs-build", "crates/mogs-cli", "crates/mogs-grader", "crates/mogs-pdf", "crates/mogs-schema"]
+members = [
+  "crates/mogs",
+  "crates/mogs-build",
+  "crates/mogs-cli",
+  "crates/mogs-grader",
+  "crates/mogs-pdf",
+  "crates/mogs-schema",
+]
 resolver = "3"
 
 [workspace.package]
-version = "0.7.0"
+version = "1.0.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/wiseodd/mogs"
