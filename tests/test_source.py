@@ -1653,3 +1653,17 @@ def test_newer_syntax_names_the_running_python(source):
 
     with pytest.raises(SourceError, match=r"not valid Python 3\.11 \(line \d+\)"):
         parse_notebook(nb(cell))
+
+
+TEMPLATE_STRINGS = [
+    ("y = t'{[x for x in d]}'", {"y"}, {"d"}),
+    ("y = t'{[x for x in d]!r:>{w}}'", {"y"}, {"d", "w"}),
+    ("y = t'{ {k: v for k, v in d} }'", {"y"}, {"d"}),
+    ("y = t'{t'{[x for x in d]}'}'", {"y"}, {"d"}),
+]
+
+
+@pytest.mark.skipif(sys.version_info < (3, 14), reason="syntax of Python 3.14")
+@pytest.mark.parametrize(("source", "bound", "read"), TEMPLATE_STRINGS)
+def test_cell_names_template_strings(source, bound, read):
+    assert cell_names(source) == (bound, read)

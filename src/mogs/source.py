@@ -8,6 +8,7 @@ import ast
 import io
 import re
 import symtable
+import sys
 import textwrap
 import tokenize
 from collections.abc import Iterable
@@ -470,6 +471,14 @@ def _same_scopes(node: ast.AST, function: bool) -> ast.AST:
                 setattr(node, field, items)
             case ast.AST():
                 setattr(node, field, _same_scopes(value, inner))
+
+    # `ast.unparse` writes a t-string interpolation from its source text, `str`, which would
+    # undo the rewrite of its value, so the text is rebuilt from the value. The node type only
+    # exists from Python 3.14 on, hence the version check.
+    if sys.version_info >= (3, 14):
+        match node:
+            case ast.Interpolation(value=value):
+                node.str = f"({ast.unparse(value)})"
 
     return node
 
