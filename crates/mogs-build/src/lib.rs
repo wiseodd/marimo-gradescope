@@ -1,14 +1,14 @@
 //! `mogs build` and `mogs grade`.
 //!
-//! [`build`] writes the student notebook and the Gradescope autograder zip, after grading the
+//! `build` writes the student notebook and the Gradescope autograder zip, after grading the
 //! solved and the blank student copy in an environment with Gradescope's requirements
-//! ([`environment`]). [`regrade`] grades one submission the same way, and [`report`] turns
-//! both into the text the commands print.
+//! (`environment`). `regrade` grades one submission the same way, and `report` turns both
+//! into the text the commands print. (Plain names, as those modules exist only on Unix.)
 //!
 //! Python reads the source notebook and computes what follows from it: the student notebook,
 //! the bundle, the requirements and the warnings. That, text with Python's rules and Python's
-//! exceptions come from the caller through [`Interpreter`]. Text that may hold a path is an
-//! [`OsString`], since a path may hold bytes that are not UTF-8. Linux and macOS only, but for
+//! exceptions come from the caller through `Interpreter`. Text that may hold a path is an
+//! `OsString`, since a path may hold bytes that are not UTF-8. Linux and macOS only, but for
 //! [`DIST`], [`PARTS`] and [`remove_output`], as a failed build removes its output on every
 //! platform.
 

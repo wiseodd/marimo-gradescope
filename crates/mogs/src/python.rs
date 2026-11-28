@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+#[cfg(unix)]
 use pyo3::exceptions::PyOSError;
 use pyo3::prelude::*;
 
@@ -22,6 +23,8 @@ pub(crate) fn pathlib<'py>(py: Python<'py>, path: &Path) -> PyResult<Bound<'py, 
 }
 
 /// `OSError(errno, strerror, filename)`, which Python turns into the subclass for `errno`.
+/// Linux and macOS, as the grading and the build that raise it.
+#[cfg(unix)]
 pub(crate) fn os_error(py: Python<'_>, error: &std::io::Error, path: Option<&Path>) -> PyErr {
     let Some(errno) = error.raw_os_error() else {
         return PyOSError::new_err(error.to_string());

@@ -111,6 +111,7 @@ pub fn grade(
             [lead, submission.as_os_str()].into_iter().collect(),
         ));
     }
+
     let texts = Texts {
         timeout: host.g(bundle.config.timeout),
         budget: host.g(bundle.config.budget),

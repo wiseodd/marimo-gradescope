@@ -97,33 +97,23 @@ impl Typst<'_> {
         Ok(as_plain(part))
     }
 
-    /// Whether `part` alone, under an empty title, renders. Laying it out is enough to tell.
+    /// Whether `part` alone, under an empty title, renders. The PDF is made too, as a part
+    /// can lay out and still fail to export.
     fn renders(&self, part: &Part) -> Result<bool, RenderError> {
         let question = Question {
             title: String::new(),
             parts: vec![part.clone()],
         };
 
-        self.lays_out("main.typ", TEMPLATE, &[("doc", &doc(&[question]))])
+        succeeded(self.document(&[question]))
     }
 
     fn formula_renders(&self, formula: &Formula) -> Result<bool, RenderError> {
         let display = if formula.display { "true" } else { "false" };
         let inputs = [("formula", formula.source.as_str()), ("display", display)];
-
-        self.lays_out("formula.typ", FORMULA, &inputs)
-    }
-
-    /// Whether Typst lays out `text` without an error.
-    fn lays_out(
-        &self,
-        name: &str,
-        text: &str,
-        inputs: &[(&str, &str)],
-    ) -> Result<bool, RenderError> {
         self.go_on()?;
 
-        Ok(world::layout(name, text, inputs).is_ok())
+        succeeded(world::compile("formula.typ", FORMULA, &inputs).map_err(RenderError::Typst))
     }
 
     /// `Err(Interrupted)` once the caller stopped the work, so no more Typst runs start.
@@ -182,6 +172,11 @@ fn fallbacks(
         .collect();
 
     document(&plain)
+}
+
+/// Whether Typst made the PDF; any error but Typst's stays one.
+fn succeeded(result: Result<Vec<u8>, RenderError>) -> Result<bool, RenderError> {
+    unless_typst_failed(result).map(|pdf| pdf.is_some())
 }
 
 /// The PDF, or `None` when Typst failed; any other error stays one.
