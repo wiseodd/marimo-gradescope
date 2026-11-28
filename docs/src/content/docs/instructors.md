@@ -50,15 +50,15 @@ The build removes the cell from the student notebook.
 
 Available options are:
 
-| Argument       | Default   | Example                   | Description                                                                                                                          |
-| -------------- | --------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `name`         | file name | `"HW1"`                   | Names the student zip `<name>.zip` and the autograder zip `<name>-autograder-<timestamp>.zip`. Must be a valid file name on Windows. |
-| `files`        | `[]`      | `["data/", "labels.csv"]` | Data files and directories, relative to the notebook. `tests` is reserved for the public tests.                                      |
-| `timeout`      | `60`      | `120`                     | Seconds per test.                                                                                                                    |
-| `budget`       | `540`     | `900`                     | Seconds for the whole grading run.                                                                                                   |
-| `memory`       | `4096`    | `8192`                    | MB per grading process, at least 2048. Linux only.                                                                                   |
-| `python`       | `"3.13"`  | `"3.14"`                  | Python version on Gradescope.                                                                                                        |
-| `requirements` | `"requirements.txt"` | `"../requirements.txt"` | The requirements file, relative to the notebook. See [Requirements](#requirements). |
+| Argument       | Default              | Example                   | Description                                                                                                                          |
+| -------------- | -------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`         | file name            | `"HW1"`                   | Names the student zip `<name>.zip` and the autograder zip `<name>-autograder-<timestamp>.zip`. Must be a valid file name on Windows. |
+| `files`        | `[]`                 | `["data/", "labels.csv"]` | Data files and directories, relative to the notebook. `tests` is reserved for the public tests.                                      |
+| `timeout`      | `60`                 | `120`                     | Seconds per test.                                                                                                                    |
+| `budget`       | `540`                | `900`                     | Seconds for the whole grading run.                                                                                                   |
+| `memory`       | `4096`               | `8192`                    | MB per grading process, at least 2048. Linux only.                                                                                   |
+| `python`       | `"3.13"`             | `"3.14"`                  | Python version on Gradescope.                                                                                                        |
+| `requirements` | `"requirements.txt"` |                           | The requirements file, relative to the notebook. See [Requirements](#requirements).                                                  |
 
 Each question ends with a grade cell, `mogs.grade("q1", points=25)`.
 The questions appear on Gradescope in the order of these cells.
@@ -266,10 +266,8 @@ examples/demo/
 
 ## Requirements
 
-List the packages in `requirements.txt` next to the notebook, in pip's format.
-Pins and `--extra-index-url` work, e.g., `--extra-index-url https://download.pytorch.org/whl/cpu` for the CPU-only build of `torch`.
-`mogs edit`, the students' notebooks and Gradescope all install from this file.
-mogs writes the notebook's header from it, so don't edit the header.
+List the packages in `requirements.txt` next to the notebook, in standard Python pip format.
+The command `mogs edit`, the students' notebooks and Gradescope all install from this file.
 
 The data files in `files` are copied next to the notebook on Gradescope, at the same relative paths as on your machine.
 So, code that opens `data/scores.csv` relative to the notebook works in both places.
@@ -293,7 +291,3 @@ On Gradescope, student code runs under a separate user account with limited perm
 The public and hidden tests also run in separate processes.
 As a result, the student's code can't read the hidden tests from disk, and it can't write the results file.
 If the code crashes or loops forever, only the test where it happens fails.
-
-There are limits, though.
-A determined student can still fake a passing test from inside their own code, and the container has internet access.
-Otter Grader has the same limits, and it runs student code as root.
