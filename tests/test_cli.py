@@ -32,7 +32,7 @@ def test_command_help_shows_its_description(capsys):
 
     assert code == 0
     assert "Usage: mogs build <DIR>" in out
-    assert "then grade the solved and the blank student copy." in out
+    assert "after running every test on the solved copy." in out
 
 
 def test_grade_is_an_unknown_subcommand(capsys):

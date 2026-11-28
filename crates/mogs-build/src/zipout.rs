@@ -9,7 +9,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use crate::unix::{Class, Interpreter};
+use crate::{Class, Interpreter};
 
 /// The entries that are executable.
 pub const SCRIPTS: [&str; 2] = ["setup.sh", "run_autograder"];
@@ -185,7 +185,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::unix::fake::Fake;
+    use crate::fake::Fake;
 
     /// `pairs` deflated by `Fake`, which keeps the data as it is.
     fn deflated(pairs: &[(&str, &[u8])]) -> Vec<(String, Deflated)> {

@@ -53,8 +53,8 @@ pub enum Command {
     #[command(
         about = "build the student notebook and the autograder zip",
         long_about = "Build DIR/dist/student/ and DIR/dist/autograder/ (the autograder zip and \
-                      the solved student notebook) from the notebook in DIR, then grade the \
-                      solved and the blank student copy."
+                      the solved student notebook) from the notebook in DIR, after running \
+                      every test on the solved copy."
     )]
     Build {
         #[arg(
@@ -165,8 +165,8 @@ mod tests {
                 "build",
                 "build the student notebook and the autograder zip",
                 "Build DIR/dist/student/ and DIR/dist/autograder/ (the autograder zip and the \
-                 solved student notebook) from the notebook in DIR, then grade the solved and \
-                 the blank student copy.",
+                 solved student notebook) from the notebook in DIR, after running every test \
+                 on the solved copy.",
                 "DIR: assignment folder with the source notebook",
             ],
         ];

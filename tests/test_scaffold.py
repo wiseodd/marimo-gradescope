@@ -287,5 +287,5 @@ def test_init_notebook_builds(tmp_path, capsys):
     out = capsys.readouterr().out
 
     assert code == 0
-    assert re.search(r"^Total +4/4 +0/4$", out, re.MULTILINE), out
+    assert re.search(r"^Total +4$", out, re.MULTILINE), out
     assert "Warnings:" not in out

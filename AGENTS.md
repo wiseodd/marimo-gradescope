@@ -13,7 +13,7 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   `mogs.grade(...)` calls (statically, from the AST) and edits the PEP 723
   header as text. `_analysis.py` reads the notebook into plain data for the
   Rust side: the student notebook, the bundle, the requirements, the data files
-  and the warnings for `build` and `grade`, and the source notebook for `edit`.
+  and the warnings for `build`, and the source notebook for `edit`.
   `assignment.py` uses it to check the data files.
 - `crates/mogs-pdf/`: the PDF of written answers, plain Rust with cargo tests.
   `src/mogs/_answers.py` builds the questions from the notebook; this crate
@@ -32,13 +32,15 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   operations come in through its `Interpreter` trait. `diagnostic.rs` draws a
   `UsageError` whose `span` Python filled in (`mogs.config.Span`) on the
   notebook's lines, with `annotate-snippets`.
-- `crates/mogs-build/`: `mogs build` and `mogs grade`, plain Rust with cargo
-  tests. It writes the zips and grades the solved and blank copies. The
-  notebook's analysis and Python's text and exceptions come in through its
+- `crates/mogs-build/`: `mogs build`, plain Rust with cargo tests. It writes
+  the zips after running every test of the solved copy with
+  `python -m mogs.selfcheck --bundle`, in the notebook's own environment (the
+  one `mogs edit` opens), with no sandbox. The notebook's analysis and Python's text and exceptions come in through its
   `Interpreter` trait. `templates/` holds `setup.sh` and `run_autograder`,
   which runs the hidden command `mogs autograde`.
 - `crates/mogs-grader/`: the grading supervisor, plain Rust with cargo tests.
-  It runs the Python grading child (`python -m mogs.grader.child <fd>`),
+  Only `mogs autograde` on Gradescope uses its sandbox. It runs the Python
+  grading child (`python -m mogs.grader.child <fd>`),
   enforces its deadlines and builds `results.json`. `crates/mogs/src/grader/`
   only converts values to and from Python. Text with Python's rules (`repr`,
   `:g`, `round`) comes from Python through the `PyText` trait. Its sandbox

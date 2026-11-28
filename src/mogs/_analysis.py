@@ -29,7 +29,6 @@ from mogs.config import (
     UsageError,
     api_calls,
     located,
-    normalized_name,
     read_config,
 )
 from mogs.grader.bundle import bundle_from_notebook
@@ -79,26 +78,19 @@ class Assignment:
     nb: Notebook
 
 
-class GradeInputs(TypedDict):
-    """What grading needs: the bundle, its requirements and its data files.
-
-    The bundle is JSON. The requirements have no mogs line. The data files are (path relative
-    to the notebook, source) pairs.
-    """
-
-    bundle_json: str
-    grading_requirements: str
-    data: list[tuple[str, Path]]
-
-
-class BuildInputs(GradeInputs):
+class BuildInputs(TypedDict):
     """What a build writes and checks.
 
-    `tests` holds (path relative to the notebook, text) pairs.
+    `source` is the source notebook, whose own environment runs the check. The bundle is
+    JSON. `data` holds (path relative to the notebook, source) pairs, and `tests` holds (path
+    relative to the notebook, text) pairs.
     `prompts` has, for each manual question, the first line of each of its prompt cells, as
     `prompt_previews` gives it, or `NO_TEXT` when none has text.
     """
 
+    source: Path
+    bundle_json: str
+    data: list[tuple[str, Path]]
     student: str
     solved: str
     tests: list[tuple[str, str]]
@@ -166,8 +158,8 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
         )
 
     return {
+        "source": path,
         "bundle_json": bundle.to_json(),
-        "grading_requirements": _without_tool(requirements),
         "student": student,
         "solved": solved,
         "tests": [(str(rel), text) for rel, text in tests.items()],
@@ -176,14 +168,6 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
         "warnings": source_warnings(nb) + warnings,
         "prompts": prompts,
     }
-
-
-def _without_tool(requirements: str) -> str:
-    """`requirements` without its mogs line: the grading environment gets the running one."""
-
-    lines = [line for line in requirements.splitlines() if normalized_name(line) != TOOL]
-
-    return "".join(f"{line}\n" for line in lines)
 
 
 def find_notebook(assignment_dir: Path) -> Path:

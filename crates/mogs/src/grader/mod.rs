@@ -11,9 +11,7 @@ pub mod autograde;
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-#[cfg(unix)]
 use mogs_schema::Bundle;
-#[cfg(unix)]
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -54,7 +52,6 @@ pub fn data_files<'py>(
 }
 
 /// The bundle JSON `text`, as Python's `json` writes it, as the Rust type.
-#[cfg(unix)]
 pub(crate) fn decode_bundle(text: &str) -> PyResult<Bundle> {
     mogs_schema::decode(text).map_err(|error| PyValueError::new_err(error.to_string()))
 }

@@ -5,7 +5,7 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use mogs_build::{BuildInputs, Class, GradeInputs, Interpreter};
+use mogs_build::{BuildInputs, Class, Interpreter};
 use mogs_grader::{GradeError, Host};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyString, PyTuple};
@@ -21,19 +21,6 @@ fn analysis<'py>(
     args: impl pyo3::call::PyCallArgs<'py>,
 ) -> PyResult<Bound<'py, PyAny>> {
     py.import("mogs._analysis")?.call_method1(name, args)
-}
-
-/// What grading needs, from the dict of `build_inputs`.
-fn grading(inputs: &Bound<'_, PyAny>) -> PyResult<GradeInputs> {
-    Ok(GradeInputs {
-        bundle: decode_bundle(&inputs.get_item("bundle_json")?.extract::<String>()?)?,
-        requirements: inputs.get_item("grading_requirements")?.extract()?,
-        data: inputs
-            .get_item("data")?
-            .extract::<Vec<_>>()?
-            .into_iter()
-            .collect(),
-    })
 }
 
 impl Interpreter for PyHost {
@@ -64,9 +51,17 @@ impl Interpreter for PyHost {
         Python::attach(|py| {
             let inputs = analysis(py, "build_inputs", (assignment.bind(py),))?;
 
+            let bundle_json: String = inputs.get_item("bundle_json")?.extract()?;
+
             Ok(BuildInputs {
-                grading: grading(&inputs)?,
-                bundle_json: inputs.get_item("bundle_json")?.extract()?,
+                source: inputs.get_item("source")?.extract()?,
+                bundle: decode_bundle(&bundle_json)?,
+                bundle_json,
+                data: inputs
+                    .get_item("data")?
+                    .extract::<Vec<_>>()?
+                    .into_iter()
+                    .collect(),
                 student: inputs.get_item("student")?.extract()?,
                 solved: inputs.get_item("solved")?.extract()?,
                 tests: inputs.get_item("tests")?.extract()?,

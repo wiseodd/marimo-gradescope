@@ -21,11 +21,11 @@ from mogs.config import ConfigError, read_config
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
 ZIP_RE = re.compile(r"hw-autograder-\d{4}_\d{2}_\d{2}T\d{2}_\d{2}_\d{2}_\d{6}\.zip")
 ZIP_NAMES = ["bundle.json", "data/scores.csv", "requirements.txt", "run_autograder", "setup.sh"]
-SCORES = """\
-Question        Public  Hidden   Solution      Blank
-Average              2       2        4/4        0/4
-Reading scores       2       2        6/6        0/6
-Total                               10/10       0/10
+SUMMARY = """\
+Question        Public  Hidden  Points
+Average              2       2       4
+Reading scores       2       2       6
+Total                               10
 
 Not in the autograder total:
 - q3 Empty lists: 5 pts, graded by hand
@@ -239,11 +239,10 @@ def test_public_tests_sit_next_to_both_copies(demo):
 
 
 @pytest.mark.network
-def test_solution_full_marks_and_blank_zero(demo):
+def test_summary_lists_the_questions_with_their_tests_and_points(demo):
     _, result = demo
 
-    assert result.out.split("\n", 4)[4] == SCORES
-    assert "blank" not in result.out
+    assert result.out.split("\n", 4)[4] == SUMMARY
 
 
 @pytest.mark.network
@@ -284,7 +283,7 @@ def test_uv_installer_url_exists(demo):
 
 
 @pytest.mark.network
-def test_return_solution_line_grades_full_and_blank_zero(tmp_path):
+def test_return_solution_line_passes_and_blanks_the_student_copy(tmp_path):
     folder = demo_copy(tmp_path / "demo")
     edit(
         folder / "hw.py",
@@ -297,8 +296,8 @@ def test_return_solution_line_grades_full_and_blank_zero(tmp_path):
     with zipfile.ZipFile(result.student) as archive:
         student = archive.read("hw/hw.py").decode()
 
+    assert result.code == 0, result.err
     assert "def mean(xs):\n    return ...\n" in student
-    assert "Total                               10/10       0/10\n" in result.out
 
 
 # Failures through the CLI
@@ -319,6 +318,44 @@ def test_broken_solution_fails_naming_the_test(tmp_path, capsys):
     assert "test_q1_whole_numbers" in err
     assert "test_q1_negative" in err
     assert "test_q2_reads_scores" not in err
+    assert not (folder / "dist").exists()
+
+
+@pytest.mark.network
+def test_failing_hidden_test_fails_the_build_naming_it(tmp_path, capsys):
+    folder = demo_copy(tmp_path / "demo")
+    edit(folder / "hw.py", "assert mean([-4, 4, -6]) == -2", "assert mean([-4, 4, -6]) == 2")
+
+    code = main(["build", str(folder)])
+    err = capsys.readouterr().err
+
+    assert code == 1
+    assert err == (
+        "Build failed.\nThe solved copy of hw.py does not get full marks. Failing tests:\n"
+        "- test_q1_negative: In test_q1_negative, line 6:\n"
+        "        assert mean([-4, 4, -6]) == 2\n"
+        "    AssertionError: assert -2.0 == 2\n"
+        "     +  where -2.0 = mean([-4, 4, -6])\n"
+    )
+
+
+@pytest.mark.network
+def test_hanging_solution_stops_at_the_budget(tmp_path, capsys):
+    folder = demo_copy(tmp_path / "demo")
+    edit(folder / "hw.py", "mogs.assignment(", "mogs.assignment(budget=2, ")
+    edit(
+        folder / "hw.py",
+        "    def test_q1_negative():\n",
+        "    def test_q1_negative():\n        while True:\n            pass\n\n",
+    )
+
+    code = main(["build", str(folder)])
+
+    assert code == 1
+    assert capsys.readouterr().err == (
+        "Build failed.\nThe tests of the solved copy of hw.py did not finish within the "
+        "assignment's `budget` of 2 s.\n"
+    )
     assert not (folder / "dist").exists()
 
 
@@ -356,48 +393,6 @@ def test_self_check_grades_with_this_package(tmp_path, capsys):
     code = main(["build", str(folder)])
 
     assert code == 0, capsys.readouterr().err
-
-
-@pytest.mark.network
-def test_failed_install_names_the_requirements(tmp_path, capsys):
-    folder = demo_copy(tmp_path / "demo")
-    (folder / "requirements.txt").write_text("no-such-package-mogs-test==0.0.1\n", encoding="utf-8")
-    edit(folder / "hw.py", "mogs.assignment(", 'mogs.assignment(requirements="requirements.txt", ')
-
-    code = main(["build", str(folder)])
-    err = capsys.readouterr().err
-
-    assert code == 1
-    assert err.startswith(
-        "Build failed.\n`uv` could not install the requirements in the build's grading "
-        "environment:\n"
-    )
-    assert "no-such-package-mogs-test" in err
-    assert not (folder / "dist").exists()
-
-
-@pytest.mark.network
-def test_blank_score_warning_names_passing_tests(tmp_path, capsys):
-    folder = demo_copy(tmp_path / "demo")
-    edit(
-        folder / "hw.py",
-        "    def test_q1_fractions():",
-        "    def test_q1_trivial():\n        assert True\n\n    def test_q1_fractions():",
-    )
-
-    code = main(["build", str(folder)])
-    out = capsys.readouterr().out
-
-    assert code == 0
-    assert out.endswith(
-        "\n\nWarnings:\n- These tests pass on the blank student notebook, so they give points "
-        "for no work: test_q1_trivial\n"
-    )
-    [archive] = (folder / "dist" / "autograder").glob("*.zip")
-    assert f"Upload to Gradescope  : {archive}" in out
-    assert f"Distribute to students: {folder / 'dist' / 'student' / 'hw.zip'}" in out
-    assert "Average" in out
-    assert "Reading scores" in out
 
 
 def test_validation_errors_all_listed_and_no_dist(tmp_path, capsys):
@@ -697,18 +692,6 @@ def test_python_takes_a_minor_or_patch_version(python):
     assert _analysis.PYTHON_RE.fullmatch(python) is not None
 
 
-def test_windows_is_refused(tmp_path, monkeypatch, capsys):
-    folder = demo_copy(tmp_path / "demo")
-    monkeypatch.setattr(sys, "platform", "win32")
-
-    code = main(["build", str(folder)])
-
-    assert code == 1
-    assert capsys.readouterr().err == (
-        "Build failed.\nGrading needs Linux or macOS (WSL on Windows).\n"
-    )
-
-
 def test_analysis_and_cli_import_nothing_posix_only():
     # `edit` and the assignment summary use `_analysis` on Windows too.
     code = (
@@ -761,7 +744,15 @@ def test_requirements_pin_this_version(tmp_path):
     inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
 
     assert inputs["requirements"] == f"numpy==2.0\nmogs=={__version__}\n"
-    assert inputs["grading_requirements"] == "numpy==2.0\n"
+    assert "grading_requirements" not in inputs
+
+
+def test_build_inputs_name_the_source_notebook(tmp_path):
+    folder = requirements_file_copy(tmp_path / "demo", "")
+
+    inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
+
+    assert inputs["source"] == folder / "hw.py"
 
 
 @pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="root reads any file")
