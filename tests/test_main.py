@@ -154,8 +154,22 @@ def test_infinite_budget_grades_everything(paths):
     assert rows(results)["q2"]["score"] == 6
 
 
+def test_panic_in_the_grader_still_writes_results_and_exits_0(paths):
+    # Python's JSON reads NaN, which the grader's deadline cannot hold.
+    bundle = json.loads((paths.source / "bundle.json").read_text(encoding="utf-8"))
+    bundle["config"]["budget"] = float("nan")
+    (paths.source / "bundle.json").write_text(json.dumps(bundle), encoding="utf-8")
+    paths.add("solution.py")
+    paths.add("solution.pdf", "%PDF")
+
+    results = paths.run()
+
+    by_number = rows(results)
+    assert by_number["q1"]["score"] == 0
+    assert "The autograder failed (PanicException)" in by_number["q1"]["output"]
+
+
 def test_infinite_points_reach_results_json(paths):
-    # JSON in Rust has no infinity: the scores are put back as Python floats.
     bundle = json.loads((paths.source / "bundle.json").read_text(encoding="utf-8"))
     bundle["config"]["questions"][0]["points"] = float("inf")
     (paths.source / "bundle.json").write_text(json.dumps(bundle), encoding="utf-8")

@@ -294,7 +294,8 @@ pub fn fail(
 }
 
 /// `seconds` after `at`, at most a century, so an infinite budget works. The config allows
-/// only seconds > 0, and JSON has no NaN.
+/// only seconds > 0. NaN, which only an edited `bundle.json` holds, panics, and `mogs
+/// autograde` turns the panic into failure results.
 pub fn later(at: Instant, seconds: f64) -> Instant {
     let century = 100.0 * 365.0 * 24.0 * 3600.0;
 
