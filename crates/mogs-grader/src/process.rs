@@ -76,17 +76,30 @@ pub fn child_command(event_fd: i32, python: &OsStr) -> Vec<OsString> {
     std::iter::once(python.to_os_string()).chain(args).collect()
 }
 
+/// Set to `1` in the processes that grade, so `check` and `export` cells do nothing when the
+/// notebook runs. `mogs._env.GRADING` is the same name on the Python side.
+pub const GRADING: &str = "MOGS_GRADING";
+
+/// The variables no process that mogs starts keeps. `PYTEST_CURRENT_TEST` makes marimo act
+/// as if under test. `mogs._env.clean_env` drops the same ones for the processes Python
+/// starts.
+pub const DROPPED: [&str; 1] = ["PYTEST_CURRENT_TEST"];
+
+/// Whether a process that mogs starts keeps the variable `key` of its parent.
+pub fn inherited(key: &OsStr) -> bool {
+    !DROPPED.iter().any(|dropped| key == *dropped)
+}
+
 /// `base`, the current environment, made fit for student code that runs in `workdir`.
 ///
-/// It drops `PYTEST_CURRENT_TEST`, which makes marimo act as if under test, and sets
-/// `MOGS_GRADING=1`, so `check` and `export` cells do nothing when the notebook runs.
+/// It keeps only [`inherited`] variables and sets [`GRADING`] to `1`.
 pub fn child_env(
     base: impl IntoIterator<Item = (OsString, OsString)>,
     workdir: &Path,
 ) -> Vec<(OsString, OsString)> {
     let workdir = workdir.as_os_str();
     let set: [(&str, &OsStr); 6] = [
-        ("MOGS_GRADING", OsStr::new("1")),
+        (GRADING, OsStr::new("1")),
         ("MPLBACKEND", OsStr::new("Agg")),
         ("OMP_NUM_THREADS", OsStr::new("4")),
         ("HOME", workdir),
@@ -95,7 +108,7 @@ pub fn child_env(
     ];
     let mut env: Vec<(OsString, OsString)> = base
         .into_iter()
-        .filter(|(key, _)| key != "PYTEST_CURRENT_TEST" && !set.iter().any(|(k, _)| key == k))
+        .filter(|(key, _)| inherited(key) && !set.iter().any(|(k, _)| key == k))
         .collect();
 
     env.extend(set.map(|(key, value)| (key.into(), value.to_os_string())));

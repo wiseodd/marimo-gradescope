@@ -1,4 +1,8 @@
-"""Environment of the processes this package starts, and the flag they read."""
+"""Environment of the processes this package starts, and the flag they read.
+
+The Rust side keeps the same rules in `mogs_grader::process` (`GRADING`, `DROPPED` and `inherited`):
+change both together.
+"""
 
 import os
 

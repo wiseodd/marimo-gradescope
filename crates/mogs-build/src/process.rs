@@ -7,6 +7,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use mogs_grader::GradeError;
+use mogs_grader::process::DROPPED;
 
 use crate::{Interpreter, interrupted};
 
@@ -22,14 +23,18 @@ pub(crate) struct Output {
 
 /// Run `command` to its end and capture both streams.
 ///
-/// The environment is this process's without `PYTEST_CURRENT_TEST`, as `mogs._env.clean_env`
-/// makes it: marimo acts as if under test when that variable is set. If the host is
-/// interrupted, the command is killed and the host's error returned.
+/// The environment is the command's without the variables the grader's children drop
+/// ([`DROPPED`]). If the host is interrupted, the command is killed and the host's error
+/// returned.
 pub(crate) fn run<I: Interpreter>(i: &I, command: &mut Command) -> Result<Output, I::Error> {
     let program = PathBuf::from(command.get_program());
     let os = |error| i.grade_error(GradeError::os(error, &program));
+
+    for key in DROPPED {
+        command.env_remove(key);
+    }
+
     let mut child = command
-        .env_remove("PYTEST_CURRENT_TEST")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
