@@ -51,6 +51,8 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - `tests/`: pytest suite. `cargo test` runs the Rust tests. The ones that need
   network are `#[ignore = "needs network: ..."]`; `make test` runs them with
   `-- --include-ignored` unless `OFFLINE=1`.
+  CI runs every test on Linux, and the Rust tests and the `platform` modules
+  on macOS and Windows.
 - `tests/e2e/`: end-to-end tests. The `docker` ones build the demo autograder
   into Gradescope's base image (`tests/e2e/Dockerfile`) and grade submissions
   through the real `/autograder/run_autograder`. They need docker or podman

@@ -65,7 +65,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: uv sync --frozen
       - run: make test
-  # The build's self-check runs the sandbox, which must also work on an instructor's Mac.
+  # The build's self-check runs the sandbox, which must also work on an instructor's Mac. Linux
+  # runs every test; macOS runs the Rust tests and the `platform` ones (tests/conftest.py).
   test-macos:
     runs-on: macos-latest
     steps:
@@ -76,10 +77,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: uv sync --frozen
-      - run: make test
+      - run: make test ARGS="-m platform"
   # Students on Windows run the check panels, the export button, the selfcheck and the PDF,
-  # and instructors run `init` and `edit`. The grader and `build` need Linux or macOS, so
-  # their tests do not run here.
+  # and instructors run `init` and `edit`: the `platform` tests. The grader and `build` need
+  # Linux or macOS, so their tests skip here.
   test-windows:
     runs-on: windows-latest
     steps:
@@ -91,13 +92,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: uv sync --frozen
       - run: uv run cargo test --workspace -- --include-ignored
-      - run: >-
-          uv run pytest -q
-          tests/test_config.py tests/test_source.py tests/test_transform.py
-          tests/test_assertrewrite_guard.py tests/test_runner.py tests/test_check.py
-          tests/test_loader.py tests/test_selfcheck.py tests/test_export.py tests/test_pdf.py
-          tests/test_native.py tests/test_scaffold.py tests/test_init.py tests/test_edit.py
-          tests/test_cli.py tests/test_assignment.py
+      - run: uv run pytest -q -m platform
   # The autograder graded in Gradescope's base image. MOGS_REQUIRE_CONTAINER makes a missing
   # Docker fail the job instead of skipping the tests.
   docker:
