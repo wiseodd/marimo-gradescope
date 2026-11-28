@@ -1,6 +1,6 @@
 [package]
 name = "mogs-build"
-description = "`mogs build` and `mogs grade`: the autograder zip, the self-check and local grading."
+description = "`mogs build`: the autograder zip and the self-check."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

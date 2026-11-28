@@ -1,11 +1,11 @@
-//! `mogs build`, `mogs grade` and `mogs autograde`, which need Linux or macOS.
+//! `mogs build` and `mogs autograde`, which need Linux or macOS.
 //!
-//! Only glue: `build` and `grade` run `mogs-build` with the GIL released, with the notebook's
-//! analysis in Python, and print v0.7's text. Their errors are Python exceptions; a
+//! Only glue: `build` runs `mogs-build` with the GIL released, with the notebook's analysis in
+//! Python, and prints v0.7's text. Its errors are Python exceptions; a
 //! `UsageError` or an `OSError` fails the command with exit code 1. A panic reaches the PyO3
 //! boundary, which raises it as `PanicException`: the command fails with a traceback, as for
 //! a bug. `autograde` catches its own (see `crate::grader::autograde`). On other platforms,
-//! `platform` refuses all three.
+//! `platform` refuses both.
 
 #[cfg(unix)]
 mod interpreter;
@@ -16,8 +16,8 @@ use pyo3::exceptions::PyException;
 use pyo3::prelude::*;
 
 pub(crate) use self::platform::autograde;
-use self::platform::{built, graded};
-use crate::cli::{fail, failed, print};
+use self::platform::built;
+use crate::cli::{failed, print};
 use crate::python::{BuildError, REFUSAL, pathlib};
 
 /// Run `mogs build folder`: build, then print the report; give the exit code.
@@ -38,26 +38,6 @@ pub(crate) fn build(py: Python<'_>, folder: &Path) -> PyResult<i64> {
 
             failed(py, "Build", error)
         }
-    }
-}
-
-/// Run `mogs grade folder submission`: grade, then print the scores; give the exit code.
-///
-/// A submission that does not load fails the command after the scores.
-pub(crate) fn grade(py: Python<'_>, folder: &Path, submission: &Path) -> PyResult<i64> {
-    let folder: PathBuf = pathlib(py, folder)?.extract()?;
-    let submission: PathBuf = pathlib(py, submission)?.extract()?;
-
-    match posix(py).and_then(|()| graded(py, &folder, &submission)) {
-        Ok((report, None)) => {
-            print(py, report.into_pyobject(py)?, false, "\n")?;
-            Ok(0)
-        }
-        Ok((report, Some(load_failure))) => {
-            print(py, report.into_pyobject(py)?, false, "\n")?;
-            fail(py, "Grading", load_failure.into_pyobject(py)?)
-        }
-        Err(error) => failed(py, "Grading", error),
     }
 }
 
@@ -86,20 +66,6 @@ mod platform {
         run(py, |i| {
             let built = mogs_build::build::build(i, folder)?;
             mogs_build::report::report(i, &built)
-        })
-    }
-
-    /// The report of grading `submission`, and why it did not load, if it did not.
-    pub(super) fn graded(
-        py: Python<'_>,
-        folder: &Path,
-        submission: &Path,
-    ) -> PyResult<(OsString, Option<OsString>)> {
-        run(py, |i| {
-            let regraded = mogs_build::regrade::grade(i, folder, submission)?;
-            let report = mogs_build::report::grade_report(i, &regraded)?;
-
-            Ok((report, regraded.load_failure()))
         })
     }
 
@@ -140,14 +106,6 @@ mod platform {
     use crate::python::{BuildError, REFUSAL};
 
     pub(super) fn built(_py: Python<'_>, _folder: &Path) -> PyResult<OsString> {
-        Err(BuildError::new_err(REFUSAL))
-    }
-
-    pub(super) fn graded(
-        _py: Python<'_>,
-        _folder: &Path,
-        _submission: &Path,
-    ) -> PyResult<(OsString, Option<OsString>)> {
         Err(BuildError::new_err(REFUSAL))
     }
 

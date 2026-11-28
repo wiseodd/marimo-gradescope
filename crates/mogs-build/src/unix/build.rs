@@ -153,11 +153,10 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
         .collect();
 
     if !failed.is_empty() {
-        let listing = report::Listing::LoadFailuresCounted;
         let message = format!(
             "The solved copy of {} does not get full marks. Failing tests:\n{}",
             config.notebook,
-            report::failure_report(i, bundle, &failed, listing)?.join("\n")
+            report::failure_report(i, bundle, &failed)?.join("\n")
         );
         return Err(i.raise(Class::Build, message.into()));
     }

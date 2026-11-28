@@ -23,7 +23,7 @@ fn analysis<'py>(
     py.import("mogs._analysis")?.call_method1(name, args)
 }
 
-/// What grading needs, from the dict of `build_inputs` or `grade_inputs`.
+/// What grading needs, from the dict of `build_inputs`.
 fn grading(inputs: &Bound<'_, PyAny>) -> PyResult<GradeInputs> {
     Ok(GradeInputs {
         bundle: decode_bundle(&inputs.get_item("bundle_json")?.extract::<String>()?)?,
@@ -60,13 +60,6 @@ impl Interpreter for PyHost {
         Python::attach(|py| Ok(analysis(py, "read_assignment", (folder,))?.unbind()))
     }
 
-    fn notebook(&self, assignment: &Py<PyAny>) -> PyResult<String> {
-        Python::attach(|py| {
-            let config = assignment.bind(py).getattr("cfg")?;
-            config.getattr("notebook")?.extract()
-        })
-    }
-
     fn build_inputs(&self, assignment: &Py<PyAny>) -> PyResult<BuildInputs> {
         Python::attach(|py| {
             let inputs = analysis(py, "build_inputs", (assignment.bind(py),))?;
@@ -82,14 +75,6 @@ impl Interpreter for PyHost {
                 prompts: inputs.get_item("prompts")?.extract()?,
             })
         })
-    }
-
-    fn grade_inputs(&self, assignment: &Py<PyAny>) -> PyResult<GradeInputs> {
-        Python::attach(|py| grading(&analysis(py, "grade_inputs", (assignment.bind(py),))?))
-    }
-
-    fn unpack(&self, archive: &Path, target: &Path) -> PyResult<()> {
-        Python::attach(|py| analysis(py, "unpack", (archive, target)).map(drop))
     }
 
     fn tool_install_args(&self) -> PyResult<Vec<String>> {

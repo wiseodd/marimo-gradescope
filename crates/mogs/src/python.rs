@@ -12,7 +12,7 @@ pyo3::import_exception!(mogs._analysis, BuildError);
 #[cfg(unix)]
 pyo3::import_exception!(mogs.requirements, RequirementsError);
 
-/// Why `build`, `grade` and `autograde` refuse to run elsewhere.
+/// Why `build` and `autograde` refuse to run elsewhere.
 pub(crate) const REFUSAL: &str = "Grading needs Linux or macOS (WSL on Windows).";
 
 /// `pathlib.Path(path)`, which shows `./a/` as `a`.

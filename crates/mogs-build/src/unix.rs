@@ -3,7 +3,6 @@
 pub mod build;
 pub mod environment;
 mod process;
-pub mod regrade;
 pub mod report;
 pub mod templates;
 pub mod zipout;
@@ -29,7 +28,7 @@ pub enum Class {
     Requirements,
 }
 
-/// What `build` and `grade` ask of Python.
+/// What `build` asks of Python.
 ///
 /// Every method may fail with any Python exception.
 pub trait Interpreter {
@@ -61,31 +60,12 @@ pub trait Interpreter {
     ///
     /// The `BuildError`, `ConfigError` or `SourceError` of a missing or invalid notebook.
     fn read(&self, folder: &Path) -> Result<Self::Assignment, Self::Error>;
-    /// `assignment.cfg.notebook`: the file name of the student notebook.
-    ///
-    /// # Errors
-    ///
-    /// Any Python exception.
-    fn notebook(&self, assignment: &Self::Assignment) -> Result<String, Self::Error>;
     /// `mogs._analysis.build_inputs(assignment)`.
     ///
     /// # Errors
     ///
     /// The `ConfigError`, `SourceError` or `RequirementsError` of the notebook.
     fn build_inputs(&self, assignment: &Self::Assignment) -> Result<BuildInputs, Self::Error>;
-    /// `mogs._analysis.grade_inputs(assignment)`.
-    ///
-    /// # Errors
-    ///
-    /// The `ConfigError` or `RequirementsError` of the notebook.
-    fn grade_inputs(&self, assignment: &Self::Assignment) -> Result<GradeInputs, Self::Error>;
-    /// `mogs._analysis.unpack(archive, target)`: the zip `archive` unpacked into the new
-    /// folder `target`, within the limits of an upload.
-    ///
-    /// # Errors
-    ///
-    /// The `BuildError` of an unreadable or unsafe zip, or an `OSError`.
-    fn unpack(&self, archive: &Path, target: &Path) -> Result<(), Self::Error>;
     /// `mogs._analysis.installed_tool_args()`: the `uv pip install` arguments that install
     /// the running mogs.
     ///
@@ -194,8 +174,6 @@ pub struct Question {
 pub struct Graded {
     /// One outcome per test of the bundle: public tests first.
     pub outcomes: IndexMap<String, Outcome>,
-    /// Why the notebook did not load, if it did not in some phase.
-    pub load_error: Option<String>,
     /// The rows Gradescope would show.
     pub results: Results,
 }
@@ -225,7 +203,6 @@ fn grade_locally<I: Interpreter>(
 
     Ok(Graded {
         outcomes: graded.outcomes,
-        load_error: graded.load_error,
         results,
     })
 }
@@ -264,7 +241,7 @@ pub(crate) mod fake {
 
     use mogs_grader::{GradeError, GradingUser, Host, Level, PyText};
 
-    use super::{BuildInputs, Class, GradeInputs, Interpreter};
+    use super::{BuildInputs, Class, Interpreter};
 
     /// Held to write a script, and shared to start processes. A process started while a test
     /// writes a script keeps it open for writing until its `exec`, and running the script
@@ -351,19 +328,7 @@ pub(crate) mod fake {
             unimplemented!()
         }
 
-        fn notebook(&self, _assignment: &()) -> Result<String, String> {
-            unimplemented!()
-        }
-
         fn build_inputs(&self, _assignment: &()) -> Result<BuildInputs, String> {
-            unimplemented!()
-        }
-
-        fn grade_inputs(&self, _assignment: &()) -> Result<GradeInputs, String> {
-            unimplemented!()
-        }
-
-        fn unpack(&self, _archive: &Path, _target: &Path) -> Result<(), String> {
             unimplemented!()
         }
 

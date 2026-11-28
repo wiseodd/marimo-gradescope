@@ -1,9 +1,9 @@
-//! `mogs build` and `mogs grade`.
+//! `mogs build`.
 //!
 //! `build` writes the student notebook and the Gradescope autograder zip, after grading the
 //! solved and the blank student copy in an environment with Gradescope's requirements
-//! (`environment`). `regrade` grades one submission the same way, and `report` turns both
-//! into the text the commands print. (Plain names, as those modules exist only on Unix.)
+//! (`environment`). `report` turns the result into the text the command prints. (Plain names,
+//! as those modules exist only on Unix.)
 //!
 //! Python reads the source notebook and computes what follows from it: the student notebook,
 //! the bundle, the requirements and the warnings. That, text with Python's rules and Python's
