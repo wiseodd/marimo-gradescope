@@ -59,10 +59,6 @@ Available options are:
 | `python`       | `"3.13"`  | `"3.14"`                  | Python version on Gradescope.                                                                                                        |
 | `requirements` | none      | `"requirements.txt"`      | A requirements file for Gradescope, relative to the notebook. It's used instead of `dependencies`.                                   |
 
-The build reads the arguments without running the notebook.
-So they must be written out as literals: `timeout=120` works, `timeout=2 * LIMIT` doesn't.
-The same goes for the arguments of `mogs.grade` below.
-
 Each question ends with a grade cell, `mogs.grade("q1", points=25)`.
 The questions appear on Gradescope in the order of these cells.
 `mogs.grade` takes:
@@ -77,15 +73,6 @@ Question ids are letters and digits, and start with a letter, e.g., `q1` or `bon
 They can't contain `_`: test names use `_` to separate the id from the rest of the name.
 Two ids can't differ only in case, like `q1` and `Q1`, and an id can't be a name Windows reserves, like `con` or `nul`.
 Each id names a file in the student zip, `tests/<id>.py`.
-
-The notebook's header lists the packages it needs:
-
-```python
-# /// script
-# requires-python = ">=3.13"
-# dependencies = ["marimo", "mogs", "numpy"]
-# ///
-```
 
 ## Notebook
 
@@ -114,24 +101,7 @@ A test that reads a variable or function defined in a regular `@app.cell` fails 
 The grader imports functions without running the notebook.
 A cell variable only exists once the whole notebook has run, so one failing cell anywhere, even one the test doesn't need, would score that question zero.
 
-This is wrong:
-
-```python
-@app.cell
-def _():
-    n_missing = df["price"].isna().sum()  # SOLUTION
-    return (n_missing,)
-
-
-@app.cell
-def _(n_missing):
-    def test_q1_count():
-        assert n_missing == 3
-
-    return
-```
-
-Write the answer as a function instead, and load the data in the setup cell:
+Write each question and solution as a function instead, and load the data in the setup cell:
 
 ```python
 with app.setup:
@@ -179,23 +149,13 @@ def step(x, lr):
     return ...
 ```
 
-If there are no `# PROMPT:` lines, the student gets `...` instead.
+If there are no `# PROMPT:` lines, the student gets `...` instead:
 
-For a single line, put `# SOLUTION` at the end of it.
-For example, `lr = 0.1  # SOLUTION` becomes `lr = ...` in the student notebook.
-The same works for `lr: float = 0.1`, `return 2 * x`, `yield x` and `yield from xs`, which become `lr: float = ...`, `return ...`, `yield ...` and `yield from ...`.
-Any other line marked `# SOLUTION`, such as `print(x)` or `total += x`, is removed.
-If that leaves a block empty, the build fails and names the line; use `# BEGIN SOLUTION` with a `# PROMPT:` line there instead.
-A misspelled marker (e.g., `# SOULTION`) will fail the build.
-
-The markers work in any cell.
-In a Markdown cell, where a `#` line is a heading, write them as HTML comments: `<!-- BEGIN SOLUTION -->`, `<!-- END SOLUTION -->` and `<!-- PROMPT: ... -->`.
-A `#` marker in a Markdown cell fails the build.
-There, the student gets `*Write your answer here.*` instead of `...`.
-
-This is useful for ungraded exercises: write one in a normal cell and put its solution between the markers.
-Its answer stays in the notebook and doesn't go into the PDF.
-In a question without tests, a Markdown cell with markers is the answer instead; see [Written answers](#written-answers).
+- For a single line, put `# SOLUTION` at the end of it. E.g.:
+  - `lr = 0.1  # SOLUTION` becomes `lr = ...`.
+- Any other line marked `# SOLUTION`, such as `print(x)` or `total += x`, is removed.
+- If that leaves a block empty, the build fails and names the line; use `# BEGIN SOLUTION` with a `# PROMPT:` line there instead.
+- A misspelled marker (e.g., `# SOULTION`) will fail the build.
 
 ### Tests
 
@@ -204,7 +164,6 @@ Put the public tests of each question in their own cell, with nothing else in it
 A public test cell can't contain solution markers.
 Students get the public tests as written.
 The tests are plain `pytest` functions, and you can run them all with `pytest notebook.py`.
-Fixtures such as `capsys` don't work: the grader calls each test without arguments.
 
 Hidden tests go in a separate cell with a `# HIDDEN` line.
 The line hides the whole cell wherever it sits in it, as long as it is on a line of its own:
@@ -220,7 +179,6 @@ def _():
 ```
 
 The build removes this cell from the student notebook, and only Gradescope runs it.
-Data or helpers that the hidden tests need go in a hidden cell of their own: `pytest notebook.py` skips the tests in a cell that holds anything else.
 
 The question ends with a grade cell, which also sets its points:
 
@@ -232,11 +190,6 @@ def _():
 ```
 
 The points are split evenly across the question's public and hidden tests.
-Tests have no weights of their own, and a test that uses random numbers sets its own seed.
-
-In the student notebook, the grade cell shows the question's points and whether each public test passes.
-It updates whenever the student edits their code.
-In your source notebook it also runs the hidden tests, but it doesn't rerun when you edit a solution: run it again by hand.
 
 The build command writes each question's public tests to `tests/<qid>.py` in the same directory as the student notebook.
 While the student can modify the tests and get a 100 locally, Gradescope has the ground-truth tests---public and hidden.
@@ -244,7 +197,7 @@ So, tampering with the test files is useless for the student.
 
 ### Written answers
 
-A question without tests is graded by hand on Gradescope.
+A question without tests is graded manually on Gradescope.
 Write your answer in a Markdown cell between the solution markers, before the grade cell:
 
 ```python
@@ -265,31 +218,14 @@ def _():
 ```
 
 Students get `*Write your answer here.*` in place of your answer, or your `<!-- PROMPT: ... -->` text if you wrote some.
-The question's text is the run of Markdown cells just before the answer cell.
-A code cell ends that run, so the Markdown above a demo between two questions isn't part of the next question.
-Hidden, test and instructor cells don't end it, since students don't see them.
-
 A question can have more than one answer cell, e.g., for parts (a) and (b).
-The Markdown between two answer cells is the text of the second one.
 
-To check what each question's text is, read the output of `mogs build` or the `mogs.assignment(...)` summary.
-Both list the first line of each text cell of a written question, or "no question text".
-
-When the student clicks the export button, the answers go into a PDF, each after its text, with the LaTeX math rendered.
-Each question starts on a new page under its title.
-The PDF doesn't carry the student's name.
-The PDF goes into the submission zip, together with the notebook.
-An answer the student left blank or unchanged shows as *No answer.* in the PDF, and the export warns about it.
+When the student clicks the export button, the answers go into a PDF.
+The PDF doesn't carry the student's name, and it goes into the submission zip, together with the notebook.
 
 A written question can be worth 0 points, e.g., `mogs.grade("q5", points=0)`.
 Its answer goes into the PDF, but it doesn't count toward the total.
 Use this for a written exercise that you want to read but not grade.
-
-### Notes for yourself
-
-A cell named `instructor` or `instructor_<anything>`, like the guide that `init` writes, is for you only.
-The build removes it from the student notebook.
-It can't define names that other cells use, hold tests, or call `mogs.grade`.
 
 ## Build
 
@@ -299,15 +235,7 @@ To build the assignment, run:
 mogs build examples/demo
 ```
 
-It prints what to do with the result:
-
-```text
-All done!
-Upload to Gradescope  : examples/demo/dist/autograder/hw-autograder-2026_09_30T12_30_41_890583.zip
-Distribute to students: examples/demo/dist/student/hw.zip
-```
-
-The build writes two directories next to the notebook:
+It will create a `dist/` directory, e.g.:
 
 ```text
 examples/demo/
@@ -329,12 +257,10 @@ examples/demo/
 ```
 
 - `dist/student/<name>.zip` is what you give to your students.
-  It contains one directory with the student notebook, its public tests in `tests/`, and the data files.
+  - It contains one directory with the student notebook, its public tests in `tests/`, and the data files.
 - `dist/autograder/` is for Gradescope.
-  Upload `<name>-autograder-<timestamp>.zip` to Gradescope as the autograder.
-  The directory also contains the solved notebook, i.e., the student notebook with the solutions, together with its public tests, the data files and `requirements.txt`.
-
-Each build replaces both directories, and a failed build removes them.
+  - Upload `<name>-autograder-<timestamp>.zip` to Gradescope as the autograder.
+  - The directory also contains the solved notebook, i.e., the student notebook with the solutions, together with its public tests, the data files and `requirements.txt`.
 
 ## Requirements
 
