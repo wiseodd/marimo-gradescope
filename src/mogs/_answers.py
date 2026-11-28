@@ -9,10 +9,10 @@ questions from the notebook; `mogs._native.render_pdf` renders them with Typst
 
 import re
 from collections.abc import Callable, Mapping, Sequence
-from copy import replace
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
+from typing import TypeAlias
 
 from mogs import _native
 from mogs.runner import exception_summary
@@ -29,7 +29,7 @@ from mogs.source import (
 
 NO_ANSWER = "No answer."
 
-type Status = Callable[[str], None]
+Status: TypeAlias = Callable[[str], None]
 
 
 class PdfUnavailable(Exception):
@@ -195,7 +195,9 @@ def _words(text: str) -> str:
     as `+` and `-` in math, are kept.
     """
 
-    return f" {' '.join(re.findall(r'\w+|[^\w\s.,:;!?]', text.casefold()))} "
+    words = re.findall(r"\w+|[^\w\s.,:;!?]", text.casefold())
+
+    return f" {' '.join(words)} "
 
 
 def cell_markdown(nb: Notebook, cell: Cell) -> str:

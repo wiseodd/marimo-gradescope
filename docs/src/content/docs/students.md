@@ -5,7 +5,7 @@ description: Work on the assignment and submit it to Gradescope.
 
 ## Installing marimo
 
-Install Python 3.13 or 3.14, for example via [pyenv](https://github.com/pyenv/pyenv#installation).
+Install Python 3.11 or newer, for example via [pyenv](https://github.com/pyenv/pyenv#installation).
 Then, install marimo and uv in your Python environment.
 
 ```bash

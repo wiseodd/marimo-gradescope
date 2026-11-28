@@ -198,9 +198,11 @@ def test_init_reports_a_folder_it_cannot_look_at(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "locked").mkdir(mode=0o000)
 
+    # Before 3.14, `Path.exists` raises EACCES. From 3.14 on it returns False, and the same
+    # error comes from `mkdir`. `stat` raises it on every version.
     try:
         with pytest.raises(OSError) as python:
-            Path("locked", "hw").exists()
+            Path("locked", "hw").stat()
 
         code = main(["init", str(Path("locked", "hw"))])
     finally:
@@ -266,10 +268,11 @@ def test_cli_init_shows_paths_as_python_does(tmp_path, monkeypatch, capsys):
 
     code = main(["init", "./Bob's HW/"])
     out = capsys.readouterr().out
+    created = Path("Bob's HW", "Bob's HW.py")
 
     assert code == 0
     assert out.splitlines() == [
-        f"Created {Path("Bob's HW", "Bob's HW.py")}",
+        f"Created {created}",
         "Edit it  : mogs edit 'Bob'\"'\"'s HW'",
         "Build it : mogs build 'Bob'\"'\"'s HW'",
     ]

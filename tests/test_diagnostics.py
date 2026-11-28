@@ -1,6 +1,6 @@
 """Located errors: the structured fields of `UsageError`, and how `mogs` draws them."""
 
-import copy
+import dataclasses
 import io
 import sys
 from pathlib import Path
@@ -9,7 +9,14 @@ import pytest
 
 from mogs._analysis import read_assignment
 from mogs._native import main
-from mogs.config import ConfigError, Span, UsageError, read_config, split_lines
+from mogs.config import (
+    RUNNING_PYTHON,
+    ConfigError,
+    Span,
+    UsageError,
+    read_config,
+    split_lines,
+)
 from mogs.source import SourceError, parse_notebook
 from mogs.transform import _name_written_cells, _rewrite_grade, student_notebook
 
@@ -126,8 +133,12 @@ def test_error_without_location_has_no_span():
 def test_syntax_error_has_line_and_column():
     error = config_error(notebook("x = (1 +"))
 
-    assert str(error) == "The notebook is not valid Python (line 17): '(' was never closed"
-    assert error.diagnostic.message == "The notebook is not valid Python: '(' was never closed"
+    assert str(error) == (
+        f"The notebook is not valid Python {RUNNING_PYTHON} (line 17): '(' was never closed"
+    )
+    assert error.diagnostic.message == (
+        f"The notebook is not valid Python {RUNNING_PYTHON}: '(' was never closed"
+    )
     assert error.diagnostic.span == Span(None, 17, 8, 17, 9)
 
 
@@ -323,9 +334,9 @@ def test_cli_draws_a_syntax_error(tmp_path, monkeypatch):
     assert code == 1
     assert (
         err
-        == """\
+        == f"""\
 Build failed.
-error: The notebook is not valid Python: '(' was never closed
+error: The notebook is not valid Python {RUNNING_PYTHON}: '(' was never closed
   --> hw/hw.py:17:9
    |
 17 |     x = (1 +
@@ -554,7 +565,7 @@ def test_two_edits_on_one_line_point_at_it():
 
 def test_unknown_question_in_a_grade_rewrite_points_at_the_call():
     nb = parse_notebook(MARKER)
-    cfg = copy.replace(read_config(MARKER, NB), questions={})
+    cfg = dataclasses.replace(read_config(MARKER, NB), questions={})
     [cell] = [cell for cell in nb.cells if cell.grade_qid == "q1"]
 
     with pytest.raises(SourceError) as caught:

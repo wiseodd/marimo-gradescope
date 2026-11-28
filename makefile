@@ -1,5 +1,5 @@
 # Everything runs through uv, so the tools come from the project's venv. Cargo too: PyO3
-# builds against the venv's Python, as `abi3-py313` needs 3.13 or newer.
+# builds against the venv's Python, as `abi3-py311` needs 3.11 or newer.
 UV ?= uv run
 
 TESTS ?= tests

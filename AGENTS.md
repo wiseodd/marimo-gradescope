@@ -22,7 +22,7 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   Typst's package cache. They need the pinned typst crate version (`=0.15.x`):
   bump the crates and the package versions in `src/preamble.typ` together.
 - `crates/mogs/`: the extension module `mogs._native`, in Rust (PyO3, abi3
-  for Python 3.13 and newer). The `mogs` command is the console script
+  for Python 3.11 and newer). The `mogs` command is the console script
   `mogs._native:main`, which parses the command line with clap. maturin builds
   it into one wheel per platform together with `src/mogs/`, and
   `src/mogs/_native.pyi` types it. The version is `[workspace.package] version`
@@ -104,7 +104,7 @@ make fix         # ruff fixes, then ruff format and cargo fmt
 - **No string dispatch.** Use `match`, `StrEnum` and `isinstance`, never
   `hasattr` or `getattr` on names.
 - **Immutable objects.** Frozen `slots=True` dataclasses; build new ones with
-  `copy.replace`.
+  `dataclasses.replace`.
 - **Private pytest.** Only `_assertrewrite.py` imports `_pytest`.
 - **Cross-platform student code.** The student side (`grade`, export, PDF,
   self-check) uses no `signal.SIGALRM`, `resource` or setuid.
