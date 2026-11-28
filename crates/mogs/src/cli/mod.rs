@@ -148,6 +148,7 @@ fn drawn(py: Python<'_>, error: &Bound<'_, PyBaseException>) -> PyResult<Option<
     let color = terminal && std::env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
 
     // A bug in the drawing must not hide the user's error: its plain text prints instead.
+    // Rust's panic hook still prints the panic message to stderr first, on purpose.
     let drawn = std::panic::catch_unwind(|| render(&located, &source, color));
 
     Ok(drawn.ok().flatten())

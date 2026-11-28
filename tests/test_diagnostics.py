@@ -1,5 +1,6 @@
 """Located errors: the structured fields of `UsageError`, and how `mogs` draws them."""
 
+import copy
 import io
 import sys
 from pathlib import Path
@@ -8,9 +9,9 @@ import pytest
 
 from mogs._analysis import read_assignment
 from mogs._native import main
-from mogs.config import ConfigError, Span, UsageError, read_config
+from mogs.config import ConfigError, Span, UsageError, read_config, split_lines
 from mogs.source import SourceError, parse_notebook
-from mogs.transform import student_notebook
+from mogs.transform import _name_written_cells, _rewrite_grade, student_notebook
 
 NB = Path("hw/hw.py")
 
@@ -458,3 +459,72 @@ def test_at_keeps_the_error_and_its_notes(tmp_path):
     assert error.at(tmp_path) is error
     assert error.diagnostic.span == Span(tmp_path, 1, 0, 1, 1)
     assert error.__notes__ == ["note"]
+
+
+# A written question whose answer cell is `def _ ():`, so it cannot be renamed.
+WRITTEN = '''\
+import marimo
+
+app = marimo.App()
+
+with app.setup:
+    import marimo as mo
+    import mogs
+
+
+@app.cell
+def _():
+    mogs.assignment(name="hw")
+    return
+
+
+@app.cell
+def _ ():
+    mo.md(r"""
+    <!-- BEGIN SOLUTION -->
+    Yes.
+    <!-- END SOLUTION -->
+    """)
+    return
+
+
+@app.cell
+def _():
+    mogs.grade("q1", points=10)
+    return
+'''
+
+
+def test_two_edits_on_one_line_point_at_it():
+    src = notebook('mogs.grade("q1", points=10)  # SOLUTION')
+    nb = parse_notebook(src)
+    cfg = read_config(src, NB)
+
+    # A SourceError, not the internal `_Overlap`.
+    with pytest.raises(SourceError) as caught:
+        student_notebook(src, nb, cfg, "mogs")
+
+    assert str(caught.value) == "line 17: two student-copy edits touch this line."
+    assert caught.value.diagnostic.span == Span(None, 17, 4, 17, 43)
+
+
+def test_unknown_question_in_a_grade_rewrite_points_at_the_call():
+    nb = parse_notebook(MARKER)
+    cfg = copy.replace(read_config(MARKER, NB), questions={})
+    [cell] = [cell for cell in nb.cells if cell.grade_qid == "q1"]
+
+    with pytest.raises(SourceError) as caught:
+        _rewrite_grade({}, split_lines(MARKER), nb, cell, cfg)
+
+    assert str(caught.value) == "line 31: grade() names an unknown question 'q1'."
+    assert caught.value.diagnostic.span == Span(None, 31, 4, 31, 31)
+
+
+def test_a_cell_that_cannot_be_named_points_at_it():
+    nb = parse_notebook(WRITTEN)
+
+    with pytest.raises(SourceError) as caught:
+        _name_written_cells({}, split_lines(WRITTEN), nb, "q1")
+
+    assert str(caught.value) == "line 16: cannot name the cell `answer_q1`."
+    assert caught.value.diagnostic.span == Span(None, 16, 0, 16, 9)
