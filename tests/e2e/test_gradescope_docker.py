@@ -39,8 +39,6 @@ from mogs.source import BEGIN, parse_notebook
 from mogs.transform import pinned_requirement, student_notebook
 
 REPO = Path(__file__).parents[2]
-# The `mogs` command of this environment.
-MOGS = Path(sys.executable).with_name("mogs")
 DEMO = REPO / "examples" / "demo"
 DOCKERFILE = Path(__file__).with_name("Dockerfile")
 NOTEBOOK = "hw.py"
@@ -491,12 +489,12 @@ def build_wheel(out: Path) -> Path:
     return wheel
 
 
-def build_image(runtime: str, assignment: Assignment, context: Path) -> str:
+def build_image(runtime: str, assignment: Assignment, context: Path, mogs: Path) -> str:
     """Build the autograder image and return its tag."""
 
     wheel = build_wheel(context / "wheels")
     env = os.environ | {"MOGS_TOOL_REQUIREMENT": wheel_requirement(wheel)}
-    run([str(MOGS), "build", str(assignment.folder)], timeout=1800, env=env)
+    run([str(mogs), "build", str(assignment.folder)], timeout=1800, env=env)
     autograder = assignment.folder / "dist" / "autograder"
     [archive] = autograder.glob("*.zip")
 
@@ -888,7 +886,7 @@ def runtime() -> str:
 
 
 @pytest.fixture(scope="session")
-def image(runtime, assignment, tmp_path_factory) -> Iterator[str]:
-    tag = build_image(runtime, assignment, tmp_path_factory.mktemp("context"))
+def image(runtime, assignment, tmp_path_factory, mogs_script) -> Iterator[str]:
+    tag = build_image(runtime, assignment, tmp_path_factory.mktemp("context"), mogs_script)
     yield tag
     remove_image(runtime, tag)

@@ -21,8 +21,6 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="grading needs L
 
 SOLUTION = Path(__file__).parent / "fixtures" / "solution.py"
 HIDDEN = ["test_q1_add_large", "test_q2_upper", "test_q2_empty"]
-# The `mogs` command of this environment, which `run_autograder` runs on Gradescope.
-MOGS = Path(sys.executable).with_name("mogs")
 
 
 class Paths:
@@ -211,7 +209,7 @@ def test_internal_error_zeroes_every_row_without_leaking_its_text(paths, tmp_pat
     assert "secret" not in paths.results.read_text(encoding="utf-8")
 
 
-def test_hostile_submission_still_writes_results_and_exits_0(paths):
+def test_hostile_submission_still_writes_results_and_exits_0(paths, mogs_script):
     paths.add(
         "solution.py",
         "import marimo\n\napp = marimo.App()\n\nwith app.setup:\n"
@@ -220,7 +218,7 @@ def test_hostile_submission_still_writes_results_and_exits_0(paths):
     )
     paths.add("solution.pdf", "%PDF")
 
-    result = subprocess.run([MOGS, "autograde", *paths.argv()], capture_output=True)
+    result = subprocess.run([mogs_script, "autograde", *paths.argv()], capture_output=True)
 
     assert result.returncode == 0, result.stderr
     results = json.loads(paths.results.read_text(encoding="utf-8"))
@@ -229,13 +227,13 @@ def test_hostile_submission_still_writes_results_and_exits_0(paths):
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="APFS refuses names that are not UTF-8")
-def test_workdir_that_is_not_utf8_still_writes_results_and_exits_0(paths, tmp_path):
+def test_workdir_that_is_not_utf8_still_writes_results_and_exits_0(paths, tmp_path, mogs_script):
     paths.add("solution.py")
     paths.add("solution.pdf", "%PDF")
     workdir = os.fsdecode(bytes(tmp_path) + b"/work-\xff")
     argv = [*paths.argv()[:-1], workdir]
 
-    result = subprocess.run([MOGS, "autograde", *argv], capture_output=True)
+    result = subprocess.run([mogs_script, "autograde", *argv], capture_output=True)
 
     assert result.returncode == 0, result.stderr
     results = json.loads(paths.results.read_text(encoding="utf-8"))
@@ -279,7 +277,7 @@ def only_bundle(paths: Paths, source: str, timeout: float) -> None:
     (paths.source / "bundle.json").write_text(grading.to_json(), encoding="utf-8")
 
 
-def test_ctrl_c_stops_grading_and_kills_the_child(paths):
+def test_ctrl_c_stops_grading_and_kills_the_child(paths, mogs_script):
     source = (
         "import os, time\nfrom pathlib import Path\n\n"
         "def test_q1_wait():\n    Path('pid').write_text(str(os.getpid()))\n    time.sleep(60)\n"
@@ -287,7 +285,7 @@ def test_ctrl_c_stops_grading_and_kills_the_child(paths):
     only_bundle(paths, source, timeout=60)
     paths.add("solution.py")
     process = subprocess.Popen(
-        [MOGS, "autograde", *paths.argv()], stderr=subprocess.PIPE, text=True
+        [mogs_script, "autograde", *paths.argv()], stderr=subprocess.PIPE, text=True
     )
     pid_file = paths.workdir / "public" / "pid"
 

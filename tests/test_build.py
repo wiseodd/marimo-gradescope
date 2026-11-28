@@ -699,7 +699,8 @@ def test_windows_is_refused(tmp_path, monkeypatch, capsys):
     )
 
 
-def test_cli_does_not_import_the_grader():
+def test_analysis_and_cli_import_nothing_posix_only():
+    # `edit` and the assignment summary use `_analysis` on Windows too.
     code = (
         "import sys, mogs._analysis\n"
         "from mogs._native import main\n"

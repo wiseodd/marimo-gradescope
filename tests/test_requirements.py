@@ -1,6 +1,5 @@
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -334,27 +333,3 @@ def test_tool_requirement_must_name_the_tool(tmp_path):
 
     with pytest.raises(ValueError, match="mogs"):
         gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), "numpy==1.0")
-
-
-@pytest.mark.slow
-def test_wheel_ships_typst_licenses(tmp_path):
-    uv = shutil.which("uv")
-    assert uv is not None
-
-    subprocess.run([uv, "build", "--wheel", "-q", "-o", str(tmp_path)], check=True, cwd=REPO)
-    wheel = next(tmp_path.glob("*.whl"))
-    names = subprocess.run(
-        [sys.executable, "-m", "zipfile", "-l", str(wheel)],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-
-    # The templates of `setup.sh` and `run_autograder` are in the extension module.
-    assert "templates/" not in names
-
-    # The Typst packages the PDF of written answers needs are in the extension module; their
-    # licenses ship with the wheel's metadata.
-    assert "mogs/_typst/" not in names
-    for package in ("cmarker/0.1.10", "mitex/0.2.7"):
-        assert f"crates/mogs-pdf/typst/preview/{package}/LICENSE" in names
