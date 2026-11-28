@@ -24,7 +24,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - run: echo "RUFF=$(uv export --only-group dev --no-hashes --frozen | grep '^ruff==')" >> "$GITHUB_ENV"
       - run: uvx --from "$RUFF" ruff format --check
-  # rustfmt and clippy on each platform. `make test` and the Windows job run the Rust tests.
+  # rustfmt and clippy on each platform. `test-rust` and the Windows job run the Rust tests.
   # PyO3 builds against the Python on PATH, which `abi3-py313` needs at 3.13 or newer.
   rust:
     strategy:
@@ -55,6 +55,8 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen --no-install-project
       - run: make typecheck
+  # `make test` in two jobs that run at once: pytest here, the Rust tests in `test-rust`. The
+  # jobs of each OS share one Rust cache, which `test-rust` saves.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -64,8 +66,11 @@ jobs:
           enable-cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+          save-if: false
       - run: uv sync --frozen
-      - run: make test
+      - run: make test-python
   # The build's self-check runs the sandbox, which must also work on an instructor's Mac. Linux
   # runs every test; macOS runs the Rust tests and the `platform` ones (tests/conftest.py).
   test-macos:
@@ -77,8 +82,29 @@ jobs:
           enable-cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+          save-if: false
       - run: uv sync --frozen
-      - run: make test ARGS="-m platform"
+      - run: make test-python ARGS="-m platform"
+  # The sandbox tests grade with the project's Python, so `uv sync` comes first.
+  test-rust:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test
+      - run: uv sync --frozen
+      - run: make test-rust
   # Students on Windows run the check panels, the export button, the selfcheck and the PDF,
   # and instructors run `init` and `edit`: the `platform` tests. The grader and `build` need
   # Linux or macOS, so their tests skip here.
