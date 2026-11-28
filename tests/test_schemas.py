@@ -1,6 +1,5 @@
 import copy
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -9,6 +8,7 @@ from pathlib import Path
 import jsonschema
 import pytest
 
+from mogs._env import clean_env
 from mogs._native import main
 from mogs.config import read_config
 from mogs.grader.bundle import GradingBundle, HiddenHelper, Phase, bundle_from_notebook
@@ -47,7 +47,7 @@ def test_child_events_match_schema(tmp_path):
     submission = tmp_path / "submission.py"
     shutil.copy(SOLUTION, submission)
     events = tmp_path / "events.jsonl"
-    env = {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
+    env = clean_env()
 
     for phase in Phase:
         job = Job(solution_bundle().for_phase(phase), submission)

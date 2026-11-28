@@ -16,6 +16,7 @@ import pytest
 
 import mogs
 from mogs._answers import PdfUnavailable
+from mogs._env import clean_env
 from mogs._run import run_capped
 from mogs.config import read_config
 from mogs.export import (
@@ -669,7 +670,7 @@ def test_panel_escapes_text_and_has_no_hard_colors():
 
 
 def outside_pytest() -> dict[str, str]:
-    return {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
+    return clean_env()
 
 
 def test_export_html_shows_the_located_file(tmp_path):

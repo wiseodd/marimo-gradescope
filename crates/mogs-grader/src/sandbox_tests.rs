@@ -1,7 +1,7 @@
 //! `sandbox::grade` with the real grading child, `python -m mogs.grader.child`.
 //!
-//! The child runs on the Python of the project's environment, `$VIRTUAL_ENV/bin/python`,
-//! which `uv run` (and so `make test`) sets.
+//! The child runs on the Python of the project's environment, `$MOGS_TEST_PYTHON`, which
+//! `.cargo/config.toml` points at the `.venv` that `uv sync` makes.
 
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
@@ -18,6 +18,7 @@ use tempfile::TempDir;
 
 use crate::fake::{FakeHost, spawning, writing_script};
 use crate::files::data_files;
+use crate::process::OUTPUT_LIMIT;
 use crate::sandbox::{GradeOptions, Graded, grade};
 use crate::{GradeError, Level};
 
@@ -32,7 +33,6 @@ const ALL: [&str; 4] = [
     "test_q1_after",
     "test_q2_other",
 ];
-const OUTPUT_LIMIT: usize = 64 * 1024;
 
 const Q1: &str = "\
 def test_q1_before():
@@ -63,10 +63,10 @@ static SERIAL: Mutex<()> = Mutex::new(());
 
 /// The project's Python, which has mogs.
 fn python() -> PathBuf {
-    let env = std::env::var_os("VIRTUAL_ENV")
-        .expect("the sandbox tests need the project's Python: run them with `uv run cargo test`");
+    let python = std::env::var_os("MOGS_TEST_PYTHON")
+        .expect("the sandbox tests need the project's Python: `.cargo/config.toml` names it");
 
-    PathBuf::from(env).join("bin").join("python")
+    PathBuf::from(python)
 }
 
 fn fixture(name: &str) -> PathBuf {

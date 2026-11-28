@@ -1,10 +1,10 @@
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
 
 from mogs import selfcheck
+from mogs._env import clean_env
 from mogs.config import read_config
 from mogs.source import parse_notebook
 from mogs.transform import public_test_files, student_notebook
@@ -33,7 +33,7 @@ def write_student(folder: Path, path: Path = SOLUTION, text: str | None = None) 
 
 
 def run(notebook: Path, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    env = {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
+    env = clean_env()
     return subprocess.run(
         [sys.executable, "-m", "mogs.selfcheck", str(notebook)],
         capture_output=True,
@@ -166,7 +166,7 @@ def test_folder_argument_sets_the_working_directory(tmp_path):
         ),
         encoding="utf-8",
     )
-    env = {key: value for key, value in os.environ.items() if key != "PYTEST_CURRENT_TEST"}
+    env = clean_env()
 
     result = subprocess.run(
         [sys.executable, "-m", "mogs.selfcheck", str(notebook), str(data)],

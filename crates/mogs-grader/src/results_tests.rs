@@ -3,9 +3,10 @@
 use indexmap::IndexMap;
 use mogs_schema::{Bundle, FailureReason, Outcome, Results, Row};
 
+use crate::GradeError;
 use crate::PyText;
 use crate::fake::FakeHost;
-use crate::results::{build_results, failure_results};
+use crate::results::{build_results, code_block, failure_results, inline_code};
 
 const PUBLIC: [&str; 2] = ["test_q1_a", "test_q1_b"];
 const HIDDEN: [&str; 2] = ["test_q1_secret_x", "test_q1_secret_y"];
@@ -401,4 +402,35 @@ fn failure_rows_show_as_failed() {
         );
         assert!(results.tests.iter().all(|row| row.visibility == "visible"));
     }
+}
+
+#[test]
+fn inline_code_outgrows_backticks_and_hides_control_characters() {
+    assert_eq!(inline_code("a"), "`a`");
+    assert_eq!(inline_code("a`b"), "`` a`b ``");
+    assert_eq!(inline_code("x\ny\x7f"), "`x?y?`");
+}
+
+#[test]
+fn code_block_fence_outgrows_the_longest_run() {
+    assert_eq!(code_block("a"), "```\na\n```");
+    assert_eq!(code_block("````"), "`````\n````\n`````");
+}
+
+#[test]
+fn failure_results_without_a_bundle_have_one_row() {
+    let results = failure_results(None, "RuntimeError");
+
+    assert_eq!(results.tests.len(), 1);
+    assert_eq!(results.tests[0].status.as_deref(), Some("failed"));
+    assert!(results.tests[0].output.contains("(RuntimeError)"));
+}
+
+#[test]
+fn missing_outcome_is_a_key_error() {
+    let bundle = bundle_of(&[("q1", "Q", 1.0, false)], &[("q1", false, &["test_q1"])]);
+
+    let error = build_results(&bundle, &IndexMap::new(), &[], &FakeHost::default());
+
+    assert!(matches!(error, Err(GradeError::Key(name)) if name == "test_q1"));
 }
