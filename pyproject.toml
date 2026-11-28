@@ -84,6 +84,7 @@ testpaths = ["tests"]
 markers = [
   "slow: runs marimo in a subprocess through `uv run --with` (network on a cold cache)",
   "network: resolves packages from PyPI through uv, or renders a PDF with Typst packages (fast with a warm cache)",
+  "platform: depends on the operating system; CI runs only these on macOS and Windows (tests/conftest.py)",
   "docker: grades in Gradescope's base image with docker or podman (deselected unless `-m` names `docker`)",
 ]
 

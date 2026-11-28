@@ -87,6 +87,7 @@ make test ARGS="-m slow"      # only the slow tests (marimo via `uv run --with`;
 make test ARGS="-m network"   # only the tests that resolve packages through uv or render a PDF (included by default)
 make test OFFLINE=1           # offline: no Rust tests ignored for network, no `slow` or `network` pytest tests
 make test ARGS="-m docker"    # only the Docker end-to-end tests: deselected unless `-m` names `docker`
+make test ARGS="-m platform"  # the Rust tests and the OS-dependent modules (`PLATFORM` in tests/conftest.py), which CI runs on macOS
 make fix         # ruff fixes, then ruff format and cargo fmt
 ```
 
