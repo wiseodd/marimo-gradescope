@@ -11,7 +11,7 @@ from types import CodeType, FunctionType
 from typing import TYPE_CHECKING
 
 from mogs._env import grading
-from mogs.config import default_title, read_config
+from mogs.config import RUNNING_PYTHON, default_title, read_config
 from mogs.runner import Outcome, run_test, run_test_source, shorten
 from mogs.source import module_tests
 
@@ -209,7 +209,7 @@ def file_outcomes(
     try:
         names = module_tests(source)
     except SyntaxError as exc:
-        return [], f"{test_file} is not valid Python (line {exc.lineno})."
+        return [], f"{test_file} is not valid Python {RUNNING_PYTHON} (line {exc.lineno})."
 
     return run_test_source(source, test_file, names, dict(namespace)), None
 

@@ -14,7 +14,7 @@ import mogs
 from mogs import grade
 from mogs._env import clean_env
 from mogs.check import question_title
-from mogs.config import ConfigError, read_config
+from mogs.config import RUNNING_PYTHON, ConfigError, read_config
 
 FIXTURES = Path(__file__).parent / "fixtures"
 TWO_CELL = FIXTURES / "two_cell_check.py"
@@ -523,7 +523,7 @@ def test_test_file_that_is_not_python_says_so(tmp_path):
 
     text = text_of(check_in(tmp_path, 'grade("q1", test_file="tests/q1.py")'))
 
-    assert "tests/q1.py is not valid Python (line 1)" in text
+    assert f"tests/q1.py is not valid Python {RUNNING_PYTHON} (line 1)" in text
 
 
 def test_test_file_that_fails_to_load_fails_each_test(tmp_path):
