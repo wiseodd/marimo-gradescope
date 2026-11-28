@@ -27,7 +27,7 @@ jobs:
       - run: echo "RUFF=$(uv export --only-group dev --no-hashes --frozen | grep '^ruff==')" >> "$GITHUB_ENV"
       - run: uvx --from "$RUFF" ruff format --check
   # rustfmt and clippy on each platform. `test-rust` and the Windows job run the Rust tests.
-  # PyO3 builds against the Python on PATH, which `abi3-py313` needs at 3.13 or newer.
+  # PyO3 builds against the Python on PATH, which `abi3-py311` needs at 3.11 or newer.
   rust:
     strategy:
       fail-fast: false
@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.11"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
@@ -59,15 +59,21 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen --no-install-project
       - run: make typecheck
-  # `make test` in two jobs that run at once: pytest here, the Rust tests in `test-rust`. The
-  # jobs of each OS share one Rust cache, which `test-rust` saves.
+  # `make test` in two jobs that run at once: pytest here, on the oldest and the newest released
+  # Python mogs supports, and the Rust tests in `test-rust`. The jobs of each OS share one Rust
+  # cache, which `test-rust` saves.
   test:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.14"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          python-version: ${{ matrix.python }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -84,6 +90,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          python-version: "3.11"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -103,6 +110,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          python-version: "3.11"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -120,6 +128,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          python-version: "3.11"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -127,6 +136,28 @@ jobs:
       - run: uv sync --frozen
       - run: uv run cargo test --workspace -- --include-ignored
       - run: uv run pytest -q -m platform
+  # The code that reads or runs Python code, offline, on the versions between 3.11 and 3.14.
+  test-between:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: uv sync --frozen
+      - run: >-
+          uv run pytest -q -m "not slow and not network"
+          tests/test_source.py tests/test_config.py tests/test_transform.py
+          tests/test_assertrewrite_guard.py tests/test_runner.py tests/test_loader.py
   # The autograder graded in Gradescope's base image. MOGS_REQUIRE_CONTAINER makes a missing
   # Docker fail the job instead of skipping the tests.
   docker:
