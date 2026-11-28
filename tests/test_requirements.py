@@ -119,7 +119,6 @@ def test_lines_as_written(tmp_path):
         "pkg @ https://example.com/pkg-1.0-py3-none-any.whl\n"
         "--index-url https://pypi.org/simple\n"
         "--extra-index-url=https://download.pytorch.org/whl/cpu\n"
-        "-i https://example.com/simple\n"
     )
 
     requirements = requirements_of(tmp_path, text)
@@ -132,7 +131,6 @@ def test_lines_as_written(tmp_path):
     assert requirements.indexes == (
         Index("https://pypi.org/simple", default=True),
         Index("https://download.pytorch.org/whl/cpu"),
-        Index("https://example.com/simple", default=True),
     )
     assert requirements.text == text
 
@@ -251,7 +249,7 @@ def test_header_needs_a_python_version(python):
         script_header(Requirements(), python, "mogs")
 
 
-def test_with_header_keeps_tool_tables_but_uv_ones():
+def test_with_header_replaces_the_whole_header():
     out = with_header(HEADER + CODE, Requirements(("numpy",)), "3.13", "mogs")
 
     assert out == (
@@ -261,11 +259,17 @@ def test_with_header_keeps_tool_tables_but_uv_ones():
         '#     "numpy",\n'
         '#     "mogs",\n'
         "# ]\n"
-        "#\n"
-        "# [tool.marimo.runtime]\n"
-        "# reactive_tests = false\n"
         "# ///\n" + CODE
     )
+
+
+def test_second_index_url_is_refused(tmp_path):
+    text = "--index-url https://a.example/simple\nnumpy\n-i https://b.example/simple\n"
+
+    with pytest.raises(ConfigError, match="more than one `--index-url`") as error:
+        requirements_of(tmp_path, text)
+
+    assert "requirements.txt" in str(error.value)
 
 
 def test_with_header_adds_a_missing_header():
@@ -300,7 +304,7 @@ def test_write_header_warns_about_packages_only_the_header_lists(tmp_path):
     header = read_header(notebook.read_text(encoding="utf-8"))
     assert header["requires-python"] == "==3.12.*"
     assert header["dependencies"] == ["numpy", "mogs"]
-    assert header["tool"] == {"marimo": {"runtime": {"reactive_tests": False}}}
+    assert "marimo" not in header.get("tool", {})
     assert warnings == [
         f"The header of {notebook} listed 'scipy', which {tmp_path / 'requirements.txt'} does "
         f"not. Add them to {tmp_path / 'requirements.txt'}; mogs rewrites the header from it."
