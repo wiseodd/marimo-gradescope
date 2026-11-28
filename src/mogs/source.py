@@ -336,7 +336,14 @@ def cell_names(source: str) -> tuple[set[str], set[str]]:
     """
 
     top = symtable.symtable(source, "<cell>", "exec")
-    bound = _comprehension_walruses(ast.parse(source), comprehension=False)
+    tree = ast.parse(source)
+    eager = not any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "__future__"
+        and any(alias.name == "annotations" for alias in node.names)
+        for node in tree.body
+    )
+    bound = _comprehension_walruses(tree, comprehension=False, annotations=eager)
     read = set()
 
     for symbol in top.get_symbols():
@@ -355,16 +362,21 @@ def cell_names(source: str) -> tuple[set[str], set[str]]:
     return bound, read - bound
 
 
-def _comprehension_walruses(node: ast.AST, comprehension: bool) -> set[str]:
+def _comprehension_walruses(node: ast.AST, comprehension: bool, annotations: bool) -> set[str]:
     """Names that `:=` inside a comprehension binds in the scope that holds `node`.
 
     `symtable` reports such a name at top level as declared global but not assigned. The walk
     stops at the bodies of functions, lambdas and classes, which are scopes of their own. Their
     decorators, defaults, bases and keywords run in the holding scope, so it visits those.
 
+    Annotations run there too up to Python 3.13, the default grading Python, and never with
+    `from __future__ import annotations` or from 3.14 on (PEP 649). They count as run unless
+    the future import is there, so the names are the same on every Python version.
+
     Args:
         node: The node to search.
         comprehension: Whether `node` is inside a comprehension of the holding scope.
+        annotations: Whether annotations run.
     """
 
     names = set()
@@ -372,6 +384,18 @@ def _comprehension_walruses(node: ast.AST, comprehension: bool) -> set[str]:
     match node:
         case ast.FunctionDef() | ast.AsyncFunctionDef():
             children = [*node.decorator_list, *node.args.defaults, *node.args.kw_defaults]
+            if annotations:
+                arguments = [
+                    *node.args.posonlyargs,
+                    *node.args.args,
+                    node.args.vararg,
+                    *node.args.kwonlyargs,
+                    node.args.kwarg,
+                ]
+                children += [arg.annotation for arg in arguments if arg is not None]
+                children.append(node.returns)
+        case ast.AnnAssign() if not annotations:
+            children = [node.target, node.value]
         case ast.Lambda():
             children = [*node.args.defaults, *node.args.kw_defaults]
         case ast.ClassDef():
@@ -387,7 +411,7 @@ def _comprehension_walruses(node: ast.AST, comprehension: bool) -> set[str]:
 
     for child in children:
         if child is not None:
-            names |= _comprehension_walruses(child, comprehension)
+            names |= _comprehension_walruses(child, comprehension, annotations)
 
     return names
 

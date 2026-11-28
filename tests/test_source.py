@@ -1558,6 +1558,11 @@ WALRUS_TOP = [
     "@deco([(w := v) for v in data])\ndef f():\n    pass",
     "def f(a=[(w := v) for v in data]):\n    pass",
     "class C(*[(w := v) for v in data]):\n    pass",
+    # Annotations count as run, as up to Python 3.13 (the default grading Python).
+    "def f(a: [(w := v) for v in data]):\n    pass",
+    "def f(*a: [(w := v) for v in data]):\n    pass",
+    "def f() -> [(w := v) for v in data]:\n    pass",
+    "x: [(w := v) for v in data] = 1",
 ]
 
 
@@ -1574,6 +1579,9 @@ WALRUS_INNER = [
     "def f():\n    return [(w := v) for v in data]",
     "fs = [lambda: (w := v) for v in data]",
     "class C:\n    def f(self):\n        return [(w := v) for v in data]",
+    # With postponed annotations, they never run.
+    "from __future__ import annotations\ndef f(a: [(w := v) for v in data]):\n    pass",
+    "from __future__ import annotations\nx: [(w := v) for v in data] = 1",
 ]
 
 
