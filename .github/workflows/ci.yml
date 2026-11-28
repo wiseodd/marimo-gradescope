@@ -112,7 +112,7 @@ jobs:
       - run: make test-rust
   # Students on Windows run the check panels, the export button, the selfcheck and the PDF,
   # and instructors run `init` and `edit`: the `platform` tests. The grader and `build` need
-  # Linux or macOS, so their tests skip here.
+  # Linux or macOS, so their tests do not run here.
   test-windows:
     runs-on: windows-latest
     steps:
