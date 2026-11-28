@@ -13,5 +13,4 @@ crc32fast = "1"
 indexmap = "2"
 mogs-grader = { path = "../mogs-grader" }
 mogs-schema = { path = "../mogs-schema" }
-regex = "1"
 tempfile = "3"

@@ -1328,7 +1328,6 @@ dependencies = [
  "indexmap",
  "mogs-grader",
  "mogs-schema",
- "regex",
  "tempfile",
 ]
 
