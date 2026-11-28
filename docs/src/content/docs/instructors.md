@@ -355,6 +355,19 @@ examples/demo/
 
 Each build replaces both directories, and a failed build removes them.
 
+When an error comes from one place in the notebook, the build shows that line, and a fix for some common mistakes:
+
+```
+Build failed.
+error: `points` must be a number >= 0, got '10'.
+  --> hw/hw.py:17:29
+   |
+17 |     mogs.grade("q1", points="10")
+   |                             ^^^^ a string
+   |
+help: drop the quotes: points=10
+```
+
 Before writing them, the build checks the assignment by grading two notebooks with the real grader: the solved notebook and the blank student notebook.
 It does this in a fresh environment with the same pinned requirements that Gradescope gets.
 That's why the build needs network access, and why the first build of an assignment takes a while: it has to download the dependencies.
