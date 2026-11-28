@@ -16,6 +16,7 @@ from mogs.config import (
     read_config,
     read_header,
 )
+from mogs.requirements import Requirements
 from mogs.source import SourceError, parse_notebook
 from mogs.transform import (
     export_cells,
@@ -30,6 +31,7 @@ FIXTURES = Path(__file__).parent / "fixtures"
 SOLUTION = FIXTURES / "solution.py"
 PURE = FIXTURES / "pure_test_cells.py"
 REQUIREMENT = "mogs==9.9.9"
+NO_REQUIREMENTS = Requirements()
 ANSWER = "Because the order of the terms does not change the sum."
 
 HEADER = """\
@@ -74,12 +76,14 @@ def outside_pytest() -> dict[str, str]:
 def student(path: Path, *, solutions: bool = False) -> str:
     src = path.read_text(encoding="utf-8")
     cfg = config_of(src, path)
-    return student_notebook(src, parse_notebook(src), cfg, REQUIREMENT, solutions=solutions)
+    return student_notebook(
+        src, parse_notebook(src), cfg, NO_REQUIREMENTS, REQUIREMENT, solutions=solutions
+    )
 
 
 def student_of(cells: str, config: AssignmentConfig = CONFIG) -> str:
     src = HEADER + cells
-    return student_notebook(src, parse_notebook(src), config, REQUIREMENT)
+    return student_notebook(src, parse_notebook(src), config, NO_REQUIREMENTS, REQUIREMENT)
 
 
 def body(text: str) -> str:
@@ -240,7 +244,9 @@ def _():
 def solved(path: Path) -> str:
     src = path.read_text(encoding="utf-8")
     cfg = config_of(src, path)
-    return student_notebook(src, parse_notebook(src), cfg, REQUIREMENT, solutions=True)
+    return student_notebook(
+        src, parse_notebook(src), cfg, NO_REQUIREMENTS, REQUIREMENT, solutions=True
+    )
 
 
 def test_solved_copy_keeps_solutions_without_markers():
@@ -285,7 +291,9 @@ def _():
 """
     )
 
-    out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT, solutions=True)
+    out = student_notebook(
+        src, parse_notebook(src), CONFIG, NO_REQUIREMENTS, REQUIREMENT, solutions=True
+    )
 
     assert (
         "    a: int = 1\n    b = [\n        1,\n        2,\n    ]\n    print(a)\n"
@@ -308,7 +316,9 @@ def f(x):
 """
     )
 
-    out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT, solutions=True)
+    out = student_notebook(
+        src, parse_notebook(src), CONFIG, NO_REQUIREMENTS, REQUIREMENT, solutions=True
+    )
 
     assert "def f(x):\n    if x:\n        return 2 * x\n    return 0\n" in out
 
@@ -340,8 +350,10 @@ def test_solution_comments_inside_a_region_work_in_both_copies(region, kept):
     src = src.replace(REGION, region)
     cfg = read_config(src, SOLUTION)
 
-    blank = student_notebook(src, parse_notebook(src), cfg, REQUIREMENT)
-    out = student_notebook(src, parse_notebook(src), cfg, REQUIREMENT, solutions=True)
+    blank = student_notebook(src, parse_notebook(src), cfg, NO_REQUIREMENTS, REQUIREMENT)
+    out = student_notebook(
+        src, parse_notebook(src), cfg, NO_REQUIREMENTS, REQUIREMENT, solutions=True
+    )
 
     assert '    """Sum of two numbers."""\n    ...\n' in blank
     assert f'    """Sum of two numbers."""\n{kept}' in out
@@ -668,7 +680,7 @@ def _():
     return
 """
     )
-    out = student_notebook(src, parse_notebook(src), cfg, REQUIREMENT)
+    out = student_notebook(src, parse_notebook(src), cfg, NO_REQUIREMENTS, REQUIREMENT)
 
     tree = ast.parse(out)
     [call] = [
@@ -764,7 +776,9 @@ def _():
     return
 """
     )
-    out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT, solutions=solutions)
+    out = student_notebook(
+        src, parse_notebook(src), CONFIG, NO_REQUIREMENTS, REQUIREMENT, solutions=solutions
+    )
 
     assert "assignment(" not in out
     assert "instructor_guide" not in out
@@ -778,16 +792,29 @@ def test_written_call_stays():
     assert '    mogs.grade("q3", points=5, title="Question 3", manual=True)\n' in out
 
 
-def test_header_pins_tool_once():
-    out = student(SOLUTION)
+def test_header_comes_from_the_requirements():
+    requirements = Requirements(packages=("numpy==2.0",))
+    src = HEADER + "\n@app.cell\ndef _():\n    x = 1\n    return\n"
 
-    assert read_header(out)["dependencies"] == ["marimo", REQUIREMENT]
-    assert out.count(REQUIREMENT) == 1
+    out = student_notebook(src, parse_notebook(src), CONFIG, requirements, REQUIREMENT)
+
+    assert out.startswith(
+        "# /// script\n"
+        '# requires-python = "==3.13.*"\n'
+        "# dependencies = [\n"
+        '#     "numpy==2.0",\n'
+        '#     "mogs==9.9.9",\n'
+        "# ]\n"
+        "#\n"
+        "# [tool.marimo.runtime]\n"
+        "# reactive_tests = false\n"
+        "# ///\n"
+    )
 
 
 def test_header_gets_no_runtime_flag():
     src = HEADER.replace("#\n# [tool.marimo.runtime]\n# reactive_tests = false\n", "")
-    out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT)
+    out = student_notebook(src, parse_notebook(src), CONFIG, NO_REQUIREMENTS, REQUIREMENT)
 
     assert "marimo" not in read_header(out).get("tool", {})
 
@@ -851,7 +878,7 @@ def test_export_cells_use_the_setup_alias():
         HEADER.replace("import mogs", "import mogs as grading")
         + "\n@app.cell\ndef _():\n    x = 1\n    return\n"
     )
-    out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT)
+    out = student_notebook(src, parse_notebook(src), CONFIG, NO_REQUIREMENTS, REQUIREMENT)
 
     assert "export_button = grading.export_button()" in out
     assert "grading.export(export_button" in out
@@ -873,7 +900,7 @@ def test_export_cells_refuse_a_taken_mogs_name():
     )
 
     with pytest.raises(SourceError, match="mogs"):
-        student_notebook(src, parse_notebook(src), PURE_CONFIG, REQUIREMENT)
+        student_notebook(src, parse_notebook(src), PURE_CONFIG, NO_REQUIREMENTS, REQUIREMENT)
 
 
 def submit_cell(out: str) -> str:
@@ -932,7 +959,7 @@ def test_export_cells_take_names_from_other_cells_as_parameters(cell, importer, 
     src = pure.replace("    import marimo as mo\n", "    import math\n").replace(
         "@app.function\ndef add", cell + "@app.function\ndef add"
     )
-    out = student_notebook(src, parse_notebook(src), PURE_CONFIG, REQUIREMENT)
+    out = student_notebook(src, parse_notebook(src), PURE_CONFIG, NO_REQUIREMENTS, REQUIREMENT)
     notebook = tmp_path / "student.py"
     notebook.write_text(out, encoding="utf-8")
 
@@ -961,7 +988,9 @@ def test_export_cells_look_for_mo_in_the_copy_not_the_source(solutions):
         "    # END SOLUTION\n    return\n"
     )
 
-    out = student_notebook(src, parse_notebook(src), CONFIG, REQUIREMENT, solutions=solutions)
+    out = student_notebook(
+        src, parse_notebook(src), CONFIG, NO_REQUIREMENTS, REQUIREMENT, solutions=solutions
+    )
 
     assert out.count("import marimo as mo") == 1
     assert ("    import marimo as mo\n\n    return (mo,)\n" in out) != solutions
@@ -1073,7 +1102,9 @@ def test_student_copy_parses(path):
 
 def test_student_copy_keeps_line_ends_and_unicode_separators():
     src = HEADER + '\n@app.cell\ndef _():\n    s = "a\u2028b"\n    x = 1  # SOLUTION\n    return\n'
-    out = student_notebook(src.replace("\n", "\r\n"), parse_notebook(src), CONFIG, REQUIREMENT)
+    out = student_notebook(
+        src.replace("\n", "\r\n"), parse_notebook(src), CONFIG, NO_REQUIREMENTS, REQUIREMENT
+    )
 
     assert '    s = "a\u2028b"\n    x = ...\n    return\n' in out
     assert "\r" not in out
@@ -1083,7 +1114,7 @@ def test_src_must_match_notebook():
     src = HEADER
 
     with pytest.raises(ValueError, match="parsed from"):
-        student_notebook(src + "\n", parse_notebook(src), CONFIG, REQUIREMENT)
+        student_notebook(src + "\n", parse_notebook(src), CONFIG, NO_REQUIREMENTS, REQUIREMENT)
 
 
 def test_untouched_cells_unchanged():
@@ -1116,7 +1147,9 @@ def test_written_answer_without_prompt_lines_gets_a_placeholder():
     src = SOLUTION.read_text(encoding="utf-8").replace(
         "    <!-- PROMPT: Because the order of the terms does not change the sum. -->\n", ""
     )
-    out = student_notebook(src, parse_notebook(src), read_config(src, SOLUTION), REQUIREMENT)
+    out = student_notebook(
+        src, parse_notebook(src), read_config(src, SOLUTION), NO_REQUIREMENTS, REQUIREMENT
+    )
 
     [answer] = parse_notebook(out).answer_cells("q3")
 
@@ -1338,5 +1371,10 @@ def test_student_notebook_refuses_leaked_solution(monkeypatch):
 
 def test_solved_copy_skips_leak_check():
     assert "y = math.sqrt(" in student_notebook(
-        HEADER + LEAKY, parse_notebook(HEADER + LEAKY), CONFIG, REQUIREMENT, solutions=True
+        HEADER + LEAKY,
+        parse_notebook(HEADER + LEAKY),
+        CONFIG,
+        NO_REQUIREMENTS,
+        REQUIREMENT,
+        solutions=True,
     )

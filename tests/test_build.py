@@ -17,6 +17,7 @@ from mogs import __version__, _analysis, _native
 from mogs._analysis import BuildError, data_files, find_notebook, source_notebook
 from mogs._native import main
 from mogs.config import ConfigError, read_config
+from mogs.requirements import PYTHON_RE
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
 ZIP_RE = re.compile(r"hw-autograder-\d{4}_\d{2}_\d{2}T\d{2}_\d{2}_\d{2}_\d{6}\.zip")
@@ -360,14 +361,9 @@ def test_hanging_solution_stops_at_the_budget(tmp_path, capsys):
 
 
 @pytest.mark.network
-def test_self_check_installs_the_header_dependencies(tmp_path, capsys):
-    # `tabulate` is not in this test environment, only in the notebook's header.
-    folder = demo_copy(tmp_path / "demo")
-    edit(
-        folder / "hw.py",
-        '#     "mogs",\n',
-        '#     "mogs",\n#     "tabulate",\n',
-    )
+def test_self_check_installs_the_requirements(tmp_path, capsys):
+    # `tabulate` is not in this test environment, only in the requirements file.
+    folder = requirements_file_copy(tmp_path / "demo", "tabulate\n")
     edit(
         folder / "hw.py",
         "    import mogs\n",
@@ -684,12 +680,12 @@ def test_bad_python_version_is_refused(tmp_path):
 
 @pytest.mark.parametrize("python", ["3.13; rm -rf /", "latest", "3", "", "3.13\n"])
 def test_python_must_be_a_plain_version(python):
-    assert _analysis.PYTHON_RE.fullmatch(python) is None
+    assert PYTHON_RE.fullmatch(python) is None
 
 
 @pytest.mark.parametrize("python", ["3.13", "3.13.5"])
 def test_python_takes_a_minor_or_patch_version(python):
-    assert _analysis.PYTHON_RE.fullmatch(python) is not None
+    assert PYTHON_RE.fullmatch(python) is not None
 
 
 def test_analysis_and_cli_import_nothing_posix_only():
@@ -729,11 +725,10 @@ def test_zero_point_manual_question_builds_without_warnings(tmp_path):
 
 
 def requirements_file_copy(target: Path, requirements: str) -> Path:
-    """The demo, with its requirements from a file instead of the header, so no `uv export`."""
+    """The demo, with `requirements` as its requirements file."""
 
     folder = demo_copy(target)
     (folder / "requirements.txt").write_text(requirements, encoding="utf-8")
-    edit(folder / "hw.py", "mogs.assignment(", 'mogs.assignment(requirements="requirements.txt", ')
 
     return folder
 
@@ -747,12 +742,46 @@ def test_requirements_pin_this_version(tmp_path):
     assert "grading_requirements" not in inputs
 
 
-def test_build_inputs_name_the_source_notebook(tmp_path):
-    folder = requirements_file_copy(tmp_path / "demo", "")
+def test_both_copies_get_the_header_from_the_file(tmp_path):
+    folder = requirements_file_copy(tmp_path / "demo", "numpy==2.0\n")
 
     inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
 
-    assert inputs["source"] == folder / "hw.py"
+    header = (
+        "# /// script\n"
+        '# requires-python = "==3.13.*"\n'
+        "# dependencies = [\n"
+        '#     "numpy==2.0",\n'
+        f'#     "mogs=={__version__}",\n'
+        "# ]\n"
+        "# ///\n"
+    )
+    assert inputs["student"].startswith(header)
+    assert inputs["solved"].startswith(header)
+    assert "source" not in inputs
+
+
+def test_missing_requirements_file_fails_the_build(tmp_path):
+    folder = demo_copy(tmp_path / "demo")
+    (folder / "requirements.txt").unlink()
+
+    result = build(folder)
+
+    assert result.code == 1
+    assert "requirements.txt" in result.err
+    assert not (folder / "dist").exists()
+
+
+@pytest.mark.network
+def test_check_ignores_a_stale_source_header(tmp_path):
+    # The check syncs the solved copy's header, so a package only the source lists is never
+    # installed.
+    folder = demo_copy(tmp_path / "demo")
+    edit(folder / "hw.py", '#     "mogs",\n', '#     "mogs",\n#     "mogs-no-such-package",\n')
+
+    result = build(folder)
+
+    assert result.code == 0, result.err
 
 
 @pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="root reads any file")

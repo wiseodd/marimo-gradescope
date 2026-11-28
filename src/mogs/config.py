@@ -2,15 +2,14 @@
 
 The config lives in cells of the source notebook: `mogs.assignment(...)` for the assignment,
 and `mogs.grade(...)` for each question. They are read from the AST, so
-their arguments must be literals. The header edits work on the text, so comments and layout
-outside the edited part survive.
+their arguments must be literals. The header edit works on the text, so the rest of the
+notebook keeps its exact layout.
 """
 
 import ast
 import contextlib
 import dataclasses
 import difflib
-import json
 import re
 import sys
 import tomllib
@@ -218,7 +217,8 @@ class AssignmentConfig:
         budget: Seconds allowed for the whole grading run.
         memory_mb: Memory limit for student code, in MB (argument `memory`).
         python: Python version on Gradescope.
-        requirements: Requirements file that overrides the header dependencies.
+        requirements: The requirements file, `requirements.txt` next to the notebook unless
+            set. `None` in a config not read from a notebook, such as the grading bundle's.
     """
 
     name: str
@@ -286,31 +286,8 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
     """
 
     src = normalize_newlines(src)
-
-    try:
-        tree = ast.parse(src)
-    except SyntaxError as e:
-        raise ConfigError(
-            f"The notebook is not valid Python {RUNNING_PYTHON} (line {e.lineno}): {e.msg}",
-            message=f"The notebook is not valid Python {RUNNING_PYTHON}: {e.msg}",
-            span=syntax_span(src, e),
-        ) from e
-
-    match api_calls(tree, tree, Api.ASSIGNMENT):
-        case [call]:
-            config = _assignment(call, path)
-        case []:
-            raise ConfigError(
-                f"The notebook has no `{ASSIGNMENT}` call. Add a cell with "
-                f'`mogs.assignment(name="{path.stem}")`.'
-            )
-        case [_, second, *_]:
-            raise ConfigError(
-                f"{ASSIGNMENT} (line {second.lineno}): the notebook calls it more than once.",
-                message="the notebook calls it more than once.",
-                span=Span.of(second.func),
-                help=f"keep one `{ASSIGNMENT[:-2]}(...)` call, with all the settings",
-            )
+    tree = _parse(src)
+    config = _assignment_config(tree, path)
 
     tested = {
         question_id(node.name)
@@ -346,6 +323,51 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
     _check_file_names(list(questions))
 
     return dataclasses.replace(config, questions=questions)
+
+
+def read_assignment_config(src: str, path: Path) -> AssignmentConfig:
+    """Read only the `assignment(...)` call of the notebook at `path`, without questions.
+
+    Raises:
+        ConfigError: If the call is missing, repeated or has an invalid argument.
+    """
+
+    return _assignment_config(_parse(normalize_newlines(src)), path)
+
+
+def _parse(src: str) -> ast.Module:
+    """Parse the notebook `src`."""
+
+    try:
+        return ast.parse(src)
+    except SyntaxError as e:
+        raise ConfigError(
+            f"The notebook is not valid Python {RUNNING_PYTHON} (line {e.lineno}): {e.msg}",
+            message=f"The notebook is not valid Python {RUNNING_PYTHON}: {e.msg}",
+            span=syntax_span(src, e),
+        ) from e
+
+
+def _assignment_config(tree: ast.Module, path: Path) -> AssignmentConfig:
+    """The settings of the one `assignment(...)` call in `tree`."""
+
+    match api_calls(tree, tree, Api.ASSIGNMENT):
+        case []:
+            raise ConfigError(
+                f"The notebook has no `{ASSIGNMENT}` call. Add a cell with "
+                f'`mogs.assignment(name="{path.stem}")`.'
+            )
+        case [_, second, *_]:
+            raise ConfigError(
+                f"{ASSIGNMENT} (line {second.lineno}): the notebook calls it more than once.",
+                message="the notebook calls it more than once.",
+                span=Span.of(second.func),
+                help=f"keep one `{ASSIGNMENT[:-2]}(...)` call, with all the settings",
+            )
+        case [call]:
+            pass
+
+    return _assignment(call, path)
 
 
 def api_aliases(tree: ast.Module, api: Api) -> tuple[set[str], set[str]]:
@@ -469,7 +491,12 @@ def _assignment(call: ast.Call, path: Path) -> AssignmentConfig:
         raise where.at(call.args[0]).error('pass each setting as a keyword, e.g. name="HW1".')
 
     keys = ("name", "files", "timeout", "budget", "memory", "python", "requirements")
-    config = AssignmentConfig(name=path.stem, notebook=path.name, questions={})
+    config = AssignmentConfig(
+        name=path.stem,
+        notebook=path.name,
+        questions={},
+        requirements=path.parent / "requirements.txt",
+    )
     nodes = _values(call)
 
     for key, value in _arguments(call, keys).items():
@@ -724,73 +751,41 @@ def _memory(where: Where, value: object) -> int:
 # Header text edits
 
 
-def set_dependency(src: str, requirement: str) -> str:
-    """Replace the header dependency with the same distribution name, or add it.
+def replace_header(src: str, body: list[str]) -> str:
+    """Put the TOML lines `body` in the PEP 723 header of `src`.
 
-    The first matching entry is replaced in place; further matches are removed. The
-    `dependencies` array is rewritten one entry per line.
-
-    Raises:
-        ConfigError: If the header is missing or `requirement` has no distribution name.
-    """
-
-    name = normalized_name(requirement)
-    if name is None:
-        raise ConfigError(f"Not a requirement: {requirement!r}.")
-
-    deps = read_header(src).get("dependencies", [])
-    new: list[str] = []
-    for dep in deps:
-        if normalized_name(dep) != name:
-            new.append(dep)
-        elif requirement not in new:
-            new.append(requirement)
-    if requirement not in new:
-        new.append(requirement)
-
-    return _write_dependencies(src, new)
-
-
-def remove_dependency(src: str, dist_name: str) -> str:
-    """Remove every header dependency on the distribution `dist_name`.
-
-    Returns `src` unchanged when no dependency matches. Otherwise the `dependencies` array
-    is rewritten one entry per line.
+    The old header's `[tool.*]` tables stay after `body`, except uv's (`[tool.uv]` and its
+    subtables), which `body` replaces. Everything else in the old header goes. Without a
+    header, the new one goes at the top, followed by a blank line.
 
     Raises:
-        ConfigError: If the header is missing or `dist_name` is not a distribution name.
+        ConfigError: If the old header is not valid TOML.
     """
 
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", dist_name):
-        raise ConfigError(f"Not a distribution name: {dist_name!r}.")
+    src = normalize_newlines(src)
 
-    name = normalized_name(dist_name)
-    deps = read_header(src).get("dependencies", [])
-    kept = [dep for dep in deps if normalized_name(dep) != name]
-    if len(kept) == len(deps):
-        return src
+    if HEADER_RE.search(src) is None:
+        return _join("# /// script\n", body, "# ///\n\n" + src)
 
-    out = _write_dependencies(src, kept)
-    if read_header(out).get("dependencies") != kept:
-        raise ConfigError(f"Could not remove `{dist_name}` from the header's `dependencies`.")
+    read_header(src)
+    before, old, after = _split(src)
+    kept: list[str] = []
+    keep = False
 
-    return out
+    for line in old:
+        name = _table_name(line)
 
+        if name is not None:
+            uv = name == "tool.uv" or name.startswith("tool.uv.")
+            keep = name.startswith("tool.") and not uv
 
-def _write_dependencies(src: str, deps: list[str]) -> str:
-    """Write `deps` as the header's `dependencies` array, adding the array if missing."""
+        if keep:
+            kept.append(line)
 
-    before, body, after = _split(src)
-    text = "\n".join(body)
-    array = ["dependencies = ["] + [f"    {json.dumps(dep)}," for dep in deps] + ["]"]
+    while kept and not kept[-1].strip():
+        kept.pop()
 
-    span = _dependencies_span(text)
-    if span is None:
-        text = "\n".join(array + body)
-    else:
-        text = text[: span[0]] + "\n".join(array) + text[span[1] :]
-
-    return _join(before, text.split("\n"), after)
+    return _join(before, body + ([""] + kept if kept else []), after)
 
 
 def normalized_name(requirement: str) -> str | None:
@@ -798,44 +793,6 @@ def normalized_name(requirement: str) -> str | None:
 
     match = NAME_RE.match(requirement)
     return re.sub(r"[-_.]+", "-", match.group(1)).lower() if match else None
-
-
-def _dependencies_span(text: str) -> tuple[int, int] | None:
-    """Character span of the top-level `dependencies = [...]` in the header TOML."""
-
-    first_table = next(
-        (m.start() for m in re.finditer(r"(?m)^.*$", text) if _table_name(m.group())), len(text)
-    )
-    match = re.search(r"(?m)^dependencies\s*=\s*\[", text[:first_table])
-    if match is None:
-        return None
-
-    depth = 0
-    quote = None
-    i = match.end() - 1
-
-    while i < len(text):
-        char = text[i]
-        if quote is not None:
-            if char == "\\" and quote == '"':
-                i += 1
-            elif char == quote:
-                quote = None
-        elif char in "\"'":
-            quote = char
-        elif char == "#":
-            i = text.find("\n", i)
-            if i < 0:
-                break
-        elif char == "[":
-            depth += 1
-        elif char == "]":
-            depth -= 1
-            if depth == 0:
-                return match.start(), i + 1
-        i += 1
-
-    raise ConfigError("The header's `dependencies` array is not closed.")
 
 
 # Header text helpers

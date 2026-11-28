@@ -1,10 +1,11 @@
-//! The notebook's own environment, which the build checks the solved copy in.
+//! The environment of a notebook's header, which the build checks the solved copy in.
 //!
-//! It is the one `mogs edit` opens: `marimo edit --sandbox` syncs the environment of the
-//! notebook's PEP 723 header with `uv sync --script`, then runs Python from it with
-//! `uv run --active`, layering marimo on top. The build does the same and layers the running
-//! mogs on top, so a build from a source checkout checks with that checkout. Neither the
-//! environment nor the notebook is changed.
+//! The solved copy's header comes from the requirements file, as the source notebook's does
+//! after `mogs edit`. `marimo edit --sandbox` syncs the environment of a notebook's PEP 723
+//! header with `uv sync --script`, then runs Python from it with `uv run --active`, layering
+//! marimo on top. The build does the same and layers the running mogs on top, so a build from
+//! a source checkout checks with that checkout. Neither the environment nor the notebook is
+//! changed.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};

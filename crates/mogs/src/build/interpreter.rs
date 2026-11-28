@@ -54,7 +54,6 @@ impl Interpreter for PyHost {
             let bundle_json: String = inputs.get_item("bundle_json")?.extract()?;
 
             Ok(BuildInputs {
-                source: inputs.get_item("source")?.extract()?,
                 bundle: decode_bundle(&bundle_json)?,
                 bundle_json,
                 data: inputs

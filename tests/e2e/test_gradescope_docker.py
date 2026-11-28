@@ -36,6 +36,7 @@ import pytest
 from mogs._native import main
 from mogs.config import normalized_name, read_config
 from mogs.grader.bundle import bundle_from_notebook
+from mogs.requirements import Requirements
 from mogs.source import BEGIN, parse_notebook
 from mogs.transform import pinned_requirement, student_notebook
 
@@ -364,10 +365,12 @@ def make_assignment(folder: Path) -> Assignment:
     src = path.read_text(encoding="utf-8")
     cfg = read_config(src, path)
 
-    blank = student_notebook(src, parse_notebook(src), cfg, pinned_requirement())
+    blank = student_notebook(src, parse_notebook(src), cfg, Requirements(), pinned_requirement())
 
     # The solved copy the build writes to dist/autograder/ (`build_image` checks that).
-    solution = student_notebook(src, parse_notebook(src), cfg, pinned_requirement(), solutions=True)
+    solution = student_notebook(
+        src, parse_notebook(src), cfg, Requirements(), pinned_requirement(), solutions=True
+    )
 
     hidden = []
     for cell in bundle_from_notebook(parse_notebook(src), cfg).cells:
@@ -713,7 +716,7 @@ def test_replace_once_needs_exactly_one_match():
 def test_demo_assignment_has_short_limits(tmp_path):
     folder = demo_assignment(tmp_path / "demo")
 
-    assert sorted(path.name for path in folder.iterdir()) == ["data", NOTEBOOK]
+    assert sorted(path.name for path in folder.iterdir()) == ["data", NOTEBOOK, "requirements.txt"]
 
     text = (folder / NOTEBOOK).read_text(encoding="utf-8")
     assert 'mogs.assignment(files=["data/scores.csv"], timeout=5, memory=2048)' in text
