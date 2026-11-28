@@ -127,6 +127,13 @@ jobs:
     timeout-minutes: 45
     env:
       MOGS_REQUIRE_CONTAINER: "1"
+      # The e2e tests build their wheel with `uv tool run --from 'maturin[zig]...'`, which uses
+      # this tool once it is installed. The zig wrappers contain the path of the tool's
+      # environment, and Cargo rebuilds everything when that path changes. An installed tool
+      # keeps its path from run to run, so the cached build stays valid. The Rust cache key
+      # includes both versions.
+      MATURIN_VERSION: "1.16.0"
+      ZIGLANG_VERSION: "0.17.1"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -134,5 +141,8 @@ jobs:
           enable-cache: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: maturin-${{ env.MATURIN_VERSION }}-ziglang-${{ env.ZIGLANG_VERSION }}
+      - run: uv tool install "maturin[zig]==$MATURIN_VERSION" --with "ziglang==$ZIGLANG_VERSION"
       - run: uv sync --frozen
       - run: uv run pytest -m docker -v
