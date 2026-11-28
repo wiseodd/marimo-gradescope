@@ -8,12 +8,13 @@ errors are part of the error messages.
 """
 
 import ast
+import contextlib
 import importlib.metadata
 import io
 import json
 import re
 import zipfile
-from collections.abc import Iterable
+from collections.abc import Generator, Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import TypedDict
@@ -123,8 +124,10 @@ def read_assignment(assignment_dir: Path) -> Assignment:
 
     path = find_notebook(assignment_dir)
     src = path.read_text(encoding="utf-8")
-    cfg = read_config(src, path)
-    nb = parse_notebook(src)
+
+    with located(path):
+        cfg = read_config(src, path)
+        nb = parse_notebook(src)
 
     errors = validate(nb, cfg)
     if errors:
@@ -132,6 +135,16 @@ def read_assignment(assignment_dir: Path) -> Assignment:
         raise BuildError(f"{path} has {len(errors)} problem(s):\n{listed}")
 
     return Assignment(path, src, cfg, nb)
+
+
+@contextlib.contextmanager
+def located(path: Path) -> Generator[None]:
+    """Give the spans of the `UsageError`s raised inside the notebook at `path`."""
+
+    try:
+        yield
+    except UsageError as error:
+        raise error.at(path) from error.__cause__
 
 
 def build_inputs(assignment: Assignment) -> BuildInputs:
@@ -148,8 +161,11 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
     src, cfg, nb = assignment.src, assignment.cfg, assignment.nb
 
     data = data_files(assignment.path.parent, cfg)
-    student = student_notebook(src, nb, cfg, pinned_requirement())
-    solved = student_notebook(src, nb, cfg, pinned_requirement(), solutions=True)
+
+    with located(assignment.path):
+        student = student_notebook(src, nb, cfg, pinned_requirement())
+        solved = student_notebook(src, nb, cfg, pinned_requirement(), solutions=True)
+
     bundle = bundle_from_notebook(nb, cfg)
     tests = public_test_files(nb)
     requirements, warnings = gradescope_requirements(src, cfg, f"{TOOL}=={__version__}")

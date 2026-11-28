@@ -18,6 +18,7 @@ from mogs.config import (
     PACKAGE,
     TESTS_FOLDER,
     AssignmentConfig,
+    Span,
     normalize_newlines,
     set_dependency,
     split_lines,
@@ -554,15 +555,23 @@ def _solution_regions(
                     _replace(edits, start, number, stub, prompts or None)
                 start = None
             case Marker.BEGIN | Marker.END, _:
-                raise SourceError(f"line {number}: `{line.strip()}` does not pair up.")
+                raise _line_error(lines, number, f"`{line.strip()}` does not pair up.")
             case Marker.PROMPT, int():
                 prompt.append(text)
                 prompts.append(number)
 
     if start is not None:
-        raise SourceError(f"line {start}: `{BEGIN}` without a matching `{END}`.")
+        raise _line_error(lines, start, f"`{BEGIN}` without a matching `{END}`.")
 
     return inside
+
+
+def _line_error(lines: list[str], number: int, message: str) -> SourceError:
+    """`SourceError("line <number>: <message>")`, located at that line."""
+
+    return SourceError(
+        f"line {number}: {message}", message=message, span=Span.of_line(lines, number)
+    )
 
 
 def _inline_solutions(
@@ -601,7 +610,7 @@ def _inline_solutions(
             if isinstance(node, ast.stmt) and node.end_lineno == number
         ]
         if not ending:
-            raise SourceError(f"line {number}: `{SOLUTION}` must end a statement.")
+            raise _line_error(lines, number, f"`{SOLUTION}` must end a statement.")
         stmt = max(ending, key=lambda node: (node.lineno, node.col_offset))
 
         # The whole statement is rewritten from its targets, since brackets around the
@@ -647,14 +656,15 @@ def _inline_solutions(
                 | ast.TryStar()
                 | ast.Match()
             ):
-                raise SourceError(
-                    f"line {number}: `{SOLUTION}` must end a simple statement, not the end of "
-                    "a block."
+                raise _line_error(
+                    lines,
+                    number,
+                    f"`{SOLUTION}` must end a simple statement, not the end of a block.",
                 )
             case _:
                 if before.strip():
-                    raise SourceError(
-                        f"line {number}: `{SOLUTION}` statement must start its own line."
+                    raise _line_error(
+                        lines, number, f"`{SOLUTION}` statement must start its own line."
                     )
                 _replace(
                     edits, number if keep else stmt.lineno, number, uncommented if keep else []
