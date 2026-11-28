@@ -52,7 +52,8 @@ jobs:
           args: --release --out dist
       - if: startsWith(matrix.compatibility, 'manylinux')
         uses: astral-sh/setup-uv@v6
-      # `mogs --version` imports only `mogs` and `packaging`, so no other dependency is needed.
+      # `mogs --version` imports nothing outside `mogs` and the standard library, so the wheel
+      # installs without its dependencies.
       # Python 3.14 runs the abi3 wheel too.
       - if: startsWith(matrix.compatibility, 'manylinux')
         env:
@@ -60,7 +61,7 @@ jobs:
         run: |
           for python in 3.13 3.14; do
             uv venv --python "$python" "smoke-$python"
-            uv pip install --python "smoke-$python" --no-deps dist/*.whl packaging
+            uv pip install --python "smoke-$python" --no-deps dist/*.whl
             test "$("smoke-$python/bin/mogs" --version)" = "mogs $VERSION"
           done
       - if: startsWith(matrix.compatibility, 'musllinux')
@@ -68,7 +69,7 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           docker run --rm -v "$PWD/dist:/dist" -e VERSION python:3.13-alpine sh -euc '
-            pip install --quiet --root-user-action=ignore --no-deps /dist/*.whl packaging
+            pip install --quiet --root-user-action=ignore --no-deps /dist/*.whl
             test "$(mogs --version)" = "mogs $VERSION"
           '
       - uses: actions/upload-artifact@v4
@@ -101,7 +102,7 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           uv venv --python 3.13 smoke
-          uv pip install --python smoke --no-deps dist/*.whl packaging
+          uv pip install --python smoke --no-deps dist/*.whl
           test "$(smoke/bin/mogs --version)" = "mogs $VERSION"
       - uses: actions/upload-artifact@v4
         with:
@@ -135,7 +136,7 @@ jobs:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
           uv venv --python 3.13 smoke
-          uv pip install --python smoke --no-deps dist/*.whl packaging
+          uv pip install --python smoke --no-deps dist/*.whl
           test "$(smoke/Scripts/mogs.exe --version | tr -d '\r')" = "mogs $VERSION"
       - uses: actions/upload-artifact@v4
         with:
