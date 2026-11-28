@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 
-use document::{Failure, Typst};
+use document::Typst;
 pub use document::{PLAIN_NOTE, SOURCE_NOTE};
 
 /// The status message shown while the PDF is made.
@@ -146,7 +146,7 @@ pub fn render(questions: Vec<Question>, host: &dyn Signals) -> Result<Vec<u8>, R
 /// Run `work` on a new thread until it ends or `host` says to stop.
 fn stoppable<T: Send + 'static>(
     host: &dyn Signals,
-    work: impl FnOnce(&AtomicBool) -> Result<T, Failure> + Send + 'static,
+    work: impl FnOnce(&AtomicBool) -> Result<T, RenderError> + Send + 'static,
 ) -> Result<T, RenderError> {
     let stop = Arc::new(AtomicBool::new(false));
     let (send, receive) = mpsc::channel();
@@ -166,10 +166,7 @@ fn stoppable<T: Send + 'static>(
             Ok(result) => {
                 let _ = worker.join();
 
-                return result.map_err(|failure| match failure {
-                    Failure::Typst(message) => RenderError::Typst(message),
-                    Failure::Stopped => RenderError::Interrupted,
-                });
+                return result;
             }
 
             Err(mpsc::RecvTimeoutError::Timeout) if host.interrupted() => {
@@ -250,7 +247,7 @@ mod tests {
             while !stop.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(5));
             }
-            Err::<(), _>(Failure::Stopped)
+            Err::<(), _>(RenderError::Interrupted)
         });
 
         assert_eq!(result, Err(RenderError::Interrupted));
@@ -260,7 +257,7 @@ mod tests {
 
     #[test]
     fn a_panic_becomes_an_error() {
-        let result = stoppable(&Never, |_| -> Result<(), Failure> {
+        let result = stoppable(&Never, |_| -> Result<(), RenderError> {
             panic!("broken {}", 1)
         });
 
@@ -269,7 +266,7 @@ mod tests {
 
     #[test]
     fn a_typst_failure_keeps_its_message() {
-        let result = stoppable(&Never, |_| Err::<(), _>(Failure::Typst("boom".into())));
+        let result = stoppable(&Never, |_| Err::<(), _>(RenderError::Typst("boom".into())));
 
         assert_eq!(result, Err(RenderError::Typst("boom".into())));
     }
