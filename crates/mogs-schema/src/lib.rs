@@ -3,9 +3,13 @@
 //! These types are the source of truth: the JSON Schemas in the repo's `schemas/` folder are
 //! generated from them (see [`schemas`]). Every message except [`Results`] carries `"schema"`,
 //! the format version [`SCHEMA`]. Fields serialize in the order Python writes its keys.
+//!
+//! [`encode`] and [`decode`] write and read the JSON as Python's `json` does, including
+//! numbers that are not finite.
 
 mod bundle;
 mod event;
+mod float;
 mod job;
 mod outcome;
 mod results;
@@ -16,7 +20,7 @@ use std::fmt;
 use schemars::transform::{RecursiveTransform, Transform};
 use schemars::{JsonSchema, Schema, schema_for};
 use serde::de::{DeserializeOwned, Error as _};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 pub use bundle::{Bundle, BundleConfig, BundleQuestion, HiddenHelper, TestCell};
@@ -58,13 +62,30 @@ impl From<serde_json::Error> for WireError {
     }
 }
 
-/// Parse a message, checking its `schema` version before its other fields.
+/// `value` as compact JSON that Python's `json` reads, with `Infinity`, `-Infinity` and `NaN`
+/// for numbers that are not finite.
+///
+/// # Errors
+///
+/// If `value` has a path that is not UTF-8.
+pub fn encode<T: Serialize>(value: &T) -> Result<String, serde_json::Error> {
+    let mut out = Vec::new();
+    value.serialize(&mut serde_json::Serializer::with_formatter(
+        &mut out,
+        float::Python,
+    ))?;
+
+    Ok(String::from_utf8(out).expect("serde_json writes UTF-8"))
+}
+
+/// Parse a message as Python's `json` writes it, checking its `schema` version before its
+/// other fields.
 ///
 /// # Errors
 ///
 /// If the text is not JSON, has no `schema` key or another version, or is not a `T`.
 pub fn decode<T: DeserializeOwned>(text: &str) -> Result<T, WireError> {
-    let value: Value = serde_json::from_str(text)?;
+    let value: Value = serde_json::from_str(&float::literals(text))?;
 
     match value.get("schema") {
         None => return Err(WireError::MissingVersion),

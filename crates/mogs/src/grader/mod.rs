@@ -17,8 +17,6 @@ use mogs_schema::Bundle;
 use pyo3::exceptions::{PyKeyError, PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString, PyTuple};
-#[cfg(unix)]
-use serde::Serialize;
 
 /// The logger of the supervisor's messages, as in v0.7.
 const SANDBOX_LOGGER: &str = "mogs.grader.sandbox";
@@ -48,65 +46,27 @@ pub(crate) fn bundle_from_py(bundle: &Bound<'_, PyAny>) -> PyResult<Bundle> {
     bundle_from_dict(&bundle.call_method0("to_dict")?)
 }
 
-/// The fields of a bundle, as `GradingBundle.to_dict` gives them, as the Rust type. It sets
-/// the numbers of `data` to 0.
-///
-/// The numbers go around JSON: the config accepts infinity (such as `budget=1e999`), which
-/// Python's JSON writes as `Infinity` and serde_json rejects.
+/// The fields of a bundle, as `GradingBundle.to_dict` gives them, as the Rust type, through
+/// Python's JSON.
 #[cfg(unix)]
 pub(crate) fn bundle_from_dict(data: &Bound<'_, PyAny>) -> PyResult<Bundle> {
-    let config = data.get_item("config")?;
-    let timeout: f64 = config.get_item("timeout")?.extract()?;
-    let budget: f64 = config.get_item("budget")?.extract()?;
-    let mut points: Vec<f64> = Vec::new();
-    config.set_item("timeout", 0.0)?;
-    config.set_item("budget", 0.0)?;
-
-    for question in config.get_item("questions")?.try_iter()? {
-        let question = question?;
-        points.push(question.get_item("points")?.extract()?);
-        question.set_item("points", 0.0)?;
-    }
-
     let text: String = data
         .py()
         .import("json")?
         .call_method1("dumps", (data,))?
         .extract()?;
-    let mut read: Bundle =
-        mogs_schema::decode(&text).map_err(|error| PyValueError::new_err(error.to_string()))?;
-    read.config.timeout = timeout;
-    read.config.budget = budget;
 
-    for (question, points) in read.config.questions.iter_mut().zip(points) {
-        question.points = points;
-    }
-
-    Ok(read)
+    mogs_schema::decode(&text).map_err(|error| PyValueError::new_err(error.to_string()))
 }
 
-/// `results` as Python values. Scores keep infinity and NaN, which JSON cannot carry.
+/// `results` as plain Python values, through Python's JSON.
 #[cfg(unix)]
 pub(crate) fn results_to_py<'py>(
     py: Python<'py>,
     results: &mogs_schema::Results,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let out = to_py(py, results)?;
-    let rows = out.get_item("tests")?;
-
-    for (at, row) in results.tests.iter().enumerate() {
-        let shown = rows.get_item(at)?;
-        shown.set_item("score", row.score)?;
-        shown.set_item("max_score", row.max_score)?;
-    }
-
-    Ok(out)
-}
-
-/// A Rust value as plain Python values, through `json.loads`.
-#[cfg(unix)]
-pub(crate) fn to_py<'py, T: Serialize>(py: Python<'py>, value: &T) -> PyResult<Bound<'py, PyAny>> {
-    let text = serde_json::to_string(value).expect("the value is plain JSON");
+    let text =
+        mogs_schema::encode(results).map_err(|error| PyValueError::new_err(error.to_string()))?;
 
     py.import("json")?.call_method1("loads", (text,))
 }

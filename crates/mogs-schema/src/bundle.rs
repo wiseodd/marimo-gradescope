@@ -34,8 +34,16 @@ pub struct BundleConfig {
     /// Data files and folders shipped with the notebook, relative to it.
     pub files: Vec<String>,
     /// Seconds per test.
+    #[serde(
+        serialize_with = "crate::float::number::serialize",
+        deserialize_with = "crate::float::number::deserialize"
+    )]
     pub timeout: f64,
     /// Seconds for the whole grading run.
+    #[serde(
+        serialize_with = "crate::float::number::serialize",
+        deserialize_with = "crate::float::number::deserialize"
+    )]
     pub budget: f64,
     /// MB per grading process.
     pub memory_mb: u32,
@@ -52,6 +60,10 @@ pub struct BundleQuestion {
     /// Question title.
     pub title: String,
     /// Points for the question.
+    #[serde(
+        serialize_with = "crate::float::number::serialize",
+        deserialize_with = "crate::float::number::deserialize"
+    )]
     pub points: f64,
     /// Whether the question is graded by hand.
     pub manual: bool,
