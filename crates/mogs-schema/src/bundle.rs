@@ -21,6 +21,21 @@ pub struct Bundle {
     pub helpers: Vec<HiddenHelper>,
 }
 
+impl Bundle {
+    /// Every test name, in cell order.
+    pub fn tests(&self) -> impl Iterator<Item = &String> {
+        self.cells.iter().flat_map(|cell| &cell.tests)
+    }
+
+    /// The question `id` of the config.
+    pub fn question(&self, id: &str) -> Option<&BundleQuestion> {
+        self.config
+            .questions
+            .iter()
+            .find(|question| question.id == id)
+    }
+}
+
 /// The assignment config, without the host path of `requirements`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]

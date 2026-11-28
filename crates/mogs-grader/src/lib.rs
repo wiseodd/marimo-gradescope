@@ -144,7 +144,7 @@ impl fmt::Display for GradeError {
             GradeError::MissingData { name, root } => {
                 write!(f, "data file {name:?} not found in {}", root.display())
             }
-            GradeError::Host => write!(f, "the grader stopped without an error"),
+            GradeError::Host => write!(f, "the work stopped without a Python error"),
         }
     }
 }

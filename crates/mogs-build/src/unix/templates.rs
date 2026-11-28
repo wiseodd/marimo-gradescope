@@ -4,16 +4,16 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::{Class, Interpreter};
+use crate::unix::{Class, Interpreter};
 
 /// The uv that `setup.sh` installs on Gradescope.
 pub const UV_VERSION: &str = "0.11.21";
 
 /// The `run_autograder` script.
-pub const RUN_AUTOGRADER: &str = include_str!("../templates/run_autograder");
+pub const RUN_AUTOGRADER: &str = include_str!("../../templates/run_autograder");
 
 /// `setup.sh`, with `${uv_version}`, `${python}` and `${user}` to fill in.
-const SETUP: &str = include_str!("../templates/setup.sh");
+const SETUP: &str = include_str!("../../templates/setup.sh");
 
 /// A Python version such as `3.13` or `3.13.5`.
 static PYTHON_RE: LazyLock<Regex> =
@@ -44,14 +44,14 @@ mod tests {
     use std::process::Command;
 
     use super::*;
-    use crate::fake::Fake;
+    use crate::unix::fake::Fake;
 
     /// `bash -n` on `script`, and shellcheck when it is installed.
     fn bash_check(script: &str) {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("script.sh");
         std::fs::write(&path, script).unwrap();
-        let _spawning = crate::fake::spawning();
+        let _spawning = crate::unix::fake::spawning();
 
         let bash = Command::new("bash").arg("-n").arg(&path).output().unwrap();
         assert!(bash.status.success(), "{bash:?}");

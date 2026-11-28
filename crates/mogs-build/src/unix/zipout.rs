@@ -11,7 +11,7 @@ use std::path::Path;
 
 use mogs_grader::GradeError;
 
-use crate::{Class, Interpreter};
+use crate::unix::{Class, Interpreter};
 
 /// The entries that are executable.
 pub const SCRIPTS: [&str; 2] = ["setup.sh", "run_autograder"];
@@ -160,7 +160,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::fake::Fake;
+    use crate::unix::fake::Fake;
 
     fn entries<'a>(pairs: &[(&str, &'a [u8])]) -> BTreeMap<String, &'a [u8]> {
         pairs

@@ -14,19 +14,11 @@ pub(super) struct PyInterpreter<'py> {
     pub(super) py: Python<'py>,
 }
 
-impl<'py> PyInterpreter<'py> {
-    /// `pathlib.Path(path)`.
-    fn pathlib(&self, path: &Path) -> PyResult<Bound<'py, PyAny>> {
-        pathlib(self.py, path)
-    }
-}
-
 impl Interpreter for PyInterpreter<'_> {
     type Error = PyErr;
 
     fn check_name(&self, folder: &Path) -> PyResult<OsString> {
-        let name = self
-            .pathlib(folder)?
+        let name = pathlib(self.py, folder)?
             .call_method0("resolve")?
             .getattr("name")?;
 
@@ -44,7 +36,7 @@ impl Interpreter for PyInterpreter<'_> {
     }
 
     fn path(&self, path: &Path) -> PyResult<PathBuf> {
-        self.pathlib(path)?.extract()
+        pathlib(self.py, path)?.extract()
     }
 
     fn marimo_version(&self) -> PyResult<String> {
@@ -55,15 +47,15 @@ impl Interpreter for PyInterpreter<'_> {
     }
 
     fn exists(&self, path: &Path) -> PyResult<bool> {
-        self.pathlib(path)?.call_method0("exists")?.extract()
+        pathlib(self.py, path)?.call_method0("exists")?.extract()
     }
 
     fn is_dir(&self, path: &Path) -> PyResult<bool> {
-        self.pathlib(path)?.call_method0("is_dir")?.extract()
+        pathlib(self.py, path)?.call_method0("is_dir")?.extract()
     }
 
     fn has_entries(&self, folder: &Path) -> PyResult<bool> {
-        let entries = self.pathlib(folder)?.call_method0("iterdir")?;
+        let entries = pathlib(self.py, folder)?.call_method0("iterdir")?;
 
         self.py
             .import("builtins")?
@@ -75,8 +67,7 @@ impl Interpreter for PyInterpreter<'_> {
         let kwargs = PyDict::new(self.py);
         kwargs.set_item("parents", true)?;
         kwargs.set_item("exist_ok", true)?;
-        self.pathlib(folder)?
-            .call_method("mkdir", (), Some(&kwargs))?;
+        pathlib(self.py, folder)?.call_method("mkdir", (), Some(&kwargs))?;
 
         Ok(())
     }
@@ -84,8 +75,7 @@ impl Interpreter for PyInterpreter<'_> {
     fn write_text(&self, path: &Path, text: &str) -> PyResult<()> {
         let kwargs = PyDict::new(self.py);
         kwargs.set_item("encoding", "utf-8")?;
-        self.pathlib(path)?
-            .call_method("write_text", (text,), Some(&kwargs))?;
+        pathlib(self.py, path)?.call_method("write_text", (text,), Some(&kwargs))?;
 
         Ok(())
     }

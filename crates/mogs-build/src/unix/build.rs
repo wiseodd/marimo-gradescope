@@ -14,7 +14,7 @@
 //! grader, in a fresh environment with Gradescope's requirements. The solved copy must get full
 //! marks. The student copy should get none; tests that pass on it come back as warnings.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::OsString;
 use std::fs;
 use std::io;
@@ -22,12 +22,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use mogs_grader::GradeError;
-use mogs_schema::{Outcome, Results};
+use mogs_schema::{Bundle, Outcome, Results};
 
-use crate::environment::grading_python;
-use crate::templates::{RUN_AUTOGRADER, setup_script};
-use crate::zipout::write_zip;
-use crate::{Class, DIST, Interpreter, PARTS, Question, grade_locally, process, report, total};
+use crate::unix::environment::grading_python;
+use crate::unix::templates::{RUN_AUTOGRADER, setup_script};
+use crate::unix::zipout::write_zip;
+use crate::unix::{Class, Interpreter, Question, grade_locally, process, report, total};
+use crate::{DIST, PARTS};
 
 /// Otter's timestamp in the zip name, e.g. 2026_09_30T12_30_41_890583.
 const STAMP: &str = "%Y_%m_%dT%H_%M_%S_%f";
@@ -219,7 +220,11 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
         solution: total(i, &solution.results)?,
         blank: total(i, &blank.results)?,
         warnings,
-        scores: scores(&inputs.questions, &solution.results, &blank.results),
+        scores: scores(
+            &questions(bundle, &inputs.prompts),
+            &solution.results,
+            &blank.results,
+        ),
     })
 }
 
@@ -283,6 +288,32 @@ fn copy_folder(from: &Path, to: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// The questions of `bundle`, in config order, with their tests counted and the `prompts`
+/// of the manual ones.
+fn questions(bundle: &Bundle, prompts: &HashMap<String, Vec<String>>) -> Vec<Question> {
+    let count = |id: &str, hidden: bool| -> usize {
+        let cells = bundle.cells.iter();
+        cells
+            .filter(|cell| cell.qid == id && cell.hidden == hidden)
+            .map(|cell| cell.tests.len())
+            .sum()
+    };
+
+    bundle
+        .config
+        .questions
+        .iter()
+        .map(|question| Question {
+            id: question.id.clone(),
+            title: question.title.clone(),
+            points: question.points,
+            public: count(&question.id, false),
+            hidden: count(&question.id, true),
+            prompts: prompts.get(&question.id).cloned().unwrap_or_default(),
+        })
+        .collect()
+}
+
 /// Each question's scores, from the rows of the two self-check results.
 fn scores(questions: &[Question], solution: &Results, blank: &Results) -> Vec<Score> {
     let score = |results: &Results, id: &str| {
@@ -304,7 +335,7 @@ fn scores(questions: &[Question], solution: &Results, blank: &Results) -> Vec<Sc
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fake::{Fake, script, spawning};
+    use crate::unix::fake::{Fake, script, spawning};
 
     /// A fake Python in `folder` that prints `output` and exits with `code`.
     fn fake_python(folder: &Path, output: &str, code: i32) -> PathBuf {
@@ -393,6 +424,45 @@ mod tests {
                 "`marimo check` on the solved notebook:\n{} -m marimo check hw.py",
                 folder.display()
             )]
+        );
+    }
+
+    #[test]
+    fn questions_count_the_tests_of_the_bundle() {
+        let bundle: Bundle = mogs_schema::decode(
+            r#"{"schema": 1, "config": {"name": "A", "notebook": "hw.py", "files": [],
+                "timeout": 1, "budget": 1, "memory_mb": 1, "python": "3.13", "questions": [
+                    {"id": "q1", "title": "One", "points": 4, "manual": false},
+                    {"id": "q2", "title": "Two", "points": 5, "manual": true}]},
+                "setup_code": "", "helpers": [], "cells": [
+                    {"qid": "q1", "label": "q1-tests", "hidden": false, "source": "",
+                     "tests": ["test_q1_a", "test_q1_b"], "uses": [], "needs": []},
+                    {"qid": "q1", "label": "q1-tests", "hidden": true, "source": "",
+                     "tests": ["test_q1_c"], "uses": [], "needs": []}]}"#,
+        )
+        .unwrap();
+        let prompts = HashMap::from([("q2".to_string(), vec!["## Two".to_string()])]);
+
+        let found = questions(&bundle, &prompts);
+
+        let counted: Vec<_> = found
+            .iter()
+            .map(|q| {
+                (
+                    q.id.as_str(),
+                    q.points,
+                    q.public,
+                    q.hidden,
+                    q.prompts.clone(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            counted,
+            [
+                ("q1", 4.0, 2, 1, vec![]),
+                ("q2", 5.0, 0, 0, vec!["## Two".to_string()]),
+            ]
         );
     }
 

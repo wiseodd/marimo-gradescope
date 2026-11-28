@@ -3,6 +3,7 @@
 //! For regrade requests and for finding out why a submission lost points. Unlike Gradescope's
 //! results, the report names failing hidden tests and shows their messages.
 
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -10,8 +11,8 @@ use mogs_grader::GradeError;
 use mogs_grader::submission::find_submission;
 use mogs_schema::Bundle;
 
-use crate::environment::grading_python;
-use crate::{Class, Graded, Interpreter, grade_locally, text, total};
+use crate::unix::environment::grading_python;
+use crate::unix::{Class, Graded, Interpreter, grade_locally, text, total};
 
 /// How one submission did.
 #[derive(Clone, Debug, PartialEq)]
@@ -26,6 +27,19 @@ pub struct Regraded {
     pub graded: Graded,
     /// Score and maximum over the tested questions.
     pub score: (f64, f64),
+}
+
+impl Regraded {
+    /// `<submission> failed to load: <error>`, when the notebook did not load.
+    pub fn load_failure(&self) -> Option<OsString> {
+        let error = self.graded.load_error.as_ref()?;
+
+        Some(text(&[
+            self.submission.as_os_str(),
+            " failed to load: ".as_ref(),
+            error.as_ref(),
+        ]))
+    }
 }
 
 /// Grade `submission` against the source notebook in `folder`.
@@ -131,22 +145,18 @@ fn search<I: Interpreter>(
     submission: &Path,
     name: &str,
 ) -> Result<PathBuf, I::Error> {
-    let found = find_submission(folder, name, None, i.host());
-
-    match (found.py, found.error) {
-        (Some(py), _) => Ok(py),
-        (None, error) => {
-            let error = error.expect("no notebook comes with an error");
+    find_submission(folder, name, None, i.host())
+        .py
+        .map_err(|error| {
             let message = text(&[submission.as_ref(), ": ".as_ref(), error.as_ref()]);
-            Err(i.raise(Class::Build, message))
-        }
-    }
+            i.raise(Class::Build, message)
+        })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fake::Fake;
+    use crate::unix::fake::Fake;
 
     #[test]
     fn folder_is_searched() {

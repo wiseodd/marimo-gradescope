@@ -19,6 +19,7 @@ from mogs.config import (
     Api,
     AssignmentConfig,
     ConfigError,
+    UsageError,
     api_calls,
     normalize_newlines,
     normalized_name,
@@ -71,7 +72,7 @@ REGION_WORDS = ("begin", "end")
 NO_TEXT = "no question text"
 
 
-class SourceError(Exception):
+class SourceError(UsageError):
     """The notebook source cannot be parsed into cells."""
 
 

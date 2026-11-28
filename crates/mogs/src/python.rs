@@ -1,33 +1,24 @@
-//! Small calls into Python that several glue modules share.
+//! Small calls into Python that several glue modules share, and the exceptions of mogs.
 
 use std::path::Path;
 
 use pyo3::exceptions::PyOSError;
 use pyo3::prelude::*;
 
+pyo3::import_exception!(mogs.config, UsageError);
+pyo3::import_exception!(mogs.config, ConfigError);
+pyo3::import_exception!(mogs._analysis, BuildError);
+#[cfg(unix)]
+pyo3::import_exception!(mogs.requirements, RequirementsError);
+
+/// Why `build`, `grade` and `autograde` refuse to run elsewhere.
+pub(crate) const REFUSAL: &str = "Grading needs Linux or macOS (WSL on Windows).";
+
 /// `pathlib.Path(path)`, which shows `./a/` as `a`.
 pub(crate) fn pathlib<'py>(py: Python<'py>, path: &Path) -> PyResult<Bound<'py, PyAny>> {
     py.import("pathlib")?
         .getattr("Path")?
         .call1((path.as_os_str(),))
-}
-
-/// The exception `module.name(message)`, or the error of making it.
-pub(crate) fn exception(
-    py: Python<'_>,
-    module: &str,
-    name: &str,
-    message: impl for<'py> IntoPyObject<'py>,
-) -> PyErr {
-    let made = py
-        .import(module)
-        .and_then(|module| module.getattr(name))
-        .and_then(|class| class.call1((message,)));
-
-    match made {
-        Ok(error) => PyErr::from_value(error),
-        Err(error) => error,
-    }
 }
 
 /// `OSError(errno, strerror, filename)`, which Python turns into the subclass for `errno`.

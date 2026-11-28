@@ -9,6 +9,7 @@ mod document;
 pub mod formulas;
 mod world;
 
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -77,6 +78,37 @@ pub enum Style {
     Markdown,
     Plain,
     Note,
+}
+
+/// A name that is no [`Role`] or [`Style`]: which of the two was asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Unknown(pub &'static str);
+
+/// By the value of `mogs._answers.Role`.
+impl FromStr for Role {
+    type Err = Unknown;
+
+    fn from_str(name: &str) -> Result<Self, Unknown> {
+        match name {
+            "prompt" => Ok(Role::Prompt),
+            "answer" => Ok(Role::Answer),
+            _ => Err(Unknown("role")),
+        }
+    }
+}
+
+/// By the value of `mogs._answers.Style`.
+impl FromStr for Style {
+    type Err = Unknown;
+
+    fn from_str(name: &str) -> Result<Self, Unknown> {
+        match name {
+            "markdown" => Ok(Style::Markdown),
+            "plain" => Ok(Style::Plain),
+            "note" => Ok(Style::Note),
+            _ => Err(Unknown("style")),
+        }
+    }
 }
 
 /// Why `render` gave no PDF.

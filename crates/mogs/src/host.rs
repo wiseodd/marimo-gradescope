@@ -1,7 +1,8 @@
 //! [`PyHost`]: Python for the Rust crates that work with the GIL released.
 //!
-//! `mogs-grader` asks it through `Host` and `PyText`, and `mogs-pdf` through `Signals`. Each
-//! crate keeps its own trait, as the PDF also runs on Windows and asks only for signals.
+//! `mogs-grader` asks it through `Host` and `PyText`, `mogs-pdf` through `Signals`, and
+//! `mogs-build` through `Interpreter` (in `crate::build`). Each crate keeps its own trait, as
+//! the PDF also runs on Windows and asks only for signals.
 
 use std::sync::Mutex;
 
@@ -15,7 +16,7 @@ use crate::python::os_error;
 /// The logger of the supervisor's messages, as in v0.7.
 const SANDBOX_LOGGER: &str = "mogs.grader.sandbox";
 
-/// Python as the grader and the PDF see it: text, users, signals and logs.
+/// Python as the grader, the build and the PDF see it: text, users, signals and logs.
 ///
 /// Every call attaches to Python for its own duration, so it works with the GIL released. The
 /// first Python error a call hits is kept, and `finish` raises it.
@@ -45,26 +46,41 @@ impl PyHost {
             .is_some()
     }
 
-    /// The error a call kept, if any, which is then gone.
-    pub(crate) fn take(&self) -> Option<PyErr> {
-        self.pending
+    /// `result` as Python sees it: the error a call kept comes first, then `result`'s own,
+    /// made a Python exception by `error`.
+    pub(crate) fn finish<T, E>(
+        &self,
+        result: Result<T, E>,
+        error: impl FnOnce(E) -> PyErr,
+    ) -> PyResult<T> {
+        let kept = self
+            .pending
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .take()
+            .take();
+
+        match kept {
+            Some(kept) => Err(kept),
+            None => result.map_err(error),
+        }
     }
 
-    /// The result as Python sees it: the kept error first, then the grader's own.
-    pub(crate) fn finish<T>(&self, py: Python<'_>, result: Result<T, GradeError>) -> PyResult<T> {
-        match (self.take(), result) {
-            (Some(error), _) => Err(error),
-            (None, Ok(value)) => Ok(value),
-            (None, Err(error)) => Err(to_py_err(py, error)),
-        }
+    /// The Python exception for `error`, or the one a call kept.
+    pub(crate) fn grade_error(&self, error: GradeError) -> PyErr {
+        let made = Python::attach(|py| self.finish(Err::<(), _>(error), |e| grade_err(py, e)));
+
+        made.expect_err("an error stays an error")
     }
 }
 
+/// What a stop without a Python error raises. Each stop keeps the error that caused it, so
+/// this means a bug.
+pub(crate) fn stopped() -> PyErr {
+    PyRuntimeError::new_err(GradeError::Host.to_string())
+}
+
 /// The Python exception for `error`.
-fn to_py_err(py: Python<'_>, error: GradeError) -> PyErr {
+pub(crate) fn grade_err(py: Python<'_>, error: GradeError) -> PyErr {
     match error {
         GradeError::Value(message) => PyValueError::new_err(message),
         GradeError::Key(key) => PyKeyError::new_err(key),
@@ -81,7 +97,7 @@ fn to_py_err(py: Python<'_>, error: GradeError) -> PyErr {
             }
         }
         GradeError::Os { error, path } => os_error(py, &error, path.as_deref()),
-        GradeError::Host => PyRuntimeError::new_err(GradeError::Host.to_string()),
+        GradeError::Host => stopped(),
     }
 }
 

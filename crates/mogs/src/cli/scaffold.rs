@@ -3,36 +3,30 @@
 use std::path::Path;
 
 use mogs_cli::scaffold::{Created, InitError};
-use pyo3::exceptions::PyOSError;
 use pyo3::prelude::*;
 use pyo3::types::PyString;
 
 use super::interpreter::PyInterpreter;
-use super::{fail, is_instance, print};
+use super::{fail, failed, print};
 
 /// Create the assignment `folder` and say what to do next.
 ///
-/// A refused folder, a `ConfigError` or an `OSError` fails the command with exit code 1.
-/// Other Python exceptions propagate.
+/// A refused folder, a `UsageError` (here a `ConfigError`) or an `OSError` fails the command
+/// with exit code 1. Other Python exceptions propagate.
 pub(super) fn init(py: Python<'_>, folder: &Path) -> PyResult<i64> {
-    let error = match mogs_cli::scaffold::init(folder, &PyInterpreter { py }) {
-        Ok(created) => return next_steps(py, &created).map(|()| 0),
-        Err(InitError::Refused(refusal)) => refusal
-            .folder()
-            .into_pyobject(py)?
-            .str()?
-            .add(refusal.reason())?
-            .cast_into::<PyString>()?,
-        Err(InitError::Python(error))
-            if error.is_instance_of::<PyOSError>(py)
-                || is_instance(py, &error, "mogs.config", "ConfigError")? =>
-        {
-            error.value(py).str()?
+    match mogs_cli::scaffold::init(folder, &PyInterpreter { py }) {
+        Ok(created) => next_steps(py, &created).map(|()| 0),
+        Err(InitError::Refused(refusal)) => {
+            let message = refusal
+                .folder()
+                .into_pyobject(py)?
+                .str()?
+                .add(refusal.reason())?
+                .cast_into::<PyString>()?;
+            fail(py, "Init", message)
         }
-        Err(InitError::Python(error)) => return Err(error),
-    };
-
-    fail(py, "Init", error)
+        Err(InitError::Python(error)) => failed(py, "Init", error),
+    }
 }
 
 /// Print the notebook and the commands to edit and build it.

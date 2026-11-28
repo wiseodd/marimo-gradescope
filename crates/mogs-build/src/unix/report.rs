@@ -8,9 +8,9 @@ use indexmap::{IndexMap, IndexSet};
 use mogs_grader::GradeError;
 use mogs_schema::{Bundle, FailureReason, Outcome};
 
-use crate::build::Built;
-use crate::regrade::Regraded;
-use crate::{Interpreter, text};
+use crate::unix::build::Built;
+use crate::unix::regrade::Regraded;
+use crate::unix::{Interpreter, text};
 
 /// The files to upload and distribute, then the self-check scores and the warnings.
 ///
@@ -89,16 +89,15 @@ pub fn report<I: Interpreter>(i: &I, built: &Built) -> Result<OsString, I::Error
 ///
 /// Any Python exception.
 pub fn grade_report<I: Interpreter>(i: &I, regraded: &Regraded) -> Result<OsString, I::Error> {
-    let questions = &regraded.bundle.config.questions;
     let mut rows = vec![["Question".to_string(), "Score".to_string()]];
 
     for row in &regraded.graded.results.tests {
         let Some(number) = &row.number else {
             continue;
         };
-        let title = questions
-            .iter()
-            .find(|question| &question.id == number)
+        let title = regraded
+            .bundle
+            .question(number)
             .map(|question| question.title.clone())
             .expect("each numbered row is a question of the bundle");
         rows.push([title, fraction(i, row.score, row.max_score)]);
@@ -187,7 +186,7 @@ pub fn free_points_warnings(bundle: &Bundle, blank: &IndexMap<String, Outcome>) 
         .filter(|outcome| outcome.passed)
         .filter(|outcome| {
             let qid = question_id(bundle, &outcome.name);
-            let question = bundle.config.questions.iter().find(|q| q.id == qid);
+            let question = bundle.question(qid);
             question.is_some_and(|question| question.points > 0.0)
         })
         .map(|outcome| outcome.name.as_str())
@@ -263,14 +262,14 @@ mod tests {
     use mogs_schema::{BundleConfig, BundleQuestion, Results, Row, TestCell};
 
     use super::*;
-    use crate::build::Score;
-    use crate::fake::Fake;
+    use crate::unix::build::Score;
+    use crate::unix::fake::Fake;
 
     /// `text`, which is UTF-8 in tests.
     fn utf8(text: &std::ffi::OsStr) -> &str {
         text.to_str().expect("UTF-8 in tests")
     }
-    use crate::{Graded, Question};
+    use crate::unix::{Graded, Question};
 
     fn question(id: &str, title: &str, points: f64) -> Question {
         Question {

@@ -205,12 +205,7 @@ struct Ran {
 impl PhaseRun<'_> {
     /// Run the phase's tests, starting from why the whole-notebook run failed, if it did.
     fn run(&self, mut run_failed: Option<String>, host: &dyn Host) -> Result<Ran, GradeError> {
-        let tests: Vec<String> = self
-            .bundle
-            .cells
-            .iter()
-            .flat_map(|cell| cell.tests.iter().cloned())
-            .collect();
+        let tests: Vec<String> = self.bundle.tests().cloned().collect();
         let mut done = IndexMap::new();
         let mut respawns = 0;
         let mut load_error = None;

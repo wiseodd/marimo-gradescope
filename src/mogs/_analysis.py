@@ -29,6 +29,7 @@ from mogs.config import (
     Api,
     AssignmentConfig,
     ConfigError,
+    UsageError,
     api_calls,
     normalized_name,
     read_config,
@@ -64,7 +65,7 @@ MAX_ZIP_BYTES = 500 * 1024 * 1024
 _CHUNK = 1024 * 1024
 
 
-class BuildError(Exception):
+class BuildError(UsageError):
     """The assignment cannot be built: no single notebook, invalid source, or a failed check."""
 
 
@@ -85,26 +86,10 @@ class Assignment:
     nb: Notebook
 
 
-class QuestionTests(TypedDict):
-    """One question of the config, with its tests counted.
-
-    `prompts` has the first line of each prompt cell of a manual question, as
-    `prompt_previews` gives it, or `NO_TEXT` when none has text. It is empty for other
-    questions.
-    """
-
-    id: str
-    title: str
-    points: float
-    public: int
-    hidden: int
-    prompts: list[str]
-
-
 class GradeInputs(TypedDict):
-    """What grading needs: the bundle's fields and the requirements without the mogs line."""
+    """What grading needs: the bundle as JSON and the requirements without the mogs line."""
 
-    bundle: dict[str, object]
+    bundle_json: str
     grading_requirements: str
 
 
@@ -112,16 +97,17 @@ class BuildInputs(GradeInputs):
     """What a build writes and checks.
 
     `tests` and `data` hold (path relative to the notebook, text or source) pairs.
+    `prompts` has, for each manual question, the first line of each of its prompt cells, as
+    `prompt_previews` gives it, or `NO_TEXT` when none has text.
     """
 
-    bundle_json: str
     student: str
     solved: str
     tests: list[tuple[str, str]]
     data: list[tuple[str, Path]]
     requirements: str
     warnings: list[str]
-    questions: list[QuestionTests]
+    prompts: dict[str, list[str]]
 
 
 def read_assignment(assignment_dir: Path) -> Assignment:
@@ -168,25 +154,13 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
     tests = public_test_files(nb)
     requirement = os.environ.get(TOOL_REQUIREMENT) or f"{TOOL}=={__version__}"
     requirements, warnings = gradescope_requirements(src, cfg, requirement)
-    by_question = nb.tests_by_question()
-
-    questions: list[QuestionTests] = []
-    for q in cfg.questions.values():
-        public, hidden = by_question.get(q.id, ([], []))
-        prompts = list(prompt_previews(nb, q.id) or (NO_TEXT,)) if q.manual else []
-        questions.append(
-            {
-                "id": q.id,
-                "title": q.title,
-                "points": q.points,
-                "public": len(public),
-                "hidden": len(hidden),
-                "prompts": prompts,
-            }
-        )
+    prompts = {
+        q.id: list(prompt_previews(nb, q.id) or (NO_TEXT,))
+        for q in cfg.questions.values()
+        if q.manual
+    }
 
     return {
-        "bundle": bundle.to_dict(),
         "bundle_json": bundle.to_json(),
         "grading_requirements": _without_tool(requirements),
         "student": student,
@@ -195,7 +169,7 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
         "data": [(str(rel), source) for rel, source in data.items()],
         "requirements": requirements,
         "warnings": source_warnings(nb) + warnings,
-        "questions": questions,
+        "prompts": prompts,
     }
 
 
@@ -211,7 +185,7 @@ def grade_inputs(assignment: Assignment) -> GradeInputs:
     bundle = bundle_from_notebook(assignment.nb, assignment.cfg)
     requirements, _ = gradescope_requirements(assignment.src, assignment.cfg, TOOL)
 
-    return {"bundle": bundle.to_dict(), "grading_requirements": _without_tool(requirements)}
+    return {"bundle_json": bundle.to_json(), "grading_requirements": _without_tool(requirements)}
 
 
 def _without_tool(requirements: str) -> str:

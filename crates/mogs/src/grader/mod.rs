@@ -1,9 +1,9 @@
 //! The grading supervisor (`mogs-grader`) for the rest of the extension.
 //!
 //! Only glue: `autograde` runs `mogs autograde` with the GIL released; `data_files` serves
-//! `mogs._analysis`; and bundles and results cross to and from Python. [`PyHost`] gives the
-//! grader Python's text, users, signals and logs. A panic here reaches the PyO3 boundary,
-//! which raises it as `PanicException`; `autograde` catches its own (see there).
+//! `mogs._analysis`; and bundles and results cross to and from Python as JSON text.
+//! [`PyHost`] gives the grader Python's text, users, signals and logs. A panic here reaches the
+//! PyO3 boundary, which raises it as `PanicException`; `autograde` catches its own (see there).
 
 #[cfg(unix)]
 pub mod autograde;
@@ -17,7 +17,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::host::PyHost;
+use crate::host::{PyHost, grade_err};
 
 /// The data files to ship, by `PurePosixPath` relative to `root`, with folders expanded.
 #[pyfunction]
@@ -27,7 +27,8 @@ pub fn data_files<'py>(
     files: Vec<String>,
 ) -> PyResult<Bound<'py, PyDict>> {
     let host = PyHost::default();
-    let found = host.finish(py, mogs_grader::files::data_files(&root, &files, &host))?;
+    let found = mogs_grader::files::data_files(&root, &files, &host);
+    let found = host.finish(found, |error| grade_err(py, error))?;
     let posix = py.import("pathlib")?.getattr("PurePosixPath")?;
     let out = PyDict::new(py);
 
@@ -38,23 +39,10 @@ pub fn data_files<'py>(
     Ok(out)
 }
 
-/// A `mogs.grader.bundle.GradingBundle` as the Rust type, through its JSON.
+/// The bundle JSON `text`, as Python's `json` writes it, as the Rust type.
 #[cfg(unix)]
-pub(crate) fn bundle_from_py(bundle: &Bound<'_, PyAny>) -> PyResult<Bundle> {
-    bundle_from_dict(&bundle.call_method0("to_dict")?)
-}
-
-/// The fields of a bundle, as `GradingBundle.to_dict` gives them, as the Rust type, through
-/// Python's JSON.
-#[cfg(unix)]
-pub(crate) fn bundle_from_dict(data: &Bound<'_, PyAny>) -> PyResult<Bundle> {
-    let text: String = data
-        .py()
-        .import("json")?
-        .call_method1("dumps", (data,))?
-        .extract()?;
-
-    mogs_schema::decode(&text).map_err(|error| PyValueError::new_err(error.to_string()))
+pub(crate) fn decode_bundle(text: &str) -> PyResult<Bundle> {
+    mogs_schema::decode(text).map_err(|error| PyValueError::new_err(error.to_string()))
 }
 
 /// `results` as plain Python values, through Python's JSON.

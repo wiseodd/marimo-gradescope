@@ -1,92 +1,58 @@
-//! Python's analysis, text and exceptions for `mogs-build`.
+//! Python's analysis, text and exceptions for `mogs-build`, through [`PyHost`].
 //!
 //! Each call attaches to Python for its own duration, so the build runs with the GIL released.
 
-use std::convert::Infallible;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use mogs_build::{BuildInputs, Class, GradeInputs, Interpreter, Question};
+use mogs_build::{BuildInputs, Class, GradeInputs, Interpreter};
 use mogs_grader::{GradeError, Host};
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyString, PyTuple};
 
-use crate::grader::bundle_from_dict;
+use crate::grader::decode_bundle;
 use crate::host::PyHost;
-use crate::python::{exception, pathlib};
+use crate::python::{BuildError, ConfigError, RequirementsError, pathlib};
 
-/// The running interpreter, as `mogs-build` sees it.
-#[derive(Default)]
-pub(super) struct PyBuild {
-    host: PyHost,
-}
-
-impl PyBuild {
-    /// The error the host kept, if any.
-    pub(super) fn finish(&self, py: Python<'_>) -> PyResult<()> {
-        self.host.finish(py, Ok(()))
-    }
-
-    /// `mogs._analysis.name(*args)`.
-    fn analysis<'py>(
-        py: Python<'py>,
-        name: &str,
-        args: impl pyo3::call::PyCallArgs<'py>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        py.import("mogs._analysis")?.call_method1(name, args)
-    }
+/// `mogs._analysis.name(*args)`.
+fn analysis<'py>(
+    py: Python<'py>,
+    name: &str,
+    args: impl pyo3::call::PyCallArgs<'py>,
+) -> PyResult<Bound<'py, PyAny>> {
+    py.import("mogs._analysis")?.call_method1(name, args)
 }
 
 /// What grading needs, from the dict of `build_inputs` or `grade_inputs`.
 fn grading(inputs: &Bound<'_, PyAny>) -> PyResult<GradeInputs> {
     Ok(GradeInputs {
-        bundle: bundle_from_dict(&inputs.get_item("bundle")?)?,
+        bundle: decode_bundle(&inputs.get_item("bundle_json")?.extract::<String>()?)?,
         requirements: inputs.get_item("grading_requirements")?.extract()?,
     })
 }
 
-fn question(item: PyResult<Bound<'_, PyAny>>) -> PyResult<Question> {
-    let item = item?;
-
-    Ok(Question {
-        id: item.get_item("id")?.extract()?,
-        title: item.get_item("title")?.extract()?,
-        points: item.get_item("points")?.extract()?,
-        public: item.get_item("public")?.extract()?,
-        hidden: item.get_item("hidden")?.extract()?,
-        prompts: item.get_item("prompts")?.extract()?,
-    })
-}
-
-impl Interpreter for PyBuild {
+impl Interpreter for PyHost {
     type Error = PyErr;
     type Assignment = Py<PyAny>;
 
     fn host(&self) -> &dyn Host {
-        &self.host
+        self
     }
 
     fn grade_error(&self, error: GradeError) -> PyErr {
-        Python::attach(
-            |py| match self.host.finish(py, Err::<Infallible, _>(error)) {
-                Err(error) => error,
-                Ok(never) => match never {},
-            },
-        )
+        PyHost::grade_error(self, error)
     }
 
     fn raise(&self, class: Class, message: OsString) -> PyErr {
-        let (module, name) = match class {
-            Class::Build => ("mogs._analysis", "BuildError"),
-            Class::Config => ("mogs.config", "ConfigError"),
-            Class::Requirements => ("mogs.requirements", "RequirementsError"),
-        };
-
-        Python::attach(|py| exception(py, module, name, message))
+        match class {
+            Class::Build => BuildError::new_err(message),
+            Class::Config => ConfigError::new_err(message),
+            Class::Requirements => RequirementsError::new_err(message),
+        }
     }
 
     fn read(&self, folder: &Path) -> PyResult<Py<PyAny>> {
-        Python::attach(|py| Ok(Self::analysis(py, "read_assignment", (folder,))?.unbind()))
+        Python::attach(|py| Ok(analysis(py, "read_assignment", (folder,))?.unbind()))
     }
 
     fn notebook(&self, assignment: &Py<PyAny>) -> PyResult<String> {
@@ -98,8 +64,7 @@ impl Interpreter for PyBuild {
 
     fn build_inputs(&self, assignment: &Py<PyAny>) -> PyResult<BuildInputs> {
         Python::attach(|py| {
-            let inputs = Self::analysis(py, "build_inputs", (assignment.bind(py),))?;
-            let questions = inputs.get_item("questions")?;
+            let inputs = analysis(py, "build_inputs", (assignment.bind(py),))?;
 
             Ok(BuildInputs {
                 grading: grading(&inputs)?,
@@ -110,24 +75,21 @@ impl Interpreter for PyBuild {
                 data: inputs.get_item("data")?.extract()?,
                 requirements: inputs.get_item("requirements")?.extract()?,
                 warnings: inputs.get_item("warnings")?.extract()?,
-                questions: questions
-                    .try_iter()?
-                    .map(question)
-                    .collect::<PyResult<_>>()?,
+                prompts: inputs.get_item("prompts")?.extract()?,
             })
         })
     }
 
     fn grade_inputs(&self, assignment: &Py<PyAny>) -> PyResult<GradeInputs> {
-        Python::attach(|py| grading(&Self::analysis(py, "grade_inputs", (assignment.bind(py),))?))
+        Python::attach(|py| grading(&analysis(py, "grade_inputs", (assignment.bind(py),))?))
     }
 
     fn unpack(&self, archive: &Path, target: &Path) -> PyResult<()> {
-        Python::attach(|py| Self::analysis(py, "unpack", (archive, target)).map(drop))
+        Python::attach(|py| analysis(py, "unpack", (archive, target)).map(drop))
     }
 
     fn tool_install_args(&self) -> PyResult<Vec<String>> {
-        Python::attach(|py| Self::analysis(py, "installed_tool_args", ())?.extract())
+        Python::attach(|py| analysis(py, "installed_tool_args", ())?.extract())
     }
 
     fn which(&self, name: &str) -> PyResult<Option<PathBuf>> {
@@ -155,7 +117,7 @@ impl Interpreter for PyBuild {
     fn decoded(&self, streams: &[&[u8]]) -> PyResult<String> {
         Python::attach(|py| {
             let streams = streams.iter().map(|stream| PyBytes::new(py, stream));
-            Self::analysis(py, "decoded", PyTuple::new(py, streams)?)?.extract()
+            analysis(py, "decoded", PyTuple::new(py, streams)?)?.extract()
         })
     }
 

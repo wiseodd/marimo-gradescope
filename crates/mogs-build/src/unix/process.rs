@@ -9,7 +9,7 @@ use std::time::Duration;
 use mogs_grader::GradeError;
 use mogs_grader::process::DROPPED;
 
-use crate::{Interpreter, interrupted};
+use crate::unix::{Interpreter, interrupted};
 
 /// How often a running command checks for Ctrl+C.
 const POLL: Duration = Duration::from_millis(50);
@@ -87,7 +87,7 @@ fn drain(pipe: Option<impl Read + Send + 'static>) -> JoinHandle<io::Result<Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fake::{Fake, spawning};
+    use crate::unix::fake::{Fake, spawning};
 
     fn ran(command: &mut Command) -> Result<Output, String> {
         let _spawning = spawning();

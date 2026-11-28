@@ -5,14 +5,16 @@
 //! that `mogs-pdf` watches, so its panic comes back as an error and is raised as
 //! `PanicException`; a panic in this module reaches the PyO3 boundary, which does the same.
 
-use mogs_pdf::RenderError;
+use std::str::FromStr;
+
+use mogs_pdf::{RenderError, Unknown};
 use pyo3::create_exception;
-use pyo3::exceptions::{PyException, PyRuntimeError, PyValueError};
+use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
-use crate::host::PyHost;
+use crate::host::{PyHost, stopped};
 
 create_exception!(
     mogs._native,
@@ -21,17 +23,12 @@ create_exception!(
     "Typst failed, even on the plain-text document. The message is Typst's."
 );
 
-/// Call `status` with a short message, then make the PDF of `questions`.
-///
-/// `questions` is read after `status`, so a generator builds them after the message shows.
+/// The PDF of `questions`.
 #[pyfunction]
 pub fn render_pdf<'py>(
     py: Python<'py>,
     questions: &Bound<'py, PyAny>,
-    status: &Bound<'py, PyAny>,
 ) -> PyResult<Bound<'py, PyBytes>> {
-    status.call1((mogs_pdf::STATUS,))?;
-
     let questions = questions
         .try_iter()?
         .map(|question| Ok(question?.extract::<Question>()?.into()))
@@ -39,19 +36,13 @@ pub fn render_pdf<'py>(
 
     let host = PyHost::default();
     let rendered = py.detach(|| mogs_pdf::render(questions, &host));
+    let pdf = host.finish(rendered, |error| match error {
+        RenderError::Typst(message) => TypstError::new_err(message),
+        RenderError::Panicked(message) => PanicException::new_err(message),
+        RenderError::Interrupted => stopped(),
+    })?;
 
-    if let Some(error) = host.take() {
-        return Err(error);
-    }
-
-    match rendered {
-        Ok(pdf) => Ok(PyBytes::new(py, &pdf)),
-        Err(RenderError::Typst(message)) => Err(TypstError::new_err(message)),
-        Err(RenderError::Panicked(message)) => Err(PanicException::new_err(message)),
-        Err(RenderError::Interrupted) => Err(PyRuntimeError::new_err(
-            "the PDF stopped without a Python error",
-        )),
-    }
+    Ok(PyBytes::new(py, &pdf))
 }
 
 /// A `mogs._answers.Question`, read by attribute.
@@ -65,46 +56,21 @@ struct Question {
 #[derive(FromPyObject)]
 struct Part {
     text: String,
-    role: Role,
-    style: Style,
+    #[pyo3(from_py_with = named)]
+    role: mogs_pdf::Role,
+    #[pyo3(from_py_with = named)]
+    style: mogs_pdf::Style,
 }
 
-/// A `mogs._answers.Role` member.
-struct Role(mogs_pdf::Role);
-
-/// A `mogs._answers.Style` member.
-struct Style(mogs_pdf::Style);
-
-impl<'a, 'py> FromPyObject<'a, 'py> for Role {
-    type Error = PyErr;
-
-    fn extract(value: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        match value.extract::<String>()?.as_str() {
-            "prompt" => Ok(Self(mogs_pdf::Role::Prompt)),
-            "answer" => Ok(Self(mogs_pdf::Role::Answer)),
-            _ => Err(unknown("role", &value)),
-        }
-    }
-}
-
-impl<'a, 'py> FromPyObject<'a, 'py> for Style {
-    type Error = PyErr;
-
-    fn extract(value: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        match value.extract::<String>()?.as_str() {
-            "markdown" => Ok(Self(mogs_pdf::Style::Markdown)),
-            "plain" => Ok(Self(mogs_pdf::Style::Plain)),
-            "note" => Ok(Self(mogs_pdf::Style::Note)),
-            _ => Err(unknown("style", &value)),
-        }
-    }
-}
-
-/// A `ValueError` that names the value, as Python's `repr` shows it.
-fn unknown(what: &str, value: &Bound<'_, PyAny>) -> PyErr {
-    match value.repr() {
-        Ok(repr) => PyValueError::new_err(format!("unknown {what} {repr}")),
-        Err(error) => error,
+/// A `Role` or `Style` member, by its value. An unknown one is a `ValueError` that names the
+/// value as Python's `repr` shows it.
+fn named<T: FromStr<Err = Unknown>>(value: &Bound<'_, PyAny>) -> PyResult<T> {
+    match value.extract::<String>()?.parse() {
+        Ok(parsed) => Ok(parsed),
+        Err(Unknown(what)) => Err(PyValueError::new_err(format!(
+            "unknown {what} {}",
+            value.repr()?
+        ))),
     }
 }
 
@@ -113,7 +79,7 @@ impl From<Question> for mogs_pdf::Question {
         let parts = question
             .parts
             .into_iter()
-            .map(|part| mogs_pdf::Part::new(part.text, part.role.0, part.style.0))
+            .map(|part| mogs_pdf::Part::new(part.text, part.role, part.style))
             .collect();
 
         Self {

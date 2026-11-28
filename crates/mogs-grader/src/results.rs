@@ -57,6 +57,12 @@ pub fn build_results(
         let public = pick(false)?;
         let hidden = pick(true)?;
         let total = public.len() + hidden.len();
+        let capped: IndexMap<&str, String> = public
+            .iter()
+            .chain(&hidden)
+            .filter(|outcome| !outcome.passed && !outcome.message.is_empty())
+            .map(|outcome| (outcome.name.as_str(), text.cap(&outcome.message)))
+            .collect();
 
         if total == 0 {
             return Err(GradeError::Value(format!(
@@ -66,14 +72,14 @@ pub fn build_results(
         }
 
         if !public.is_empty() {
-            let output = output(&public, &[], text);
+            let output = output(&public, &[], &capped);
             public_parts.push(format!("**{}**\n\n{output}", question.title));
             public_failed |= !public.iter().all(|outcome| outcome.passed);
         }
 
         let passed = public.iter().chain(&hidden).filter(|o| o.passed).count();
         let score = text.round(question.points * passed as f64 / total as f64, 4);
-        let output = output(&public, &hidden, text);
+        let output = output(&public, &hidden, &capped);
         question_rows.push(Row {
             number: Some(question.id.clone()),
             visibility: "hidden".into(),
@@ -199,8 +205,9 @@ fn fraction(score: f64, max_score: f64, text: &dyn PyText) -> String {
     format!("{} / {}", text.g(text.round(score, 4)), text.g(max_score))
 }
 
-/// Markdown for tests: `All tests passed`, or each test with its failure message.
-fn output(public: &[&Outcome], hidden: &[&Outcome], text: &dyn PyText) -> String {
+/// Markdown for tests: `All tests passed`, or each test with its failure message, as
+/// `capped` holds it by test name.
+fn output(public: &[&Outcome], hidden: &[&Outcome], capped: &IndexMap<&str, String>) -> String {
     if public.iter().chain(hidden).all(|outcome| outcome.passed) {
         return ALL_PASSED.into();
     }
@@ -215,8 +222,8 @@ fn output(public: &[&Outcome], hidden: &[&Outcome], text: &dyn PyText) -> String
         let mark = if outcome.passed { "✓" } else { "✗" };
         parts.push(format!("{mark} {}{label}", inline_code(&outcome.name)));
 
-        if !outcome.passed && !outcome.message.is_empty() {
-            parts.push(code_block(&text.cap(&outcome.message)));
+        if let Some(message) = capped.get(outcome.name.as_str()) {
+            parts.push(code_block(message));
         }
     }
 

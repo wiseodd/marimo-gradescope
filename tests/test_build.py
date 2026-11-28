@@ -796,37 +796,12 @@ def test_os_error_names_dist_as_python_shows_it(tmp_path, monkeypatch):
     assert result.err == "Build failed.\n[Errno 17] File exists: 'dist'\n"
 
 
-def test_build_inputs_describe_the_questions(tmp_path):
+def test_build_inputs_give_the_prompts_of_written_questions(tmp_path):
     folder = requirements_file_copy(tmp_path / "demo", "")
 
     inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
 
-    assert inputs["questions"] == [
-        {
-            "id": "q1",
-            "title": "Average",
-            "points": 4,
-            "public": 2,
-            "hidden": 2,
-            "prompts": [],
-        },
-        {
-            "id": "q2",
-            "title": "Reading scores",
-            "points": 6,
-            "public": 2,
-            "hidden": 2,
-            "prompts": [],
-        },
-        {
-            "id": "q3",
-            "title": "Empty lists",
-            "points": 5,
-            "public": 0,
-            "hidden": 0,
-            "prompts": ["## Question 3: Empty lists"],
-        },
-    ]
+    assert inputs["prompts"] == {"q3": ["## Question 3: Empty lists"]}
     assert [rel for rel, _ in inputs["data"]] == ["data/scores.csv"]
     assert [rel for rel, _ in inputs["tests"]] == ["tests/q1.py", "tests/q2.py"]
 
@@ -837,7 +812,7 @@ def test_written_question_without_prompt_text_says_so(tmp_path, monkeypatch):
 
     inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
 
-    assert [q["prompts"] for q in inputs["questions"]] == [[], [], ["no question text"]]
+    assert inputs["prompts"] == {"q3": ["no question text"]}
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="needs a file system of bytes")

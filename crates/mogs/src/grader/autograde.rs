@@ -14,9 +14,9 @@ use pyo3::panic::PanicException;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use super::{bundle_from_py, results_to_py};
-use crate::host::PyHost;
-use crate::python::os_error;
+use super::{decode_bundle, results_to_py};
+use crate::host::{PyHost, grade_err};
+use crate::python::{os_error, pathlib};
 
 /// The logger of the autograder's crash report, as in v0.7.
 const MAIN_LOGGER: &str = "mogs.grader.main";
@@ -97,22 +97,21 @@ fn autograde_run(
     submission: &Path,
     workdir: &Path,
 ) -> PyResult<Results> {
-    // Python reads the bundle, so a bad one fails with v0.7's exception class.
-    let text = py
-        .import("pathlib")?
-        .getattr("Path")?
-        .call1((source.join("bundle.json"),))?
-        .call_method1("read_text", ("utf-8",))?;
+    // Python reads the bundle, so a bad one fails with v0.7's exception class. Its JSON
+    // goes around `GradingBundle` again, which settles what the text may leave loose, such
+    // as two questions with one id.
+    let text = pathlib(py, &source.join("bundle.json"))?.call_method1("read_text", ("utf-8",))?;
     let read = py
         .import("mogs.grader.bundle")?
         .getattr("GradingBundle")?
         .call_method1("from_json", (text,))?;
-    let read = bundle.insert(bundle_from_py(&read)?);
+    let json: String = read.call_method0("to_json")?.extract()?;
+    let read = bundle.insert(decode_bundle(&json)?);
     let python: OsString = py.import("sys")?.getattr("executable")?.extract()?;
 
     let host = PyHost::default();
     let ran = py
         .detach(|| mogs_grader::autograde::run(read, source, submission, workdir, &python, &host));
 
-    host.finish(py, ran)
+    host.finish(ran, |error| grade_err(py, error))
 }

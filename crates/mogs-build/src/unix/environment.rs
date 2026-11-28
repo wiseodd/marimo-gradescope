@@ -9,7 +9,7 @@ use std::process::Command;
 
 use mogs_grader::GradeError;
 
-use crate::{Class, Interpreter, process};
+use crate::unix::{Class, Interpreter, process};
 
 /// Create a virtual environment in `folder` and install the grading requirements.
 ///
@@ -77,7 +77,7 @@ fn run_uv<I: Interpreter>(i: &I, command: &mut Command, action: &str) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fake::{Fake, script, spawning};
+    use crate::unix::fake::{Fake, script, spawning};
 
     /// A fake `uv` in `folder` that logs its arguments, one per line, then runs `body`.
     fn fake_uv(folder: &Path, body: &str) -> Fake {

@@ -115,14 +115,15 @@ def render_manual_pdf(
     except (OSError, UnicodeDecodeError, SourceError) as exc:
         raise PdfUnavailable(f"the notebook cannot be read ({exc})") from exc
 
-    # A generator: Rust shows the status message before it builds the first question.
-    questions = (
+    # Building the questions can take a while too, so the message shows first.
+    (status or quiet)(_native.PDF_STATUS)
+    questions = [
         _valid(manual_question(nb, qid, titles.get(qid, qid), placeholders or {})) for qid in qids
-    )
+    ]
 
     # Typst errors are left only after every fallback; the export then falls back to Markdown.
     try:
-        data = _native.render_pdf(questions, status or quiet)
+        data = _native.render_pdf(questions)
     except _native.TypstError as exc:
         raise PdfUnavailable(f"Typst failed ({exception_summary(exc)})") from exc
 

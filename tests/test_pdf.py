@@ -522,7 +522,7 @@ def test_unwritable_output_gives_pdf_unavailable(tmp_path):
 def test_a_document_that_never_compiles_gives_pdf_unavailable(tmp_path, monkeypatch):
     notebook = write_notebook(tmp_path, {"q1": "x"})
 
-    def never(questions, status):
+    def never(questions):
         raise _native.TypstError("unknown variable: boom")
 
     monkeypatch.setattr(_native, "render_pdf", never)
@@ -543,7 +543,7 @@ def test_unknown_role_names_the_value():
     bogus = Part("x", "bogus", Style.MARKDOWN)  # ty: ignore[invalid-argument-type]  # on purpose
 
     with pytest.raises(TypeError) as raised:
-        _native.render_pdf([Question("Q", (bogus,))], lambda message: None)
+        _native.render_pdf([Question("Q", (bogus,))])
 
     chain = []
     error: BaseException | None = raised.value
@@ -561,7 +561,7 @@ def test_unknown_role_names_the_value():
 def test_render_pdf_gives_the_pdf_bytes():
     question = Question("Title", (Part("Hello $x$.", Role.ANSWER),))
 
-    data = _native.render_pdf([question], lambda message: None)
+    data = _native.render_pdf([question])
 
     assert data.startswith(b"%PDF")
     assert "Title Hello 𝑥." in text_of(PdfReader(BytesIO(data)))
@@ -577,7 +577,7 @@ def test_interrupt_stops_the_pdf(tmp_path):
     started = []
 
     def status(message):
-        # Rust calls this just before Typst starts.
+        # Called just before the questions are built and Typst starts.
         started.append(time.monotonic())
         timer.start()
 
