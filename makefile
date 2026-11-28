@@ -4,6 +4,11 @@ UV ?= uv run
 
 TESTS ?= tests
 ARGS ?=
+# `OFFLINE=1` leaves out every test that needs network: the Rust tests ignored for it, and
+# the pytest tests marked `slow` or `network`.
+OFFLINE ?=
+CARGO_TEST_ARGS = $(if $(OFFLINE),,-- --include-ignored)
+PYTEST_MARKS = $(if $(OFFLINE),-m 'not slow and not network',)
 
 .PHONY: sync test lint fix typecheck check docs docs-serve
 
@@ -15,9 +20,10 @@ sync:
 #   make test
 #   make test TESTS=tests/test_config.py ARGS='-k header'
 #   make test ARGS='-m docker'
+#   make test OFFLINE=1
 test:
-	$(UV) cargo test --workspace
-	$(UV) pytest $(TESTS) -q $(ARGS)
+	$(UV) cargo test --workspace $(CARGO_TEST_ARGS)
+	$(UV) pytest $(TESTS) -q $(PYTEST_MARKS) $(ARGS)
 
 lint:
 	$(UV) ruff check

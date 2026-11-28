@@ -113,6 +113,7 @@ def test_cell_markdown_of_md_and_code_cells():
 # Real PDFs
 
 
+@pytest.mark.network
 def test_pdf_has_title_prompt_and_answer(tmp_path):
     notebook = tmp_path / "hw.py"
     notebook.write_text(student_copy(), encoding="utf-8")
@@ -142,6 +143,7 @@ def test_pdf_has_title_prompt_and_answer(tmp_path):
         ("Derive the slope", "## Derive the Slope."),
     ],
 )
+@pytest.mark.network
 def test_prompt_heading_the_title_already_says_is_dropped(tmp_path, title, heading):
     reader = render(
         tmp_path,
@@ -164,6 +166,7 @@ def test_prompt_heading_the_title_already_says_is_dropped(tmp_path, title, headi
         ("Question 4: x + y", "x - y"),
     ],
 )
+@pytest.mark.network
 def test_prompt_heading_with_more_than_the_title_stays(tmp_path, title, heading):
     reader = render(
         tmp_path,
@@ -197,6 +200,7 @@ def _():
 """
 
 
+@pytest.mark.network
 def test_pdf_puts_each_part_s_text_before_its_answer(tmp_path):
     source = tmp_path / "src.py"
     grade = '\n@app.cell\ndef _():\n    mogs.grade("q3", points=5)'
@@ -220,6 +224,7 @@ def test_pdf_puts_each_part_s_text_before_its_answer(tmp_path):
     assert [text.index(part) for part in order] == sorted(text.index(part) for part in order)
 
 
+@pytest.mark.network
 def test_math_answers_render_one_page_per_question(tmp_path):
     reader = render(
         tmp_path,
@@ -238,6 +243,7 @@ def test_math_answers_render_one_page_per_question(tmp_path):
 
 @pytest.mark.parametrize("env", ["align", "align*", "equation", "equation*", "gather", "gather*"])
 @pytest.mark.parametrize("dollars", [False, True])
+@pytest.mark.network
 def test_display_environments_render(tmp_path, env, dollars):
     rows = "a &= b \\\\\nc &= d" if env.startswith("align") else "a = b \\\\\nc = d"
     block = f"\\begin{{{env}}}\n{rows}\n\\end{{{env}}}"
@@ -250,6 +256,7 @@ def test_display_environments_render(tmp_path, env, dollars):
     assert "could not be rendered" not in text
 
 
+@pytest.mark.network
 def test_backslash_bracket_math_renders(tmp_path):
     answer = "Inline \\(a = b\\) here.\n\n\\[\nc = d\n\\]\n\nAfter."
 
@@ -261,6 +268,7 @@ def test_backslash_bracket_math_renders(tmp_path):
     assert "could not be rendered" not in text
 
 
+@pytest.mark.network
 def test_failing_backslash_bracket_formula_is_shown_as_its_source(tmp_path):
     formula = "\\iftypst \\begin{gather*} a \\end{gather*}"
 
@@ -270,12 +278,14 @@ def test_failing_backslash_bracket_formula_is_shown_as_its_source(tmp_path):
     assert "𝑥 = 1" in text, text
 
 
+@pytest.mark.network
 def test_gather_star_in_formula_text_keeps_its_star(tmp_path):
     text = text_of(render(tmp_path, {"q1": "Name: $\\text{gather*}$."}))
 
     assert "gather*" in text, text
 
 
+@pytest.mark.network
 def test_formula_shown_as_source_keeps_gather_star(tmp_path):
     formula = "\\iftypst \\begin{gather*} a \\end{gather*}"
 
@@ -284,6 +294,7 @@ def test_formula_shown_as_source_keeps_gather_star(tmp_path):
     assert formula in text, text
 
 
+@pytest.mark.network
 def test_failing_environment_is_shown_as_its_source(tmp_path):
     bad = "\\begin{align}\n\\foobar{a} &= b \\\\\nc &= d\n\\end{align}"
 
@@ -294,6 +305,7 @@ def test_failing_environment_is_shown_as_its_source(tmp_path):
     assert "shown as LaTeX source" in text
 
 
+@pytest.mark.network
 def test_missing_answer_cell_is_noted(tmp_path):
     notebook = write_notebook(tmp_path, {"q1": "First."})
     out = tmp_path / "out.pdf"
@@ -308,6 +320,7 @@ def test_missing_answer_cell_is_noted(tmp_path):
 @pytest.mark.parametrize(
     "answer", ["*Write your answer here.*", "  *Write your\n answer here.*", " "]
 )
+@pytest.mark.network
 def test_untouched_or_blank_answer_says_no_answer(tmp_path, answer):
     placeholders = {"answer_q1": "*Write your answer here.*"}
 
@@ -317,6 +330,7 @@ def test_untouched_or_blank_answer_says_no_answer(tmp_path, answer):
     assert "Write your answer here" not in text
 
 
+@pytest.mark.network
 def test_untouched_part_says_no_answer_next_to_an_answered_one(tmp_path):
     notebook = tmp_path / "hw.py"
     notebook.write_text(
@@ -345,6 +359,7 @@ def test_untouched_part_says_no_answer_next_to_an_answered_one(tmp_path):
         r"$$\begin{tikzpicture}\draw (0,0) -- (1,1);\end{tikzpicture}$$",
     ],
 )
+@pytest.mark.network
 def test_failing_formula_is_shown_as_source(tmp_path, bad):
     reader = render(tmp_path, {"q1": f"Good: $\\alpha + \\beta$. Bad: {bad} End of answer."})
     text = text_of(reader)
@@ -359,6 +374,7 @@ def test_failing_formula_is_shown_as_source(tmp_path, bad):
 BROKEN_HTML = '<table><tr><td rowspan="x">cell</td></tr></table> and $\\alpha$.'
 
 
+@pytest.mark.network
 def test_answer_that_defeats_the_math_fallback_is_plain_text(tmp_path):
     reader = render(tmp_path, {"q1": BROKEN_HTML, "q2": "Fine."})
     text = text_of(reader)
@@ -369,6 +385,7 @@ def test_answer_that_defeats_the_math_fallback_is_plain_text(tmp_path):
     assert "Fine." in text
 
 
+@pytest.mark.network
 def test_anchor_links_show_their_text(tmp_path):
     text = text_of(render(tmp_path, {"q1": "See [the proof](#nowhere) and $\\alpha$."}))
 
@@ -376,6 +393,7 @@ def test_anchor_links_show_their_text(tmp_path):
     assert "could not be rendered" not in text
 
 
+@pytest.mark.network
 def test_cells_that_fail_only_together_still_give_a_pdf(tmp_path):
     notebook = write_notebook(tmp_path, {"q1": "# Proof\n\nSee [above](#proof)."})
     notebook.write_text(
@@ -392,6 +410,7 @@ def test_cells_that_fail_only_together_still_give_a_pdf(tmp_path):
     assert "See" in text and "Done." in text
 
 
+@pytest.mark.network
 def test_lone_surrogate_still_gives_a_pdf(tmp_path):
     notebook = write_notebook(tmp_path, {"q1": "x"})
     notebook.write_text(
@@ -415,6 +434,7 @@ def test_lone_surrogate_still_gives_a_pdf(tmp_path):
         r"$\raisebox{pagebreak()}{x}$",
     ],
 )
+@pytest.mark.network
 def test_typst_hidden_in_latex_is_shown_not_run(tmp_path, formula):
     reader = render(tmp_path, {"q1": f"Before {formula} after $\\hspace{{1em}} \\alpha$."})
     text = text_of(reader)
@@ -425,6 +445,7 @@ def test_typst_hidden_in_latex_is_shown_not_run(tmp_path, formula):
     assert "could not be rendered" not in text
 
 
+@pytest.mark.network
 def test_text_commands_in_math_render(tmp_path):
     answer = (
         r"Bold $\mathbf{v} = \textbf{v}$, italic $\textit{w}$, red $\textcolor{red}{x+1}$, "
@@ -437,6 +458,7 @@ def test_text_commands_in_math_render(tmp_path):
     assert "𝐯" in text
 
 
+@pytest.mark.network
 def test_hash_that_mitex_escapes_is_text(tmp_path):
     reader = render(tmp_path, {"q1": r"$\text{x}#pagebreak()$"})
 
@@ -444,6 +466,7 @@ def test_hash_that_mitex_escapes_is_text(tmp_path):
     assert "#𝑝𝑎𝑔𝑒𝑏𝑟𝑒𝑎𝑘()" in text_of(reader)
 
 
+@pytest.mark.network
 def test_typst_in_an_answer_is_shown_not_run(tmp_path):
     answer = "#pagebreak() #set page(width: 1cm) $#pagebreak()$\n\n<!--raw-typst #pagebreak()-->"
 
@@ -457,6 +480,7 @@ def test_typst_in_an_answer_is_shown_not_run(tmp_path):
     assert "#pagebreak() #set page(width: 1cm)" in text
 
 
+@pytest.mark.network
 def test_images_show_their_alt_text(tmp_path):
     answer = 'A ![plot of the loss](loss.png) and <img src="x.png"> and ![](y.png).'
 
@@ -466,6 +490,7 @@ def test_images_show_their_alt_text(tmp_path):
     assert text.count("[Image: no description]") == 2
 
 
+@pytest.mark.network
 def test_code_answer_and_one_line_cell_are_shown_as_code(tmp_path):
     notebook = tmp_path / "hw.py"
     notebook.write_text(
@@ -483,6 +508,7 @@ def test_code_answer_and_one_line_cell_are_shown_as_code(tmp_path):
     assert 'def answer_q3(): mo.md("Because."); return' in text_of(PdfReader(out))
 
 
+@pytest.mark.network
 def test_status_is_reported_before_the_questions_are_built(tmp_path, monkeypatch):
     events = []
     real = _answers.manual_question
@@ -512,10 +538,12 @@ def test_unreadable_notebook_gives_pdf_unavailable(tmp_path):
         render_manual_pdf(broken, ["q1"], {}, tmp_path / "out.pdf")
 
 
-def test_unwritable_output_gives_pdf_unavailable(tmp_path):
+def test_unwritable_output_gives_pdf_unavailable(tmp_path, monkeypatch):
     notebook = write_notebook(tmp_path, {"q1": "x"})
+    # Only the write is under test: no Typst run, so no package download.
+    monkeypatch.setattr(_native, "render_pdf", lambda questions: b"%PDF-stub")
 
-    with pytest.raises(PdfUnavailable, match="failed"):
+    with pytest.raises(PdfUnavailable, match=r"^writing the PDF failed \(FileNotFoundError: .+\)$"):
         render_manual_pdf(notebook, ["q1"], {}, tmp_path / "no" / "such" / "out.pdf")
 
 
@@ -532,6 +560,25 @@ def test_a_document_that_never_compiles_gives_pdf_unavailable(tmp_path, monkeypa
 
     assert str(raised.value) == "Typst failed (TypstError: unknown variable: boom)"
     assert not (tmp_path / "out.pdf").exists()
+
+
+@pytest.mark.usefixtures("offline_typst")
+def test_failed_package_download_gives_pdf_unavailable(tmp_path):
+    notebook = write_notebook(tmp_path, {"q1": "x"})
+
+    with pytest.raises(PdfUnavailable) as raised:
+        render_manual_pdf(notebook, ["q1"], {}, tmp_path / "out.pdf")
+
+    message = str(raised.value)
+    assert message.startswith("downloading the Typst package @preview/cmarker:0.1.10 failed (")
+    assert message.endswith(")")
+    assert "\n" not in message
+    assert not (tmp_path / "out.pdf").exists()
+
+
+def test_download_error_is_a_plain_exception():
+    assert issubclass(_native.DownloadError, Exception)
+    assert str(_native.DownloadError("boom")) == "boom"
 
 
 def test_typst_error_is_a_plain_exception():
@@ -558,6 +605,7 @@ def test_unknown_role_names_the_value():
     ]
 
 
+@pytest.mark.network
 def test_render_pdf_gives_the_pdf_bytes():
     question = Question("Title", (Part("Hello $x$.", Role.ANSWER),))
 
@@ -567,6 +615,7 @@ def test_render_pdf_gives_the_pdf_bytes():
     assert "Title Hello 𝑥." in text_of(PdfReader(BytesIO(data)))
 
 
+@pytest.mark.network
 def test_interrupt_stops_the_pdf(tmp_path):
     # Every formula fails, so each part costs several Typst runs: over ten seconds in all. The
     # run's own tag keeps Typst's caches of earlier runs from helping.
@@ -612,6 +661,7 @@ def font_names(reader: PdfReader) -> set[str]:
     return names
 
 
+@pytest.mark.network
 def test_latin_answers_use_only_the_embedded_fonts(tmp_path):
     answer = "Text with `code` and $x^2 + \\alpha$.\n\n```\nprint(1)\n```"
 
@@ -624,6 +674,7 @@ def test_latin_answers_use_only_the_embedded_fonts(tmp_path):
     ), names
 
 
+@pytest.mark.network
 def test_cjk_and_emoji_do_not_break_the_pdf(tmp_path):
     reader = render(tmp_path, {"q1": "中文答案 🙂 and Latin."})
 

@@ -23,6 +23,13 @@ create_exception!(
     "Typst failed, even on the plain-text document. The message is Typst's."
 );
 
+create_exception!(
+    mogs._native,
+    DownloadError,
+    PyException,
+    "A Typst package could not be downloaded. The message names it and the cause."
+);
+
 /// The PDF of `questions`.
 #[pyfunction]
 pub fn render_pdf<'py>(
@@ -38,6 +45,7 @@ pub fn render_pdf<'py>(
     let rendered = py.detach(|| mogs_pdf::render(questions, &host));
     let pdf = host.finish(rendered, |error| match error {
         RenderError::Typst(message) => TypstError::new_err(message),
+        RenderError::Download(message) => DownloadError::new_err(message),
         RenderError::Panicked(message) => PanicException::new_err(message),
         RenderError::Interrupted => stopped(),
     })?;

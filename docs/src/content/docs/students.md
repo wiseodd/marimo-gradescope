@@ -65,4 +65,5 @@ So, passing all public tests doesn't guarantee full marks.
 
 The export runs the public tests on the saved file and tells you if something is wrong.
 If the assignment has written answers, the zip also contains a PDF of them.
+To make the first PDF, the export downloads two small Typst packages.
 The export warns about any written answer that is still blank or unchanged.
