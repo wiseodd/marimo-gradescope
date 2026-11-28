@@ -20,7 +20,9 @@ use crate::fake::{FakeHost, spawning, writing_script};
 use crate::sandbox::{GradeOptions, Graded, grade};
 use crate::{GradeError, Level};
 
-use FailureReason::{Assertion, Budget, Killed, LoadFailed, NotRun, OutOfMemory, Timeout};
+#[cfg(target_os = "linux")]
+use FailureReason::OutOfMemory;
+use FailureReason::{Assertion, Budget, Killed, LoadFailed, NotRun, Timeout};
 
 const GOOD: [&str; 3] = ["test_q1_before", "test_q1_after", "test_q2_other"];
 const ALL: [&str; 4] = [
@@ -289,18 +291,28 @@ fn stdout_flood_finishes_and_keeps_only_the_tail() {
     assert_eq!(output.chars().count(), OUTPUT_LIMIT);
 }
 
+/// Kills the process whose pid the file holds, when dropped, even after a failed assertion.
+struct KillOnDrop(PathBuf);
+
+impl Drop for KillOnDrop {
+    fn drop(&mut self) {
+        let Ok(pid) = fs::read_to_string(&self.0) else {
+            return;
+        };
+
+        if let Some(pid) = pid.trim().parse().ok().and_then(Pid::from_raw) {
+            let _ = rustix::process::kill_process(pid, Signal::KILL);
+        }
+    }
+}
+
 #[test]
 fn daemonizer_does_not_hang() {
     let tmp = tmp();
+    let _grandchild = KillOnDrop(tmp.path().join("work/public/grandchild.pid"));
     let start = Instant::now();
 
     let results = run(tmp.path(), &fixture("daemonizer"), &bundle(usual()));
-
-    let pid_file = tmp.path().join("work/public/grandchild.pid");
-    if let Ok(pid) = fs::read_to_string(&pid_file) {
-        let pid = Pid::from_raw(pid.trim().parse().unwrap()).unwrap();
-        let _ = rustix::process::kill_process(pid, Signal::KILL);
-    }
 
     assert!(start.elapsed() < Duration::from_secs(11));
     assert_eq!(assert_only_bad_fails(&results).reason, Some(Assertion));

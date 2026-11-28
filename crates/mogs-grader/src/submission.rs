@@ -242,8 +242,10 @@ mod tests {
     fn two_py_files_are_both_named_and_not_called_notebooks() {
         let dir = upload(&["one.py", "sub/two.py"]);
 
-        let error = found(dir.path(), "hw.py").error.unwrap();
+        let found = found(dir.path(), "hw.py");
 
+        assert_eq!(found.py, None);
+        let error = found.error.unwrap();
         for part in ["one.py", "two.py", "No `hw.py`"] {
             assert!(error.contains(part), "{error}");
         }

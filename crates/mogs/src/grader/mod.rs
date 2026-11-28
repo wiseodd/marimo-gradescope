@@ -1,8 +1,9 @@
-//! The grading supervisor (`mogs-grader`) as Python functions.
+//! The grading supervisor (`mogs-grader`) for the rest of the extension.
 //!
-//! Only glue: values cross as JSON or as the Python objects mogs already has, grading runs
-//! with the GIL released, and every [`GradeError`] becomes the Python exception that v0.7
-//! raised, with the same text.
+//! Only glue: `PyHost` gives the grader Python's text, users, signals and logs; `autograde`
+//! runs `mogs autograde` with the GIL released; `data_files` serves `mogs._analysis`; and
+//! bundles and results cross to and from Python. Every [`GradeError`] becomes the Python
+//! exception that v0.7 raised, with the same text.
 
 #[cfg(unix)]
 pub mod autograde;
