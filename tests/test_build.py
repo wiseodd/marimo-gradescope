@@ -16,7 +16,7 @@ import pytest
 from mogs import __version__, _analysis, _native
 from mogs._analysis import BuildError, data_files, find_notebook, source_notebook
 from mogs._native import main
-from mogs.config import read_config
+from mogs.config import ConfigError, read_config
 
 DEMO = Path(__file__).parent.parent / "examples" / "demo"
 ZIP_RE = re.compile(r"hw-autograder-\d{4}_\d{2}_\d{2}T\d{2}_\d{2}_\d{2}_\d{6}\.zip")
@@ -823,10 +823,12 @@ def test_missing_data_file_names_a_folder_that_is_not_utf_8(tmp_path):
     except OSError as error:
         pytest.skip(f"the file system refuses the name: {error}")
 
-    with pytest.raises(ValueError) as error:
+    with pytest.raises(ConfigError) as error:
         _native.data_files(root, ["nope.csv"])
 
-    assert str(error.value) == f"data file 'nope.csv' not found in {root}"
+    assert str(error.value) == (
+        f"mogs.assignment() `files`: data file 'nope.csv' not found in {root}."
+    )
 
 
 def test_data_files_skip_junk(tmp_path):

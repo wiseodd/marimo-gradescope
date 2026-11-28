@@ -65,10 +65,9 @@ pub fn build_results(
             .collect();
 
         if total == 0 {
-            return Err(GradeError::Value(format!(
-                "question {} has no tests",
-                question.id
-            )));
+            return Err(GradeError::Value(
+                format!("question {} has no tests", question.id).into(),
+            ));
         }
 
         if !public.is_empty() {

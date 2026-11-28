@@ -71,14 +71,7 @@ pub fn grade<I: Interpreter>(
     let inputs = i.grade_inputs(&assignment)?;
     let config = &inputs.bundle.config;
     let python = grading_python(i, &inputs.requirements, &stage.join("env"), &config.python)?;
-    let graded = grade_locally(
-        i,
-        &inputs.bundle,
-        &path,
-        &stage.join("grade"),
-        folder,
-        &python,
-    )?;
+    let graded = grade_locally(i, &inputs, &path, &stage.join("grade"), &python)?;
     let score = total(i, &graded.results)?;
 
     Ok(Regraded {

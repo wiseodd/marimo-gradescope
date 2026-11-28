@@ -169,15 +169,15 @@ pub fn check_user(user: &GradingUser, text: &dyn PyText) -> Result<(), GradeErro
     let name = text.repr(&user.name);
 
     if user.uid == 0 {
-        return Err(GradeError::Value(format!(
-            "the grading user must not be root: {name} has uid 0"
-        )));
+        return Err(GradeError::Value(
+            format!("the grading user must not be root: {name} has uid 0").into(),
+        ));
     }
 
     if user.uid == rustix::process::getuid().as_raw() {
-        return Err(GradeError::Value(format!(
-            "the grading user must not be the user running the grader: {name}"
-        )));
+        return Err(GradeError::Value(
+            format!("the grading user must not be the user running the grader: {name}").into(),
+        ));
     }
 
     Ok(())

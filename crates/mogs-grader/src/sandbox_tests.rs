@@ -6,7 +6,7 @@
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{LazyLock, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 use indexmap::IndexMap;
@@ -17,6 +17,7 @@ use rustix::process::{Pid, Signal};
 use tempfile::TempDir;
 
 use crate::fake::{FakeHost, spawning, writing_script};
+use crate::files::data_files;
 use crate::sandbox::{GradeOptions, Graded, grade};
 use crate::{GradeError, Level};
 
@@ -153,12 +154,14 @@ fn notebook(tmp: &Path, body: &str) -> PathBuf {
     path
 }
 
+/// No data files.
+static NO_DATA: LazyLock<IndexMap<String, PathBuf>> = LazyLock::new(IndexMap::new);
+
 /// Grading options without a user or data files.
 fn options(python: &Path) -> GradeOptions<'_> {
     GradeOptions {
         user: None,
-        files_root: None,
-        files: &[],
+        data: &NO_DATA,
         python: python.as_os_str(),
     }
 }
@@ -694,10 +697,9 @@ def test_q2_hidden():
         cell("q2", hidden, true, &[]),
     ]);
     let python = python();
-    let files = ["data/x.txt".to_string()];
+    let data = data_files(&source, &["data/x.txt".to_string()]).unwrap();
     let options = GradeOptions {
-        files_root: Some(&source),
-        files: &files,
+        data: &data,
         ..options(&python)
     };
 
@@ -821,10 +823,9 @@ def test_q1_tree():
 "#;
     let grading = bundle(vec![cell("q1", test, false, &[])]);
     let python = python();
-    let files = ["data".to_string()];
+    let data = data_files(&source, &["data".to_string()]).unwrap();
     let options = GradeOptions {
-        files_root: Some(&source),
-        files: &files,
+        data: &data,
         ..options(&python)
     };
 
@@ -839,43 +840,6 @@ def test_q1_tree():
     .outcomes;
 
     assert!(results["test_q1_tree"].passed, "{results:?}");
-}
-
-/// The error of grading with the data files `files`, relative to `tmp`.
-fn data_error(files: &[&str]) -> String {
-    let tmp = tmp();
-    let python = python();
-    let files: Vec<String> = files.iter().map(|name| (*name).into()).collect();
-    let options = GradeOptions {
-        files_root: Some(tmp.path()),
-        files: &files,
-        ..options(&python)
-    };
-    let graded = graded_with(
-        tmp.path(),
-        &notebook(tmp.path(), ""),
-        &bundle(usual()),
-        &options,
-        &FakeHost::default(),
-    );
-
-    match graded {
-        Err(error @ (GradeError::Value(_) | GradeError::MissingData { .. })) => error.to_string(),
-        other => panic!("a ValueError: {other:?}"),
-    }
-}
-
-#[test]
-fn grade_rejects_a_missing_data_file() {
-    assert!(data_error(&["nope.csv"]).contains("nope.csv"));
-}
-
-#[test]
-fn grade_rejects_data_paths_outside_the_workdir() {
-    for name in ["/etc/passwd", "../outside.txt", "data/../../x.txt"] {
-        let message = data_error(&[name]);
-        assert!(message.contains("data file"), "{name}: {message}");
-    }
 }
 
 #[test]
@@ -894,7 +858,10 @@ fn grade_rejects_a_symlinked_submission() {
     );
 
     match graded {
-        Err(GradeError::Value(message)) => assert!(message.contains("regular file"), "{message}"),
+        Err(GradeError::Value(message)) => {
+            let message = message.to_string_lossy();
+            assert!(message.contains("regular file"), "{message}");
+        }
         other => panic!("a ValueError: {other:?}"),
     }
 }
@@ -978,7 +945,10 @@ fn root_and_own_user_are_refused() {
         );
 
         match graded {
-            Err(GradeError::Value(message)) => assert!(message.contains(expected), "{message}"),
+            Err(GradeError::Value(message)) => {
+                let message = message.to_string_lossy();
+                assert!(message.contains(expected), "{message}");
+            }
             other => panic!("a ValueError: {other:?}"),
         }
         assert_eq!(fs::read_dir(tmp.path().join("work")).unwrap().count(), 0);
@@ -1209,15 +1179,5 @@ fn grade_errors_name_the_path_or_value() {
     match grade(&grading, &submission, &root, &options, &host) {
         Err(GradeError::Key(name)) => assert_eq!(name, "no-such-mogs-user"),
         other => panic!("a KeyError: {other:?}"),
-    }
-
-    let files = ["x".to_string()];
-    let options = GradeOptions {
-        files: &files,
-        ..self::options(&python)
-    };
-    match grade(&grading, &submission, &root, &options, &host) {
-        Err(GradeError::Value(message)) => assert_eq!(message, "data files need a files_root"),
-        other => panic!("a ValueError: {other:?}"),
     }
 }

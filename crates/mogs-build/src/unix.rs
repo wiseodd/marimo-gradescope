@@ -137,6 +137,8 @@ pub struct GradeInputs {
     pub bundle: Bundle,
     /// The `requirements.txt` to install for grading: Gradescope's, without the mogs line.
     pub requirements: String,
+    /// Data files, by path relative to the notebook, with their sources.
+    pub data: IndexMap<String, PathBuf>,
 }
 
 /// What a build needs from the source notebook.
@@ -152,8 +154,6 @@ pub struct BuildInputs {
     pub solved: String,
     /// Public test files, by path relative to the notebook.
     pub tests: Vec<(String, String)>,
-    /// Data files, by path relative to the notebook, with their sources.
-    pub data: Vec<(String, PathBuf)>,
     /// Gradescope's `requirements.txt`.
     pub requirements: String,
     /// Things in the notebook and its requirements the instructor should look at.
@@ -192,21 +192,20 @@ pub struct Graded {
 
 /// Grade `notebook` on `python` with the real grader, as the current user.
 ///
-/// `workdir` must not exist; data files are relative to `root`.
+/// `workdir` must not exist.
 fn grade_locally<I: Interpreter>(
     i: &I,
-    bundle: &Bundle,
+    inputs: &GradeInputs,
     notebook: &Path,
     workdir: &Path,
-    root: &Path,
     python: &Path,
 ) -> Result<Graded, I::Error> {
+    let bundle = &inputs.bundle;
     fs::create_dir(workdir).map_err(|error| i.grade_error(GradeError::os(error, workdir)))?;
 
     let options = GradeOptions {
         user: None,
-        files_root: Some(root),
-        files: &bundle.config.files,
+        data: &inputs.data,
         python: python.as_os_str(),
     };
     let graded = mogs_grader::sandbox::grade(bundle, notebook, workdir, &options, i.host())

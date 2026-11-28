@@ -84,18 +84,6 @@ pub(crate) fn grade_err(py: Python<'_>, error: GradeError) -> PyErr {
     match error {
         GradeError::Value(message) => PyValueError::new_err(message),
         GradeError::Key(key) => PyKeyError::new_err(key),
-        GradeError::MissingData { name, root } => {
-            let message = (|| {
-                let template = PyString::new(py, "data file {} not found in {}");
-                let name = PyString::new(py, &name).repr()?;
-                template.call_method1("format", (name, root.as_os_str()))
-            })();
-
-            match message {
-                Ok(message) => PyValueError::new_err(message.unbind()),
-                Err(error) => error,
-            }
-        }
         GradeError::Os { error, path } => os_error(py, &error, path.as_deref()),
         GradeError::Host => stopped(),
     }

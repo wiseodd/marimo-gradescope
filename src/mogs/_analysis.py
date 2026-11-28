@@ -87,16 +87,21 @@ class Assignment:
 
 
 class GradeInputs(TypedDict):
-    """What grading needs: the bundle as JSON and the requirements without the mogs line."""
+    """What grading needs: the bundle, its requirements and its data files.
+
+    The bundle is JSON. The requirements have no mogs line. The data files are (path relative
+    to the notebook, source) pairs.
+    """
 
     bundle_json: str
     grading_requirements: str
+    data: list[tuple[str, Path]]
 
 
 class BuildInputs(GradeInputs):
     """What a build writes and checks.
 
-    `tests` and `data` hold (path relative to the notebook, text or source) pairs.
+    `tests` holds (path relative to the notebook, text) pairs.
     `prompts` has, for each manual question, the first line of each of its prompt cells, as
     `prompt_previews` gives it, or `NO_TEXT` when none has text.
     """
@@ -104,7 +109,6 @@ class BuildInputs(GradeInputs):
     student: str
     solved: str
     tests: list[tuple[str, str]]
-    data: list[tuple[str, Path]]
     requirements: str
     warnings: list[str]
     prompts: dict[str, list[str]]
@@ -181,11 +185,15 @@ def grade_inputs(assignment: Assignment) -> GradeInputs:
         RequirementsError: If the dependencies cannot be pinned.
     """
 
-    data_files(assignment.path.parent, assignment.cfg)
+    data = data_files(assignment.path.parent, assignment.cfg)
     bundle = bundle_from_notebook(assignment.nb, assignment.cfg)
     requirements, _ = gradescope_requirements(assignment.src, assignment.cfg, TOOL)
 
-    return {"bundle_json": bundle.to_json(), "grading_requirements": _without_tool(requirements)}
+    return {
+        "bundle_json": bundle.to_json(),
+        "grading_requirements": _without_tool(requirements),
+        "data": [(str(rel), source) for rel, source in data.items()],
+    }
 
 
 def _without_tool(requirements: str) -> str:
@@ -318,10 +326,7 @@ def data_files(assignment_dir: Path, cfg: AssignmentConfig) -> dict[PurePosixPat
                 "output."
             )
 
-    try:
-        return shared_data_files(assignment_dir, cfg.files)
-    except ValueError as error:
-        raise ConfigError(f"{ASSIGNMENT} `files`: {error}.") from error
+    return shared_data_files(assignment_dir, cfg.files)
 
 
 def decoded(*streams: bytes) -> str:

@@ -8,6 +8,7 @@
 #[cfg(unix)]
 pub mod autograde;
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 #[cfg(unix)]
@@ -17,18 +18,31 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
-use crate::host::{PyHost, grade_err};
+use crate::host::PyHost;
+use crate::python::ConfigError;
 
 /// The data files to ship, by `PurePosixPath` relative to `root`, with folders expanded.
+///
+/// A bad entry is a `ConfigError` of `mogs.assignment() \`files\``.
 #[pyfunction]
 pub fn data_files<'py>(
     py: Python<'py>,
     root: PathBuf,
     files: Vec<String>,
 ) -> PyResult<Bound<'py, PyDict>> {
-    let host = PyHost::default();
-    let found = mogs_grader::files::data_files(&root, &files, &host);
-    let found = host.finish(found, |error| grade_err(py, error))?;
+    let found = match mogs_grader::files::data_files(&root, &files) {
+        Ok(found) => found,
+        Err(error) => {
+            let host = PyHost::default();
+            let message = host.finish(Ok::<_, PyErr>(error.message(&host)), |e| e)?;
+            let assignment: String = py.import("mogs.config")?.getattr("ASSIGNMENT")?.extract()?;
+            let lead = format!("{assignment} `files`: ");
+            let text: OsString = [lead.as_ref(), message.as_os_str(), ".".as_ref()]
+                .into_iter()
+                .collect();
+            return Err(ConfigError::new_err(text));
+        }
+    };
     let posix = py.import("pathlib")?.getattr("PurePosixPath")?;
     let out = PyDict::new(py);
 

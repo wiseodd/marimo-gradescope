@@ -8,6 +8,7 @@ use std::path::Path;
 use indexmap::IndexMap;
 use mogs_schema::{Bundle, FailureReason, Results};
 
+use crate::files::data_files;
 use crate::results::{build_results, inline_code};
 use crate::sandbox::{GradeOptions, grade};
 use crate::submission::{Answers, find_submission};
@@ -61,12 +62,13 @@ pub fn run(
             outcomes
         }
         Ok(py) => {
+            let data = data_files(source, &config.files)
+                .map_err(|error| GradeError::Value(error.message(host)))?;
             fresh_workdir(workdir)?;
             let root = rustix::process::geteuid().is_root();
             let options = GradeOptions {
                 user: root.then_some(STUDENT_USER),
-                files_root: Some(source),
-                files: &config.files,
+                data: &data,
                 python,
             };
             grade(bundle, &py, workdir, &options, host)?.outcomes

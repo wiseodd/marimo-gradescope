@@ -26,7 +26,7 @@ def data_files(root: Path, files: Sequence[str]) -> dict[PurePosixPath, Path]:
         Source path by relative destination, in the order of `files`, folders sorted.
 
     Raises:
-        ValueError: If a path is absolute, has a `..` part, is empty, starts with
+        ConfigError: If a path is absolute, has a `..` part, is empty, starts with
             `submission.py`, or does not exist. The message names the path.
     """
 

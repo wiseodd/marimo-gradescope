@@ -26,7 +26,7 @@ use mogs_schema::{Bundle, Outcome, Results};
 
 use crate::unix::environment::grading_python;
 use crate::unix::templates::{RUN_AUTOGRADER, setup_script};
-use crate::unix::zipout::write_zip;
+use crate::unix::zipout::{Deflated, write_zip};
 use crate::unix::{Class, Interpreter, Question, grade_locally, process, report, total};
 use crate::{DIST, PARTS};
 
@@ -82,20 +82,29 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     let setup = setup_script(i, &config.python)?;
     let mut data = Vec::new();
 
-    for (rel, source) in &inputs.data {
+    for (rel, source) in &inputs.grading.data {
         data.push((rel, fs::read(source).map_err(|e| os(e, source))?));
     }
 
-    let mut entries: BTreeMap<String, &[u8]> = BTreeMap::from([
-        ("setup.sh".into(), setup.as_bytes()),
-        ("run_autograder".into(), RUN_AUTOGRADER.as_bytes()),
-        ("bundle.json".into(), inputs.bundle_json.as_bytes()),
-        ("requirements.txt".into(), inputs.requirements.as_bytes()),
-    ]);
-    entries.extend(
-        data.iter()
-            .map(|(rel, bytes)| (rel.to_string(), &bytes[..])),
-    );
+    // Each data file goes into both zips, deflated once.
+    let deflated = data
+        .iter()
+        .map(|(rel, bytes)| Ok((rel.as_str(), Deflated::new(i, bytes)?)))
+        .collect::<Result<Vec<_>, I::Error>>()?;
+    let scripts = [
+        ("setup.sh", setup.as_bytes()),
+        ("run_autograder", RUN_AUTOGRADER.as_bytes()),
+        ("bundle.json", inputs.bundle_json.as_bytes()),
+        ("requirements.txt", inputs.requirements.as_bytes()),
+    ]
+    .into_iter()
+    .map(|(name, bytes)| Ok((name, Deflated::new(i, bytes)?)))
+    .collect::<Result<Vec<_>, I::Error>>()?;
+    let entries: BTreeMap<String, &Deflated> = scripts
+        .iter()
+        .chain(&deflated)
+        .map(|(name, entry)| (name.to_string(), entry))
+        .collect();
 
     // As pathlib shows it, so `mogs build .` names `dist`, not `./dist`.
     let dist = i.path(&folder.join(DIST))?;
@@ -134,10 +143,9 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
     // The solved copy, not the source: it is what the instructor's test upload sends.
     let solution = grade_locally(
         i,
-        bundle,
+        &inputs.grading,
         &solved_path,
         &check.join("solution"),
-        folder,
         &python,
     )?;
     let failed: Vec<Outcome> = solution
@@ -158,10 +166,9 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
 
     let blank = grade_locally(
         i,
-        bundle,
+        &inputs.grading,
         &student_path,
         &check.join("blank"),
-        folder,
         &python,
     )?;
     warnings.extend(report::free_points_warnings(bundle, &blank.outcomes));
@@ -181,12 +188,23 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
             .iter()
             .map(|(rel, text)| (rel.as_str(), text.as_bytes())),
     );
-    let mut student: BTreeMap<String, &[u8]> = files
+    let mut texts = inputs
+        .tests
         .iter()
-        .map(|(rel, content)| (format!("{}/{rel}", config.name), *content))
+        .map(|(rel, text)| Ok((rel.as_str(), Deflated::new(i, text.as_bytes())?)))
+        .collect::<Result<Vec<_>, I::Error>>()?;
+    texts.push((
+        config.notebook.as_str(),
+        Deflated::new(i, inputs.student.as_bytes())?,
+    ));
+    // A test file takes the place of a data file of the same name, as in `files`.
+    let mut student: BTreeMap<&str, &Deflated> =
+        deflated.iter().map(|(rel, entry)| (*rel, entry)).collect();
+    student.extend(texts.iter().map(|(rel, entry)| (*rel, entry)));
+    let student: BTreeMap<String, &Deflated> = student
+        .into_iter()
+        .map(|(rel, entry)| (format!("{}/{rel}", config.name), entry))
         .collect();
-    let notebook = format!("{}/{}", config.name, config.notebook);
-    student.insert(notebook, inputs.student.as_bytes());
     write_zip(i, &student_zip, &student)?;
 
     let autograder = out.join("autograder");

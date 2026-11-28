@@ -28,6 +28,11 @@ fn grading(inputs: &Bound<'_, PyAny>) -> PyResult<GradeInputs> {
     Ok(GradeInputs {
         bundle: decode_bundle(&inputs.get_item("bundle_json")?.extract::<String>()?)?,
         requirements: inputs.get_item("grading_requirements")?.extract()?,
+        data: inputs
+            .get_item("data")?
+            .extract::<Vec<_>>()?
+            .into_iter()
+            .collect(),
     })
 }
 
@@ -72,7 +77,6 @@ impl Interpreter for PyHost {
                 student: inputs.get_item("student")?.extract()?,
                 solved: inputs.get_item("solved")?.extract()?,
                 tests: inputs.get_item("tests")?.extract()?,
-                data: inputs.get_item("data")?.extract()?,
                 requirements: inputs.get_item("requirements")?.extract()?,
                 warnings: inputs.get_item("warnings")?.extract()?,
                 prompts: inputs.get_item("prompts")?.extract()?,
@@ -137,14 +141,9 @@ impl Interpreter for PyHost {
         Python::attach(|py| {
             let zlib = py.import("zlib")?;
             let level = zlib.getattr("Z_DEFAULT_COMPRESSION")?;
-            let method = zlib.getattr("DEFLATED")?;
-            let compressor = zlib.call_method1("compressobj", (level, method, -15))?;
-            let head: Vec<u8> = compressor
-                .call_method1("compress", (PyBytes::new(py, data),))?
-                .extract()?;
-            let tail: Vec<u8> = compressor.call_method0("flush")?.extract()?;
+            let compressed = zlib.call_method1("compress", (PyBytes::new(py, data), level, -15))?;
 
-            Ok([head, tail].concat())
+            Ok(compressed.cast_into::<PyBytes>()?.as_bytes().to_vec())
         })
     }
 }
