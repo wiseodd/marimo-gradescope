@@ -10,7 +10,7 @@ import traceback
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Self
+from typing import Self, TypeAlias
 
 from mogs.grader.wire import reject_extra
 
@@ -21,7 +21,7 @@ MAX_SOURCE_WIDTH = 200
 TRUNCATED = "... (truncated)"
 UNAVAILABLE = "<failure details unavailable>"
 
-type TestFunction = Callable[[], object]
+TestFunction: TypeAlias = Callable[[], object]
 
 
 class FailureReason(StrEnum):

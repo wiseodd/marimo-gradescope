@@ -28,7 +28,7 @@ import traceback
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from types import ModuleType
-from typing import NoReturn, cast
+from typing import NoReturn, TypeAlias, cast
 
 import marimo
 
@@ -36,8 +36,8 @@ from mogs.runner import cap, exception_summary
 
 NOT_DEFINED = "it is not defined in your notebook"
 
-type Loaded = tuple[ModuleType | None, str | None]
-type Defs = tuple[Mapping[str, object], str | None]
+Loaded: TypeAlias = tuple[ModuleType | None, str | None]
+Defs: TypeAlias = tuple[Mapping[str, object], str | None]
 
 _modules: dict[Path, Loaded] = {}
 _defs: dict[Path, Defs] = {}

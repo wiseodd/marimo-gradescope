@@ -21,7 +21,7 @@ mogs-build = { path = "../mogs-build" }
 mogs-cli = { path = "../mogs-cli" }
 mogs-grader = { path = "../mogs-grader" }
 mogs-pdf = { path = "../mogs-pdf" }
-pyo3 = { version = "0.30", features = ["abi3-py313"] }
+pyo3 = { version = "0.30", features = ["abi3-py311"] }
 
 # `build`, `grade` and `autograde` need Linux or macOS, as the grader does.
 [target.'cfg(unix)'.dependencies]

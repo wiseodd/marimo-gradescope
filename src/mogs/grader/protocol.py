@@ -19,7 +19,7 @@ Student code writes to stdout and stderr freely; neither carries events.
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Self
+from typing import Self, TypeAlias
 
 from mogs.grader.bundle import GradingBundle
 from mogs.grader.wire import SCHEMA, check_schema, reject_extra
@@ -130,7 +130,7 @@ class Result:
     outcome: Outcome
 
 
-type Event = Loaded | Loading | Start | Result
+Event: TypeAlias = Loaded | Loading | Start | Result
 
 
 def encode(event: Event) -> str:

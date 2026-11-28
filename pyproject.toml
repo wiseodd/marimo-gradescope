@@ -7,12 +7,14 @@ readme = "README.md"
 authors = [{ name = "Agustinus Kristiadi", email = "agustinus@kristia.de" }]
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS",
   "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
 ]
@@ -58,7 +60,7 @@ include = ["src", "tests"]
 exclude = ["tests/fixtures"]
 
 [tool.ty.environment]
-python-version = "3.13"
+python-version = "3.11"
 # `src` without installing the project, so CI type-checks without building `mogs._native`
 # (ty reads `_native.pyi`). Test modules with a `# /// script` block in a string get an
 # environment of their own, which would miss `src`.
@@ -66,7 +68,7 @@ extra-paths = ["src"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py311"
 # A fixture that must fail to parse.
 extend-exclude = ["tests/fixtures/syntax_error.py"]
 

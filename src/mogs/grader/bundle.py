@@ -5,7 +5,7 @@ so the public phase never sees hidden test source. Its JSON carries the format v
 `wire`.
 """
 
-import copy
+import dataclasses
 import json
 from dataclasses import dataclass
 from enum import StrEnum
@@ -165,7 +165,7 @@ class GradingBundle:
         hidden = phase is Phase.HIDDEN
         cells = tuple(c for c in self.cells if c.hidden == hidden)
 
-        return copy.replace(self, cells=cells, helpers=self.helpers if hidden else ())
+        return dataclasses.replace(self, cells=cells, helpers=self.helpers if hidden else ())
 
     def to_dict(self) -> dict[str, object]:
         """JSON-ready fields."""

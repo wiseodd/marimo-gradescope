@@ -266,10 +266,11 @@ def test_cli_init_shows_paths_as_python_does(tmp_path, monkeypatch, capsys):
 
     code = main(["init", "./Bob's HW/"])
     out = capsys.readouterr().out
+    created = Path("Bob's HW", "Bob's HW.py")
 
     assert code == 0
     assert out.splitlines() == [
-        f"Created {Path("Bob's HW", "Bob's HW.py")}",
+        f"Created {created}",
         "Edit it  : mogs edit 'Bob'\"'\"'s HW'",
         "Build it : mogs build 'Bob'\"'\"'s HW'",
     ]

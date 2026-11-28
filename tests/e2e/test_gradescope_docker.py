@@ -29,6 +29,7 @@ import zipfile
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import TypeAlias
 
 import pytest
 
@@ -170,7 +171,7 @@ def _(count):
     return (mean,)
 '''
 
-type Files = dict[str, bytes]
+Files: TypeAlias = dict[str, bytes]
 
 
 @dataclass(frozen=True, slots=True)

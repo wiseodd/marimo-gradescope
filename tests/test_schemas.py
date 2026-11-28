@@ -1,4 +1,5 @@
 import copy
+import dataclasses
 import json
 import shutil
 import subprocess
@@ -190,7 +191,7 @@ def test_schemas_reject_unknown_keys(tmp_path):
 
 def test_python_readers_reject_unknown_keys(tmp_path):
     helper = HiddenHelper("secret = 1\n", ("secret",), (), ())
-    bundle = copy.replace(solution_bundle(), helpers=(helper,))
+    bundle = dataclasses.replace(solution_bundle(), helpers=(helper,))
     job = json.loads(Job(bundle, tmp_path / "s.py").to_json())
     events = [
         json.loads(encode(event))

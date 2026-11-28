@@ -1,4 +1,4 @@
-import copy
+import dataclasses
 import json
 import shutil
 import subprocess
@@ -237,8 +237,8 @@ def test_bundle_json_round_trip():
 
 def test_bundle_json_holds_no_host_paths(tmp_path):
     bundle = solution_bundle()
-    cfg = copy.replace(bundle.config, requirements=tmp_path / "requirements.txt")
-    text = copy.replace(bundle, config=cfg).to_json()
+    cfg = dataclasses.replace(bundle.config, requirements=tmp_path / "requirements.txt")
+    text = dataclasses.replace(bundle, config=cfg).to_json()
 
     assert str(tmp_path) not in text
     assert "requirements" not in json.loads(text)["config"]
@@ -446,7 +446,7 @@ def test_job_alarm_defaults_to_true_and_round_trips(tmp_path):
     job = Job(solution_bundle(), tmp_path / "s.py")
 
     assert job.alarm
-    assert Job.from_json(copy.replace(job, alarm=False).to_json()).alarm is False
+    assert Job.from_json(dataclasses.replace(job, alarm=False).to_json()).alarm is False
 
 
 def test_job_without_alarm_is_rejected(tmp_path):

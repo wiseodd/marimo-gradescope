@@ -8,7 +8,7 @@ outside the edited part survive.
 
 import ast
 import contextlib
-import copy
+import dataclasses
 import difflib
 import json
 import re
@@ -125,8 +125,8 @@ class UsageError(Exception):
 
         match self.diagnostic.span:
             case Span(path=None) as span:
-                span = copy.replace(span, path=path)
-                self.diagnostic = copy.replace(self.diagnostic, span=span)
+                span = dataclasses.replace(span, path=path)
+                self.diagnostic = dataclasses.replace(self.diagnostic, span=span)
 
         return self
 
@@ -320,7 +320,7 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
 
     for call in api_calls(tree, tree, Api.GRADE):
         question = _question(call)
-        question = copy.replace(question, manual=question.id not in tested)
+        question = dataclasses.replace(question, manual=question.id not in tested)
 
         if question.id in questions:
             first = lines[question.id]
@@ -342,7 +342,7 @@ def read_config(src: str, path: Path) -> AssignmentConfig:
 
     _check_file_names(list(questions))
 
-    return copy.replace(config, questions=questions)
+    return dataclasses.replace(config, questions=questions)
 
 
 def api_aliases(tree: ast.Module, api: Api) -> tuple[set[str], set[str]]:
@@ -403,7 +403,7 @@ class Where:
     def at(self, node: ast.expr | ast.keyword) -> "Where":
         """The same name, pointing at `node`."""
 
-        return copy.replace(self, node=node)
+        return dataclasses.replace(self, node=node)
 
     def error(self, text: str, *, label: str | None = None, help: str | None = None) -> ConfigError:
         """`ConfigError("<name>: <text>")`, located at the node."""
@@ -474,26 +474,26 @@ def _assignment(call: ast.Call, path: Path) -> AssignmentConfig:
 
         match key:
             case "name":
-                config = copy.replace(config, name=_string(at, key, value))
+                config = dataclasses.replace(config, name=_string(at, key, value))
             case "python":
-                config = copy.replace(config, python=_string(at, key, value))
+                config = dataclasses.replace(config, python=_string(at, key, value))
             case "files":
-                config = copy.replace(config, files=_files(at, value))
+                config = dataclasses.replace(config, files=_files(at, value))
             case "timeout":
-                config = copy.replace(config, timeout=_seconds(at, key, value))
+                config = dataclasses.replace(config, timeout=_seconds(at, key, value))
             case "budget":
-                config = copy.replace(config, budget=_seconds(at, key, value))
+                config = dataclasses.replace(config, budget=_seconds(at, key, value))
             case "memory":
-                config = copy.replace(config, memory_mb=_memory(at, value))
+                config = dataclasses.replace(config, memory_mb=_memory(at, value))
             case "requirements":
                 requirements = path.parent / _string(at, key, value)
-                config = copy.replace(config, requirements=requirements)
+                config = dataclasses.replace(config, requirements=requirements)
             case _:
                 raise AssertionError(f"unhandled argument {key!r}")
 
     named = where.at(nodes["name"]) if "name" in nodes else where
 
-    return copy.replace(config, name=_name(named, config.name))
+    return dataclasses.replace(config, name=_name(named, config.name))
 
 
 def _values(call: ast.Call) -> dict[str, ast.expr]:

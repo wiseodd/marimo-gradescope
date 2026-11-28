@@ -1,6 +1,6 @@
 """Located errors: the structured fields of `UsageError`, and how `mogs` draws them."""
 
-import copy
+import dataclasses
 import io
 import sys
 from pathlib import Path
@@ -554,7 +554,7 @@ def test_two_edits_on_one_line_point_at_it():
 
 def test_unknown_question_in_a_grade_rewrite_points_at_the_call():
     nb = parse_notebook(MARKER)
-    cfg = copy.replace(read_config(MARKER, NB), questions={})
+    cfg = dataclasses.replace(read_config(MARKER, NB), questions={})
     [cell] = [cell for cell in nb.cells if cell.grade_qid == "q1"]
 
     with pytest.raises(SourceError) as caught:

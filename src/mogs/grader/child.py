@@ -14,6 +14,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import FrameType
+from typing import TypeAlias
 
 from mogs._assertrewrite import compile_tests
 from mogs.grader.bundle import HiddenHelper, TestCell
@@ -27,8 +28,8 @@ from mogs.runner import (
     run_test,
 )
 
-type Emit = Callable[[Event], None]
-type Namespace = dict[str, object]
+Emit: TypeAlias = Callable[[Event], None]
+Namespace: TypeAlias = dict[str, object]
 
 
 class _Timeout(BaseException):

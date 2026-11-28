@@ -12,6 +12,7 @@ from collections.abc import Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
+from typing import TypeAlias
 
 from mogs import __version__
 from mogs.config import (
@@ -58,7 +59,7 @@ class MarimoImport(StrEnum):
 
 # Replacement lines by 1-based source line number, each with the source line it comes from.
 # A line not in the map is kept as it is.
-type Edits = dict[int, list[tuple[int, str]]]
+Edits: TypeAlias = dict[int, list[tuple[int, str]]]
 
 
 def pinned_requirement() -> str:
@@ -385,7 +386,7 @@ def _returned(names: Sequence[str]) -> str:
     return f"({names[0]},)" if len(names) == 1 else f"({', '.join(names)})"
 
 
-type Literal = str | Sequence[str] | Mapping[str, str]
+Literal: TypeAlias = str | Sequence[str] | Mapping[str, str]
 
 
 def python_literal(value: Literal) -> str:
@@ -715,7 +716,7 @@ def _rewrite_grade(
         }
     )
     points = question.points
-    shown = str(int(points)) if points.is_integer() else repr(points)
+    shown = str(int(points)) if float(points).is_integer() else repr(points)
     func = ast.get_source_segment(nb.src, call.func)
     head = f"{func}({python_literal(qid)}, points={shown}, title={python_literal(question.title)}"
     new_call = (

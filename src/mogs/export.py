@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 from mogs._answers import NO_ANSWER, PdfUnavailable, cell_markdown, quiet, render_manual_pdf
 from mogs._env import grading
@@ -70,7 +70,7 @@ DOWNLOAD_STYLE = (
 )
 BUTTON_STYLE = "margin: 0.75em 0;"
 
-type Status = Callable[[str], None]
+Status: TypeAlias = Callable[[str], None]
 
 
 class Mark(StrEnum):
@@ -507,7 +507,7 @@ def _line(line: Line, style: str) -> str:
     return f'<li style="{style}">{mark} {html.escape(line.text)}{sublist}</li>'
 
 
-type Summary = tuple[dict[str, tuple[int, int, list[str]]], dict[str, str]]
+Summary: TypeAlias = tuple[dict[str, tuple[int, int, list[str]]], dict[str, str]]
 
 
 def _summary(stdout: str) -> Summary | None:
