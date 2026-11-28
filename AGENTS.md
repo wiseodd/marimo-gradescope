@@ -48,7 +48,9 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
   `src/mogs/grader/wire.py` together. `schemas/` holds the JSON Schemas
   generated from the types. `MOGS_BLESS=1 cargo test` rewrites them, and
   `tests/test_schemas.py` checks what Python writes against them.
-- `tests/`: pytest suite. `cargo test` runs the Rust tests.
+- `tests/`: pytest suite. `cargo test` runs the Rust tests. The ones that need
+  network are `#[ignore = "needs network: ..."]`; `make test` runs them with
+  `-- --include-ignored` unless `OFFLINE=1`.
 - `tests/e2e/`: end-to-end tests. The `docker` ones build the demo autograder
   into Gradescope's base image (`tests/e2e/Dockerfile`) and grade submissions
   through the real `/autograder/run_autograder`. They need docker or podman
@@ -82,8 +84,8 @@ make docs        # build the docs site into docs/dist (needs Bun)
 make docs-serve  # live preview at localhost:4321
 make test TESTS=tests/test_config.py ARGS="-k header"
 make test ARGS="-m slow"      # only the slow tests (marimo via `uv run --with`; included by default)
-make test ARGS="-m network"   # only the tests that resolve packages through uv (included by default)
-make test ARGS="-m 'not slow and not network'"   # offline
+make test ARGS="-m network"   # only the tests that resolve packages through uv or render a PDF (included by default)
+make test OFFLINE=1           # offline: no Rust tests ignored for network, no `slow` or `network` pytest tests
 make test ARGS="-m docker"    # only the Docker end-to-end tests: deselected unless `-m` names `docker`
 make fix         # ruff fixes, then ruff format and cargo fmt
 ```

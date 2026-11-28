@@ -229,6 +229,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs network: downloads the Typst packages on a cold cache"]
     fn renders_a_pdf() {
         let question = Question {
             title: "Title".into(),

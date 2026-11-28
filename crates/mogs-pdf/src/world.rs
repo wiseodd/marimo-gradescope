@@ -356,6 +356,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs network: downloads from Typst Universe"]
     fn fetched_packages_are_in_the_cache() {
         let folder = tempfile::tempdir().unwrap();
         let packages = packages_in(folder.path(), "https://packages.typst.org");
@@ -371,6 +372,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs network: downloads the Typst packages on a cold cache"]
     fn compiles_with_the_packages() {
         let text = "#import \"@preview/mitex:0.2.7\": mitex\n#mitex(sys.inputs.formula)\n";
 

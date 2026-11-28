@@ -90,7 +90,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: uv sync --frozen
-      - run: uv run cargo test --workspace
+      - run: uv run cargo test --workspace -- --include-ignored
       - run: >-
           uv run pytest -q
           tests/test_config.py tests/test_source.py tests/test_transform.py

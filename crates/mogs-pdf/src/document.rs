@@ -255,6 +255,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs network: downloads the Typst packages on a cold cache"]
     fn formula_check_does_not_run_typst() {
         let inputs = [
             ("formula", r"\iftypst #pagebreak() \fi"),
@@ -342,6 +343,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs network: downloads the Typst packages on a cold cache"]
     fn failing_formula_is_rescued_as_source() {
         let stop = AtomicBool::new(false);
         let part = Part::new(
