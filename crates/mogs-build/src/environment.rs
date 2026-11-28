@@ -30,7 +30,8 @@ impl NotebookPython {
         command
             .args(&self.args)
             .env("VIRTUAL_ENV", &self.root)
-            .env_remove("UV_PROJECT_ENVIRONMENT");
+            .env_remove("UV_PROJECT_ENVIRONMENT")
+            .env_remove("UV_PYTHON");
 
         command
     }
@@ -92,10 +93,12 @@ fn run_uv<I: Interpreter>(
     folder: &Path,
     action: &str,
 ) -> Result<Vec<u8>, I::Error> {
+    // The header's `requires-python` picks the Python, not a `UV_PYTHON` of the caller's.
     command
         .current_dir(folder)
         .env_remove("VIRTUAL_ENV")
-        .env_remove("UV_PROJECT_ENVIRONMENT");
+        .env_remove("UV_PROJECT_ENVIRONMENT")
+        .env_remove("UV_PYTHON");
     let output = process::run(i, command)?;
 
     if !output.status.success() {
@@ -168,19 +171,21 @@ mod tests {
         #[test]
         fn syncs_the_script_environment_and_layers_mogs() {
             let tmp = tempfile::tempdir().unwrap();
-            let source = tmp.path().join("hw.py");
+            // macOS's temporary folder is behind a symlink, which `uv`'s working directory resolves.
+            let root = tmp.path().canonicalize().unwrap();
+            let source = root.join("hw.py");
             let fake = fake_uv(
-                tmp.path(),
+                &root,
                 "[ \"$1\" = python ] && echo '/cache/env/bin/python3'; exit 0",
             );
 
             let _spawning = spawning();
             let python = notebook_python(&fake, &source).unwrap();
 
-            let cwd = tmp.path().display().to_string();
+            let cwd = root.display().to_string();
             let source = source.display().to_string();
             assert_eq!(
-                calls(tmp.path()),
+                calls(&root),
                 [
                     vec![&cwd, "sync", "--quiet", "--script", &source],
                     vec![&cwd, "python", "find", "--script", &source],
@@ -188,7 +193,12 @@ mod tests {
             );
             let command = python.command();
             let args: Vec<_> = command.get_args().collect();
-            assert_eq!(command.get_program(), tmp.path().join("uv"));
+            assert_eq!(command.get_program(), root.join("uv"));
+            assert!(
+                command
+                    .get_envs()
+                    .any(|(key, value)| key == "UV_PYTHON" && value.is_none())
+            );
             assert_eq!(
                 args,
                 [

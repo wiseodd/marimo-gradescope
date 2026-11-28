@@ -20,6 +20,7 @@ pub fn setup_script(python: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::process::Command;
 
     use super::*;

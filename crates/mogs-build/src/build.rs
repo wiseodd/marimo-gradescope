@@ -357,6 +357,7 @@ fn questions(bundle: &Bundle, prompts: &HashMap<String, Vec<String>>) -> Vec<Que
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use crate::fake::Fake;
 
     /// A bundle with the public test `test_q1_a`, the hidden test `test_q1_b` and `budget`.
