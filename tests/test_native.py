@@ -2,7 +2,7 @@ import os
 import subprocess
 import sys
 import sysconfig
-from importlib.metadata import version
+from importlib.metadata import metadata, version
 from pathlib import Path
 
 from mogs import _native
@@ -17,6 +17,25 @@ def mogs(*args: str | Path, cwd: Path | None = None) -> subprocess.CompletedProc
 def test_version_matches_package(capsys):
     assert _native.main(["--version"]) == 0
     assert capsys.readouterr().out == f"mogs {version('mogs')}\n"
+
+
+def test_metadata_has_the_readme_links_and_platforms():
+    meta = metadata("mogs")
+
+    assert meta.json.get("description_content_type") == "text/markdown; charset=UTF-8; variant=GFM"
+    assert "mogs.kristia.de" in str(meta.json.get("description"))
+    assert sorted(meta.get_all("Project-URL") or []) == [
+        "Documentation, https://mogs.kristia.de",
+        "Issues, https://github.com/wiseodd/mogs/issues",
+        "Repository, https://github.com/wiseodd/mogs",
+    ]
+
+    systems = [c for c in meta.get_all("Classifier") or [] if c.startswith("Operating System")]
+    assert sorted(systems) == [
+        "Operating System :: MacOS",
+        "Operating System :: Microsoft :: Windows",
+        "Operating System :: POSIX :: Linux",
+    ]
 
 
 def test_main_returns_the_exit_code(tmp_path, monkeypatch, capsys):
