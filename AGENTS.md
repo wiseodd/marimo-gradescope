@@ -85,6 +85,7 @@ templates.
 
 ```bash
 make sync        # uv sync
+make version     # print the version; `make version 1.0.0` sets it in Cargo.toml and Cargo.lock
 make check       # ruff, cargo fmt + clippy, ty, cargo test, pytest (the CI gate)
 make docs        # build the docs site into docs/dist (needs Bun)
 make docs-serve  # live preview at localhost:4321
