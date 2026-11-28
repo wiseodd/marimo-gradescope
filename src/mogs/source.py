@@ -27,10 +27,10 @@ from mogs.config import (
     normalize_newlines,
     normalized_name,
     question_id,
-    read_header,
     split_lines,
     syntax_span,
 )
+from mogs.requirements import read_requirements
 
 INSTRUCTOR = "instructor"
 
@@ -892,7 +892,7 @@ def validate(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
     errors = _near_marker_errors(nb) + _near_html_marker_errors(nb)
     errors += _test_name_errors(nb, cfg) + _question_errors(nb, cfg)
     errors += _hidden_grade_errors(nb) + _public_cell_errors(nb) + _marker_errors(nb)
-    errors += _assignment_errors(nb) + _instructor_errors(nb) + _pytest_dependency_errors(nb)
+    errors += _assignment_errors(nb) + _instructor_errors(nb) + _pytest_dependency_errors(nb, cfg)
     errors += _public_marker_errors(nb)
     errors += _hidden_name_errors(nb) + _cell_variable_errors(nb)
 
@@ -982,8 +982,8 @@ def _hidden_grade_errors(nb: Notebook) -> list[str]:
     ]
 
 
-def _pytest_dependency_errors(nb: Notebook) -> list[str]:
-    """A notebook that imports `pytest` lists it in the header's `dependencies`.
+def _pytest_dependency_errors(nb: Notebook, cfg: AssignmentConfig) -> list[str]:
+    """A notebook that imports `pytest` lists it in its requirements file.
 
     The grader has pytest either way, but marimo adds a pinned `pytest` to the header of a
     student notebook that imports it without one.
@@ -1002,19 +1002,16 @@ def _pytest_dependency_errors(nb: Notebook) -> list[str]:
         return []
 
     try:
-        dependencies = read_header(nb.src).get("dependencies", [])
+        requirements = read_requirements(cfg)
     except ConfigError as error:
-        return [
-            f"line {lines[0]}: the notebook imports `pytest`, but its header is unreadable: {error}"
-        ]
+        return [f"line {lines[0]}: the notebook imports `pytest`, but {error}"]
 
-    if any(normalized_name(dep) == "pytest" for dep in dependencies):
+    if any(normalized_name(package) == "pytest" for package in requirements.packages):
         return []
 
     return [
-        f"line {lines[0]}: the notebook imports `pytest`, but the header's `dependencies` "
-        "doesn't list it. Add `pytest` there, or marimo adds a pinned one to each student's "
-        "header."
+        f"line {lines[0]}: the notebook imports `pytest`, but {requirements.path} doesn't list "
+        "it. Add `pytest` there, or marimo adds a pinned one to each student's header."
     ]
 
 

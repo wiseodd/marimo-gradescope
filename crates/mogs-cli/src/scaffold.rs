@@ -5,9 +5,12 @@ use std::path::{Path, PathBuf};
 
 use crate::Interpreter;
 
-/// The notebook, with `$marimo` and `$name` for the Python literals of marimo's version and the
-/// assignment name.
+/// The notebook without its header, with `$marimo` and `$name` for the Python literals of
+/// marimo's version and the assignment name.
 const NOTEBOOK: &str = include_str!("../templates/notebook.py.tmpl");
+
+/// The requirements file `init` writes next to the notebook.
+const REQUIREMENTS: &str = "# Packages for this assignment, one per line, as pip reads them.\n";
 
 /// The notebook `init` wrote.
 #[derive(Debug, PartialEq, Eq)]
@@ -54,9 +57,10 @@ impl Refusal {
     }
 }
 
-/// Create `folder` with one notebook, `<folder name>.py`, to start an assignment from.
+/// Create `folder` with one notebook, `<folder name>.py`, to start an assignment from, and an
+/// empty `requirements.txt`.
 ///
-/// The notebook holds the assignment cell, a guide for the instructor and two example
+/// The notebook's header comes from the requirements file. The notebook holds the assignment cell, a guide for the instructor and two example
 /// questions. It builds as it is. The name is the last part of the resolved `folder`, so `.`
 /// takes the name of the current folder.
 ///
@@ -64,7 +68,7 @@ impl Refusal {
 ///
 /// [`InitError::Python`] with a `ConfigError` if the name does not work as an assignment name,
 /// [`InitError::Refused`] if `folder` is a file or a folder with files in it, and
-/// [`InitError::Python`] with an `OSError` if the folder or the notebook cannot be written.
+/// [`InitError::Python`] with an `OSError` if the folder or a file cannot be written.
 pub fn init<P: Interpreter>(folder: &Path, python: &P) -> Result<Created, InitError<P::Error>> {
     let folder = python.path(folder).map_err(InitError::Python)?;
     let name = python.check_name(&folder).map_err(InitError::Python)?;
@@ -90,8 +94,11 @@ pub fn init<P: Interpreter>(folder: &Path, python: &P) -> Result<Created, InitEr
         .marimo_version()
         .and_then(|version| python.literal(OsStr::new(&version)))
         .map_err(InitError::Python)?;
+    let requirements = folder.join("requirements.txt");
     python
-        .write_text(&notebook, &render(&name, &marimo))
+        .write_text(&requirements, REQUIREMENTS)
+        .and_then(|()| python.write_text(&notebook, &render(&name, &marimo)))
+        .and_then(|()| python.write_header(&notebook))
         .map_err(InitError::Python)?;
 
     Ok(Created { notebook, folder })
@@ -165,6 +172,15 @@ mod tests {
             fs::write(path, text).map_err(|error| error.to_string())
         }
 
+        fn write_header(&self, notebook: &Path) -> Result<(), String> {
+            let requirements = fs::read_to_string(notebook.with_file_name("requirements.txt"))
+                .map_err(|error| error.to_string())?;
+            let text = fs::read_to_string(notebook).map_err(|error| error.to_string())?;
+
+            fs::write(notebook, format!("# header from {requirements}{text}"))
+                .map_err(|error| error.to_string())
+        }
+
         fn exists(&self, path: &Path) -> Result<bool, String> {
             look(path).map(|()| path.exists())
         }
@@ -222,6 +238,24 @@ mod tests {
         let text = fs::read_to_string(&created.notebook).unwrap();
         assert!(text.contains("__generated_with = <0.99>\n"));
         assert!(text.contains("mogs.assignment(name=<hw>)\n"));
+    }
+
+    #[test]
+    fn writes_requirements_and_the_header_from_them() {
+        let root = tempfile::tempdir().unwrap();
+        let folder = root.path().join("hw");
+
+        let created = init(&folder, &FakePython).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(folder.join("requirements.txt")).unwrap(),
+            "# Packages for this assignment, one per line, as pip reads them.\n"
+        );
+        let text = fs::read_to_string(&created.notebook).unwrap();
+        assert!(text.starts_with(
+            "# header from # Packages for this assignment, one per line, as pip reads them.\n\
+             import marimo\n"
+        ));
     }
 
     // Linux file names may hold any bytes; APFS on macOS refuses them (EILSEQ).

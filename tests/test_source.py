@@ -1,4 +1,5 @@
 import ast
+import dataclasses
 import sys
 import textwrap
 from pathlib import Path
@@ -1514,38 +1515,45 @@ def test_cell_of_only_tests_does_not_warn():
     assert source_warnings(parse_notebook(nb(PUBLIC + CHECK + cell))) == []
 
 
+def with_requirements(tmp_path: Path, text: str | None) -> AssignmentConfig:
+    """`CONFIG` with a requirements file of `text`, or a missing one for `None`."""
+
+    path = tmp_path / "requirements.txt"
+    if text is not None:
+        path.write_text(text, encoding="utf-8")
+
+    return dataclasses.replace(CONFIG, requirements=path)
+
+
+PYTEST_CELL = "\n@app.cell\ndef _():\n    import pytest\n    return\n"
+
+
 @pytest.mark.parametrize(
     "statement", ["import pytest", "import pytest as pt", "from pytest import approx"]
 )
-def test_validate_pytest_import_needs_the_dependency(statement):
+def test_validate_pytest_import_needs_the_dependency(statement, tmp_path):
     cell = f"\n@app.cell\ndef _():\n    {statement}\n    return\n"
 
-    error = one_error(cell + PUBLIC + CHECK)
+    error = one_error(cell + PUBLIC + CHECK, with_requirements(tmp_path, "numpy\n"))
 
     assert "`pytest`" in error
-    assert "`dependencies`" in error
+    assert str(tmp_path / "requirements.txt") in error
 
 
-BAD_HEADER = HEADER.replace('dependencies = ["marimo"]', "dependencies = [")
+def test_validate_does_not_read_the_file_without_pytest_imports(tmp_path):
+    assert errors(PUBLIC + CHECK, with_requirements(tmp_path, None)) == []
 
 
-def test_validate_does_not_read_a_broken_header_without_pytest_imports():
-    assert errors(PUBLIC + CHECK, header=BAD_HEADER) == []
+def test_validate_reports_a_missing_file_when_pytest_is_imported(tmp_path):
+    error = one_error(PYTEST_CELL + PUBLIC + CHECK, with_requirements(tmp_path, None))
+
+    assert "cannot read" in error
 
 
-def test_validate_reports_a_broken_header_when_pytest_is_imported():
-    cell = "\n@app.cell\ndef _():\n    import pytest\n    return\n"
+def test_validate_pytest_import_with_the_dependency_ok(tmp_path):
+    config = with_requirements(tmp_path, "pytest>=8\n")
 
-    error = one_error(cell + PUBLIC + CHECK, header=BAD_HEADER)
-
-    assert "header" in error
-
-
-def test_validate_pytest_import_with_the_dependency_ok():
-    header = HEADER.replace('dependencies = ["marimo"]', 'dependencies = ["marimo", "pytest>=8"]')
-    cell = "\n@app.cell\ndef _():\n    import pytest\n    return\n"
-
-    assert errors(cell + PUBLIC + CHECK, header=header) == []
+    assert errors(PYTEST_CELL + PUBLIC + CHECK, config) == []
 
 
 # cell_names: `:=` in a comprehension binds in the scope that holds the comprehension (PEP 572)

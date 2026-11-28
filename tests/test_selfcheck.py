@@ -7,6 +7,7 @@ from mogs import selfcheck
 from mogs._env import clean_env
 from mogs.config import read_config
 from mogs.grader.bundle import GradingBundle, bundle_from_notebook
+from mogs.requirements import Requirements
 from mogs.runner import FailureReason, Outcome
 from mogs.source import parse_notebook
 from mogs.transform import public_test_files, student_notebook
@@ -17,7 +18,9 @@ SOLUTION = FIXTURES / "solution.py"
 
 def student_copy(path: Path) -> str:
     src = path.read_text(encoding="utf-8")
-    return student_notebook(src, parse_notebook(src), read_config(src, path), "mogs")
+    return student_notebook(
+        src, parse_notebook(src), read_config(src, path), Requirements(), "mogs"
+    )
 
 
 def write_student(folder: Path, path: Path = SOLUTION, text: str | None = None) -> Path:
@@ -225,7 +228,7 @@ def solved_with_bundle(folder: Path, src: str) -> tuple[Path, Path]:
     nb = parse_notebook(src)
     cfg = read_config(src, folder / "source.py")
     notebook = folder / "hw.py"
-    solved = student_notebook(src, nb, cfg, "mogs", solutions=True)
+    solved = student_notebook(src, nb, cfg, Requirements(), "mogs", solutions=True)
     notebook.write_text(solved, encoding="utf-8")
     bundle = folder / "bundle.json"
     bundle.write_text(bundle_from_notebook(nb, cfg).to_json(), encoding="utf-8")

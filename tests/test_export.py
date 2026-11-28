@@ -29,6 +29,7 @@ from mogs.export import (
     package,
     panel,
 )
+from mogs.requirements import Requirements
 from mogs.source import parse_notebook
 from mogs.transform import public_test_files, student_notebook
 
@@ -49,7 +50,9 @@ ANSWER_CELL = (
 
 def student_copy(path: Path = SOLUTION) -> str:
     src = path.read_text(encoding="utf-8")
-    return student_notebook(src, parse_notebook(src), read_config(src, path), "mogs")
+    return student_notebook(
+        src, parse_notebook(src), read_config(src, path), Requirements(), "mogs"
+    )
 
 
 def export_placeholders(text: str) -> dict[str, str]:
@@ -375,7 +378,7 @@ def test_each_part_is_checked_against_its_own_placeholder(tmp_path, no_pdf, edit
 def test_solved_copy_exports_without_a_warning(tmp_path, no_pdf):
     src = SOLUTION.read_text(encoding="utf-8")
     nb, cfg = parse_notebook(src), read_config(src, SOLUTION)
-    text = student_notebook(src, nb, cfg, "mogs", solutions=True)
+    text = student_notebook(src, nb, cfg, Requirements(), "mogs", solutions=True)
     notebook = tmp_path / "hw.py"
     notebook.write_text(text, encoding="utf-8")
 

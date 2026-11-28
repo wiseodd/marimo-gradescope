@@ -28,7 +28,25 @@ def test_init_writes_one_notebook_named_after_the_folder(tmp_path, capsys):
     path = init(tmp_path / "A12", capsys)
 
     assert path == tmp_path / "A12" / "A12.py"
-    assert [p.name for p in (tmp_path / "A12").iterdir()] == ["A12.py"]
+    assert sorted(p.name for p in (tmp_path / "A12").iterdir()) == ["A12.py", "requirements.txt"]
+
+
+def test_init_writes_requirements_and_the_header_from_them(tmp_path, capsys):
+    path = init(tmp_path / "A12", capsys)
+
+    assert (tmp_path / "A12" / "requirements.txt").read_text(encoding="utf-8") == (
+        "# Packages for this assignment, one per line, as pip reads them.\n"
+    )
+    assert path.read_text(encoding="utf-8").startswith(
+        "# /// script\n"
+        '# requires-python = "==3.13.*"\n'
+        "# dependencies = [\n"
+        '#     "mogs",\n'
+        "# ]\n"
+        "# ///\n"
+        "\n"
+        "import marimo\n"
+    )
 
 
 def test_init_notebook_is_a_valid_assignment(tmp_path, capsys):

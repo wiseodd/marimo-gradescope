@@ -12,6 +12,7 @@ import pytest
 from mogs._env import clean_env
 from mogs.config import read_config
 from mogs.loader import Missing, bind, load, unavailable
+from mogs.requirements import Requirements
 from mogs.runner import run_test_source
 from mogs.source import parse_notebook
 from mogs.transform import student_notebook
@@ -584,7 +585,9 @@ PLAIN_CELL_EDIT = (
 def student_with_plain_cell(tmp_path: Path) -> Path:
     path = FIXTURES / "plain_cell_answer.py"
     src = path.read_text(encoding="utf-8")
-    text = student_notebook(src, parse_notebook(src), read_config(src, path), "mogs")
+    text = student_notebook(
+        src, parse_notebook(src), read_config(src, path), Requirements(), "mogs"
+    )
     notebook = tmp_path / "hw.py"
     notebook.write_text(text.replace(*PLAIN_CELL_EDIT), encoding="utf-8")
     return notebook

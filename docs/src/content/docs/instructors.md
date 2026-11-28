@@ -8,6 +8,7 @@ An assignment is a directory with one source notebook and its data files, for ex
 ```text
 hw1/
 ├── hw1.py
+├── requirements.txt
 └── data/
     └── scores.csv
 ```
@@ -57,7 +58,7 @@ Available options are:
 | `budget`       | `540`     | `900`                     | Seconds for the whole grading run.                                                                                                   |
 | `memory`       | `4096`    | `8192`                    | MB per grading process, at least 2048. Linux only.                                                                                   |
 | `python`       | `"3.13"`  | `"3.14"`                  | Python version on Gradescope.                                                                                                        |
-| `requirements` | none      | `"requirements.txt"`      | A requirements file for Gradescope, relative to the notebook. It's used instead of `dependencies`.                                   |
+| `requirements` | `"requirements.txt"` | `"../requirements.txt"` | The requirements file, relative to the notebook. See [Requirements](#requirements). |
 
 Each question ends with a grade cell, `mogs.grade("q1", points=25)`.
 The questions appear on Gradescope in the order of these cells.
@@ -81,7 +82,7 @@ The source notebook is a regular marimo notebook with a few conventions.
 Put all imports in the setup cell (`with app.setup:`).
 This includes `import mogs` and any library the tests need.
 Tests don't need `import pytest`.
-If the notebook imports it, e.g., for `pytest.raises`, list `pytest` in `dependencies`.
+If the notebook imports it, e.g., for `pytest.raises`, list `pytest` in `requirements.txt`.
 
 ```python
 with app.setup:
@@ -240,6 +241,7 @@ It will create a `dist/` directory, e.g.:
 ```text
 examples/demo/
 ├── hw.py
+├── requirements.txt
 ├── data/
 │   └── scores.csv
 └── dist/
@@ -264,23 +266,10 @@ examples/demo/
 
 ## Requirements
 
-Gradescope installs the packages in the header's `dependencies`.
-The build pins their versions, and Gradescope installs exactly those.
-
-Custom package indexes in `[[tool.uv.index]]` carry over too.
-For example, this installs the CPU-only build of `torch`:
-
-```python
-# dependencies = ["marimo", "mogs", "torch"]
-#
-# [tool.uv.sources]
-# torch = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
-#
-# [[tool.uv.index]]
-# name = "pytorch-cpu"
-# url = "https://download.pytorch.org/whl/cpu"
-# explicit = true
-```
+List the packages in `requirements.txt` next to the notebook, in pip's format.
+Pins and `--extra-index-url` work, e.g., `--extra-index-url https://download.pytorch.org/whl/cpu` for the CPU-only build of `torch`.
+`mogs edit`, the students' notebooks and Gradescope all install from this file.
+mogs writes the notebook's header from it, so don't edit the header.
 
 The data files in `files` are copied next to the notebook on Gradescope, at the same relative paths as on your machine.
 So, code that opens `data/scores.csv` relative to the notebook works in both places.

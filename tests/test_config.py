@@ -8,10 +8,9 @@ from mogs.config import (
     ConfigError,
     Question,
     default_title,
+    read_assignment_config,
     read_config,
     read_header,
-    remove_dependency,
-    set_dependency,
 )
 
 NB = Path("/course/A_01/hw1.py")
@@ -117,13 +116,17 @@ def test_a_question_without_tests_is_graded_by_hand():
 def test_defaults():
     cfg = read_config(cells("mogs.assignment()", 'mogs.grade("q1", points=1)'), NB)
 
-    assert cfg == AssignmentConfig(name="hw1", notebook="hw1.py", questions=cfg.questions)
+    assert cfg == AssignmentConfig(
+        name="hw1",
+        notebook="hw1.py",
+        questions=cfg.questions,
+        requirements=Path("/course/A_01/requirements.txt"),
+    )
     assert cfg.files == ()
     assert cfg.timeout == 60
     assert cfg.budget == 540
     assert cfg.memory_mb == 4096
     assert cfg.python == "3.13"
-    assert cfg.requirements is None
 
 
 def test_all_assignment_arguments():
@@ -312,79 +315,6 @@ def test_name_fit_for_windows(name: str):
     assert read_config(named(name), NB).name == name
 
 
-# set_dependency
-
-
-@pytest.mark.parametrize(
-    "existing",
-    ["mogs", "mogs>=0.1", "Mogs[pdf] >= 0.1"],
-)
-def test_set_dependency_replaces(existing: str):
-    src = notebook(f'dependencies = [\n    "numpy",\n    "{existing}",\n    "scipy",\n]')
-
-    out = set_dependency(src, "mogs==0.1.0")
-
-    assert read_header(out)["dependencies"] == ["numpy", "mogs==0.1.0", "scipy"]
-    assert out.endswith(CODE)
-
-
-def test_set_dependency_adds():
-    src = notebook('dependencies = ["nbconvert[webpdf]", "numpy"]\n\n[tool.uv]\nfoo = "]"')
-
-    out = set_dependency(src, "mogs==0.1.0")
-    header = read_header(out)
-
-    assert header["dependencies"] == ["nbconvert[webpdf]", "numpy", "mogs==0.1.0"]
-    assert header["tool"]["uv"] == {"foo": "]"}
-
-
-def test_set_dependency_without_dependencies_key():
-    src = notebook('requires-python = ">=3.13"\n\n[tool.uv]\nfoo = 1')
-
-    out = set_dependency(src, "mogs==0.1.0")
-    header = read_header(out)
-
-    assert header["dependencies"] == ["mogs==0.1.0"]
-    assert header["requires-python"] == ">=3.13"
-    assert header["tool"]["uv"] == {"foo": 1}
-
-
-def test_set_dependency_keeps_other_header_text():
-    out = set_dependency(BASIC, "mogs==0.1.0")
-
-    assert read_header(out)["dependencies"] == ["mogs==0.1.0", "numpy"]
-    assert out.endswith(CODE)
-
-
-# remove_dependency
-
-
-def test_remove_dependency_drops_every_match():
-    src = notebook(
-        'dependencies = [\n    "numpy",\n    "mogs==0.1.0",\n    "scipy",\n'
-        '    "Mogs[pdf]",\n]\n\n[tool.uv]\nfoo = "]"'
-    )
-
-    out = remove_dependency(src, "mogs")
-    header = read_header(out)
-
-    assert header["dependencies"] == ["numpy", "scipy"]
-    assert header["tool"]["uv"] == {"foo": "]"}
-    assert out.endswith(CODE)
-
-
-def test_remove_dependency_absent_is_unchanged():
-    src = notebook('requires-python = ">=3.13"\n\n[tool.uv]\nfoo = 1')
-
-    assert remove_dependency(src, "mogs") == src
-    assert remove_dependency(BASIC, "scipy") == BASIC
-
-
-def test_remove_dependency_rejects_bad_name():
-    with pytest.raises(ConfigError, match="distribution name"):
-        remove_dependency(BASIC, "==1.0")
-
-
 # Question ids become file names
 
 
@@ -419,3 +349,11 @@ def test_question_ids_must_make_portable_file_names(qids, message):
 )
 def test_default_title(qid, title):
     assert default_title(qid) == title
+
+
+def test_assignment_config_needs_no_questions():
+    cfg = read_assignment_config(cells('mogs.assignment(python="3.12")'), NB)
+
+    assert cfg.python == "3.12"
+    assert cfg.questions == {}
+    assert cfg.requirements == Path("/course/A_01/requirements.txt")

@@ -12,7 +12,7 @@
 //!
 //! Before it writes anything, it runs `marimo check` on both copies and every test of the
 //! bundle, public and hidden, on the solved copy, as `otter assign` runs the solution's tests.
-//! Both run in the notebook's own environment (`environment`), as plain processes; the tests
+//! Both run in the solved copy's environment (`environment`), as plain processes; the tests
 //! get the assignment's `budget` in all. Every test must pass.
 
 use std::collections::{BTreeMap, HashMap};
@@ -101,9 +101,8 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
         .map_err(|error| i.io(error))?;
     let stage = stage.path();
 
-    // The check, in the notebook's own environment. The solved copy sits with the data files,
-    // as on Gradescope.
-    let python = notebook_python(i, &inputs.source)?;
+    // The check, in the environment of the solved copy's header. The solved copy sits with the
+    // data files, as on Gradescope.
     let check = stage.join("check");
     let student_path = check.join("student").join(&config.notebook);
     let solved_path = check.join("solved").join(&config.notebook);
@@ -113,7 +112,7 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
 
     for (notebook, text) in [
         (&student_path, &inputs.student),
-        (&solved_path, &inputs.solved),
+        (&solved_path, &inputs.checked),
     ] {
         let parent = notebook.parent().expect("the notebook is in a folder");
         fs::create_dir(parent).map_err(|e| i.os(e, parent))?;
@@ -127,6 +126,7 @@ pub fn build<I: Interpreter>(i: &I, folder: &Path) -> Result<Built, I::Error> {
         fs::write(&path, bytes).map_err(|e| i.os(e, &path))?;
     }
 
+    let python = notebook_python(i, &solved_path)?;
     let mut warnings = inputs.warnings.clone();
     let student_check = marimo_check(i, &student_path, "student notebook", python.command())?;
     warnings.extend(student_check);

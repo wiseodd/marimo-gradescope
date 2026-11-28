@@ -1,7 +1,7 @@
 //! `mogs build`.
 //!
 //! `build` writes the student notebook and the Gradescope autograder zip, after running every
-//! test of the solved copy in the notebook's own environment (`environment`). `report` turns
+//! test of the solved copy in its header's environment (`environment`). `report` turns
 //! the result into the text the command prints.
 //!
 //! Python reads the source notebook and computes what follows from it: the student notebook,
@@ -144,8 +144,6 @@ pub trait Interpreter {
 /// What a build needs from the source notebook.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BuildInputs {
-    /// The source notebook, whose own environment runs the check.
-    pub source: PathBuf,
     /// The grading bundle.
     pub bundle: Bundle,
     /// The bundle as `bundle.json`.
@@ -156,6 +154,9 @@ pub struct BuildInputs {
     pub student: String,
     /// The solved copy: the student notebook with the solutions kept.
     pub solved: String,
+    /// The solved copy the check runs: its header leaves mogs out, since the check layers the
+    /// running mogs on top.
+    pub checked: String,
     /// Public test files, by path relative to the notebook.
     pub tests: Vec<(String, String)>,
     /// Gradescope's `requirements.txt`.

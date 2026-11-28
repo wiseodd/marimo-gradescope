@@ -21,6 +21,7 @@ from mogs._answers import (
     render_manual_pdf,
 )
 from mogs.config import read_config
+from mogs.requirements import Requirements
 from mogs.source import parse_notebook
 from mogs.transform import student_notebook
 
@@ -57,7 +58,9 @@ where the inequality is Jensen's.
 
 def student_copy(path: Path = SOLUTION) -> str:
     src = path.read_text(encoding="utf-8")
-    return student_notebook(src, parse_notebook(src), read_config(src, path), "mogs")
+    return student_notebook(
+        src, parse_notebook(src), read_config(src, path), Requirements(), "mogs"
+    )
 
 
 def md_cell(name: str, text: str) -> str:

@@ -274,7 +274,10 @@ def bundle_from_notebook(nb: Notebook, cfg: AssignmentConfig) -> GradingBundle:
         qid = qids.pop()
         cells.append(TestCell(qid, f"{qid}-tests", cell.hidden, source, cell.tests, uses, needs))
 
-    return GradingBundle(cfg, nb.setup_source(), tuple(cells), tuple(helpers))
+    # The requirements file is a host path, which the bundle leaves out.
+    config = dataclasses.replace(cfg, requirements=None)
+
+    return GradingBundle(config, nb.setup_source(), tuple(cells), tuple(helpers))
 
 
 def _strings(items: list) -> tuple[str, ...]:

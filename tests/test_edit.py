@@ -76,6 +76,7 @@ def assignment(tmp_path, monkeypatch) -> Path:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "hw").mkdir()
     shutil.copy(SOLUTION, tmp_path / "hw" / "hw.py")
+    (tmp_path / "hw" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
 
     return Path("hw")
 
@@ -167,3 +168,39 @@ def test_edit_reports_a_failed_launch(assignment, tmp_path, monkeypatch, capsys)
 
     assert code == 1
     assert capsys.readouterr().err == f"Edit failed.\n{python.value}\n"
+
+
+def test_edit_writes_the_header_from_the_requirements_first(assignment, marimo, capsys):
+    notebook = assignment / "hw.py"
+    text = notebook.read_text(encoding="utf-8")
+    text = text.replace('#     "mogs",\n', '#     "mogs",\n#     "scipy",\n')
+    notebook.write_text(text, encoding="utf-8")
+
+    code = main(["edit", str(assignment)])
+
+    assert code == 0
+    assert notebook.read_text(encoding="utf-8").startswith(
+        "# /// script\n"
+        '# requires-python = "==3.13.*"\n'
+        "# dependencies = [\n"
+        '#     "numpy",\n'
+        '#     "mogs",\n'
+        "# ]\n"
+        "# ///\n"
+    )
+    assert capsys.readouterr().err == (
+        f"Warning: The header of {notebook} listed 'scipy', which "
+        f"{assignment / 'requirements.txt'} does not. Add them to "
+        f"{assignment / 'requirements.txt'}; mogs rewrites the header from it.\n"
+    )
+    assert len(marimo.commands) == 1
+
+
+def test_edit_without_a_requirements_file_fails(assignment, marimo, capsys):
+    (assignment / "requirements.txt").unlink()
+
+    code = main(["edit", str(assignment)])
+
+    assert code == 1
+    assert marimo.commands == []
+    assert "requirements.txt" in capsys.readouterr().err

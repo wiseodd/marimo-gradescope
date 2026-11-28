@@ -32,7 +32,12 @@ from mogs.config import (
     read_config,
 )
 from mogs.grader.bundle import bundle_from_notebook
-from mogs.requirements import RequirementsError, gradescope_requirements
+from mogs.requirements import (
+    RequirementsError,
+    gradescope_requirements,
+    read_requirements,
+    with_header,
+)
 from mogs.source import (
     NO_TEXT,
     Notebook,
@@ -53,8 +58,6 @@ PORTING_URL = "https://mogs.kristia.de/porting"
 OTTER_RE = re.compile(
     r"(?<![\w#])# (?:ASSIGNMENT CONFIG|(?:BEGIN|END) (?:QUESTION|TESTS|PROMPT|TEST CONFIG))\b"
 )
-# A Python version such as `3.13` or `3.13.5`, as `uv venv --python` takes it on Gradescope.
-PYTHON_RE = re.compile(r"3\.\d+(\.\d+)?")
 
 
 class BuildError(UsageError):
@@ -81,18 +84,19 @@ class Assignment:
 class BuildInputs(TypedDict):
     """What a build writes and checks.
 
-    `source` is the source notebook, whose own environment runs the check. The bundle is
-    JSON. `data` holds (path relative to the notebook, source) pairs, and `tests` holds (path
-    relative to the notebook, text) pairs.
+    The bundle is JSON. `data` holds (path relative to the notebook, source) pairs, and
+    `tests` holds (path relative to the notebook, text) pairs.
+    `checked` is the solved copy whose tests the build runs: its header leaves out mogs, which
+    the check layers from the running one.
     `prompts` has, for each manual question, the first line of each of its prompt cells, as
     `prompt_previews` gives it, or `NO_TEXT` when none has text.
     """
 
-    source: Path
     bundle_json: str
     data: list[tuple[str, Path]]
     student: str
     solved: str
+    checked: str
     tests: list[tuple[str, str]]
     requirements: str
     warnings: list[str]
@@ -130,9 +134,8 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
     The mogs line of `requirements` and student notebooks pin this version.
 
     Raises:
-        ConfigError: If a data file, a header edit or `python` is invalid.
+        ConfigError: If a data file, the requirements file, the header or `python` is invalid.
         SourceError: If the notebook cannot be transformed.
-        RequirementsError: If the dependencies cannot be pinned.
     """
 
     src, cfg, nb = assignment.src, assignment.cfg, assignment.nb
@@ -140,28 +143,24 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
     data = data_files(assignment.path.parent, cfg)
 
     path = assignment.path
-    student = student_notebook(src, nb, cfg, pinned_requirement(), path=path)
-    solved = student_notebook(src, nb, cfg, pinned_requirement(), solutions=True, path=path)
+    reqs = read_requirements(cfg)
+    student = student_notebook(src, nb, cfg, reqs, pinned_requirement(), path=path)
+    solved = student_notebook(src, nb, cfg, reqs, pinned_requirement(), solutions=True, path=path)
     bundle = bundle_from_notebook(nb, cfg)
     tests = public_test_files(nb)
-    requirements, warnings = gradescope_requirements(src, cfg, f"{TOOL}=={__version__}")
+    requirements, warnings = gradescope_requirements(reqs, f"{TOOL}=={__version__}")
     prompts = {
         q.id: list(prompt_previews(nb, q.id) or (NO_TEXT,))
         for q in cfg.questions.values()
         if q.manual
     }
 
-    # Last, as the build checked it after everything else in v0.7.
-    if not PYTHON_RE.fullmatch(cfg.python):
-        raise ConfigError(
-            f'{ASSIGNMENT} `python` must be a version such as "3.13", got {cfg.python!r}.'
-        )
-
     return {
-        "source": path,
         "bundle_json": bundle.to_json(),
         "student": student,
         "solved": solved,
+        # The check layers the running mogs, which may not be released yet.
+        "checked": with_header(solved, reqs, cfg.python, None),
         "tests": [(str(rel), text) for rel, text in tests.items()],
         "data": [(str(rel), source) for rel, source in data.items()],
         "requirements": requirements,

@@ -79,4 +79,13 @@ impl Interpreter for PyInterpreter<'_> {
 
         Ok(())
     }
+
+    fn write_header(&self, notebook: &Path) -> PyResult<()> {
+        let notebook = pathlib(self.py, notebook)?;
+        self.py
+            .import("mogs.requirements")?
+            .call_method1("write_header", (notebook,))?;
+
+        Ok(())
+    }
 }

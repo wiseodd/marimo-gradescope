@@ -1,13 +1,19 @@
-import shutil
-import subprocess
+import dataclasses
 from pathlib import Path
 
 import pytest
 
-from mogs.config import ConfigError, read_config
-from mogs.requirements import RequirementsError, gradescope_requirements
+from mogs.config import ConfigError, read_config, read_header
+from mogs.requirements import (
+    Index,
+    Requirements,
+    gradescope_requirements,
+    read_requirements,
+    script_header,
+    with_header,
+    write_header,
+)
 
-REPO = Path(__file__).parent.parent
 TOOL = "mogs==0.1.0"
 
 CODE = """
@@ -21,315 +27,352 @@ mogs.assignment()
 mogs.grade("q1", points=25)
 """
 
-
-def notebook(header: str, settings: str = "") -> str:
-    lines = [f"# {line}" if line else "#" for line in header.strip("\n").splitlines()]
-    code = CODE.replace("mogs.assignment()", f"mogs.assignment({settings})")
-    return "# /// script\n" + "\n".join(lines) + "\n# ///\n" + code
-
-
-def with_python(src: str, python: str) -> str:
-    return src.replace("mogs.assignment(", f'mogs.assignment(python="{python}", ', 1)
-
-
-TORCH = notebook(
-    """
-requires-python = ">=3.13"
-dependencies = ["marimo", "mogs==0.0.0", "torch"]
-
-[tool.uv.sources]
-torch = [{ index = "pytorch-cpu", marker = "sys_platform != 'darwin'" }]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
+HEADER = """\
+# /// script
+# requires-python = ">=3.13"
+# dependencies = ["marimo", "mogs", "scipy"]
+#
+# [tool.uv]
+# exclude-newer = "2026-01-01T00:00:00Z"
+#
+# [[tool.uv.index]]
+# name = "old"
+# url = "https://example.com/old"
+#
+# [tool.marimo.runtime]
+# reactive_tests = false
+# ///
 """
-)
+
+DS3000 = """\
+numpy==2.4.2
+pandas==3.0.0
+torch==2.12.0+cpu
+lightgbm==4.7.0
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+"""
 
 
-def tool_lines(text: str) -> list[str]:
-    return [line for line in text.splitlines() if line.startswith("mogs")]
+def assignment(tmp_path: Path, requirements: str | None, settings: str = "") -> Path:
+    """A notebook in `tmp_path`, with `requirements.txt` next to it unless `None`."""
+
+    notebook = tmp_path / "hw.py"
+    code = CODE.replace("assignment()", f"assignment({settings})")
+    notebook.write_text(HEADER + code, encoding="utf-8")
+
+    if requirements is not None:
+        (tmp_path / "requirements.txt").write_text(requirements, encoding="utf-8")
+
+    return notebook
 
 
-def requirement_lines(text: str) -> list[str]:
-    return [line for line in text.splitlines() if line and not line.startswith(("#", " ", "-"))]
+def requirements_of(tmp_path: Path, text: str) -> Requirements:
+    notebook = assignment(tmp_path, text)
+
+    return read_requirements(read_config(notebook.read_text(), notebook))
 
 
-def config(src: str, tmp_path: Path):
-    path = tmp_path / "hw.py"
-    path.write_text(src, encoding="utf-8")
-    return read_config(src, path)
+# Reading the file
 
 
-# From the header, through `uv export`
+def test_file_defaults_to_requirements_txt_next_to_the_notebook(tmp_path):
+    requirements = requirements_of(tmp_path, "numpy==2.0\n")
+
+    assert requirements.path == tmp_path / "requirements.txt"
+    assert requirements.packages == ("numpy==2.0",)
 
 
-@pytest.mark.network
-def test_header_with_explicit_index(tmp_path):
-    text, warnings = gradescope_requirements(TORCH, config(TORCH, tmp_path), TOOL)
-    lines = text.splitlines()
-
-    assert lines[0] == "--extra-index-url https://download.pytorch.org/whl/cpu"
-    assert any(line.startswith("torch==") and "+cpu" in line for line in lines)
-    assert any(line.startswith("marimo==") for line in lines)
-    assert tool_lines(text) == [TOOL]
-    assert lines[-1] == TOOL
-    assert warnings == []
-
-
-@pytest.mark.network
-def test_header_requirements_install(tmp_path):
-    # The real tool line pins a release; a local path lets the dry run resolve it.
-    tool = f"mogs @ {REPO.as_uri()}"
-    text, _ = gradescope_requirements(TORCH, config(TORCH, tmp_path), tool)
-    requirements = tmp_path / "requirements.txt"
-    requirements.write_text(text, encoding="utf-8")
-    uv = shutil.which("uv")
-    assert uv is not None
-
-    subprocess.run(
-        [uv, "venv", "-q", "--python", "3.13", str(tmp_path / "venv")], check=True, cwd=tmp_path
-    )
-    result = subprocess.run(
-        [uv, "pip", "install", "--dry-run", "--python", str(tmp_path / "venv" / "bin" / "python")]
-        # Resolved for Gradescope's Linux, wherever the test runs: the CPU index is only
-        # used off macOS.
-        + ["--python-platform", "x86_64-manylinux_2_28"]
-        + ["--index-strategy", "unsafe-best-match", "-r", str(requirements)],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=tmp_path,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "+cpu" in result.stderr
-
-
-@pytest.mark.network
-def test_header_without_indexes(tmp_path):
-    src = notebook('dependencies = ["mogs", "pytest"]\n\n')
-
-    text, _ = gradescope_requirements(src, config(src, tmp_path), TOOL)
-
-    assert not any(line.startswith("-") for line in text.splitlines())
-    assert any(line.startswith("pytest==") for line in text.splitlines())
-    assert tool_lines(text) == [TOOL]
-    assert "# via" not in text
-
-
-@pytest.mark.network
-def test_default_index_becomes_index_url(tmp_path):
-    src = notebook(
-        'dependencies = ["pytest"]\n\n[[tool.uv.index]]\nname = "main"\n'
-        'url = "https://pypi.org/simple"\ndefault = true\n'
-    )
-
-    text, _ = gradescope_requirements(src, config(src, tmp_path), TOOL)
-
-    assert text.splitlines()[0] == "--index-url https://pypi.org/simple"
-    assert "--extra-index-url" not in text
-
-
-@pytest.mark.parametrize(
-    "uv",
-    [
-        '[[tool.uv.index]]\nname = "w"\nurl = "https://example.com/wheels"\nformat = "flat"',
-        '[tool.uv]\nindex-url = "https://example.com/simple"',
-        '[tool.uv]\nextra-index-url = ["https://example.com/simple"]',
-        '[tool.uv]\nfind-links = ["https://example.com/links"]',
-        '[[tool.uv.index]]\nname = "x"',
-    ],
-)
-def test_unsupported_index_config(uv, tmp_path):
-    src = notebook(f'dependencies = ["pytest"]\n\n{uv}\n')
-
-    with pytest.raises(ConfigError, match="tool.uv"):
-        gradescope_requirements(src, config(src, tmp_path), TOOL)
-
-
-def test_uv_export_error_shows_stderr(tmp_path):
-    src = notebook('dependencies = ["numpy >> 1"]\n')
-
-    with pytest.raises(RequirementsError, match="uv export") as error:
-        gradescope_requirements(src, config(src, tmp_path), TOOL)
-
-    assert "numpy >> 1" in str(error.value)
-
-
-# From a requirements file
-
-
-OVERRIDE = notebook(
-    """
-dependencies = ["mogs", "torch"]
-""",
-    'requirements="env/requirements.txt"',
-)
-
-
-def test_header_index_with_file_url_rejected(tmp_path):
-    src = TORCH.replace("https://download.pytorch.org/whl/cpu", "file:///home/me/simple")
-
-    with pytest.raises(ConfigError, match="file:///home/me/simple"):
-        gradescope_requirements(src, config(src, tmp_path), TOOL)
-
-
-def test_override_file_relative_to_notebook(tmp_path):
-    folder = tmp_path / "A_01"
-    (folder / "env").mkdir(parents=True)
-    (folder / "env" / "requirements.txt").write_text(
-        "numpy==2.0\n# pinned\n--extra-index-url https://example.com/simple\n", encoding="utf-8"
-    )
-    path = folder / "hw.py"
-    path.write_text(OVERRIDE, encoding="utf-8")
-
-    text, warnings = gradescope_requirements(OVERRIDE, read_config(OVERRIDE, path), TOOL)
-
-    assert text == f"numpy==2.0\n# pinned\n--extra-index-url https://example.com/simple\n{TOOL}\n"
-    assert warnings == []
-
-
-def test_override_file_without_trailing_newline(tmp_path):
+def test_file_relative_to_the_notebook(tmp_path):
     (tmp_path / "env").mkdir()
-    (tmp_path / "env" / "requirements.txt").write_text("numpy==2.0", encoding="utf-8")
+    (tmp_path / "env" / "reqs.txt").write_text("numpy\n", encoding="utf-8")
+    notebook = assignment(tmp_path, None, 'requirements="env/reqs.txt"')
 
-    text, _ = gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), TOOL)
+    requirements = read_requirements(read_config(notebook.read_text(), notebook))
 
-    assert text == f"numpy==2.0\n{TOOL}\n"
+    assert requirements.path == tmp_path / "env" / "reqs.txt"
+    assert requirements.packages == ("numpy",)
 
 
-def test_override_file_drops_its_own_tool_line(tmp_path):
-    (tmp_path / "env").mkdir()
-    (tmp_path / "env" / "requirements.txt").write_text(
-        "mogs>=0.0.1\nnumpy\nMogs[pdf]\n", encoding="utf-8"
+def test_missing_file_names_it(tmp_path):
+    notebook = assignment(tmp_path, None)
+
+    with pytest.raises(ConfigError, match="requirements.txt") as error:
+        read_requirements(read_config(notebook.read_text(), notebook))
+
+    assert str(tmp_path / "requirements.txt") in str(error.value)
+
+
+def test_config_without_a_file_is_a_bug():
+    cfg = dataclasses.replace(read_config(HEADER + CODE, Path("/x/hw.py")), requirements=None)
+
+    with pytest.raises(ValueError, match="no requirements file"):
+        read_requirements(cfg)
+
+
+def test_lines_as_written(tmp_path):
+    text = (
+        "# pinned\n"
+        "\n"
+        "numpy==2.0  # inline\n"
+        "torch==2.0+cpu ; sys_platform != 'darwin'\n"
+        "pkg @ https://example.com/pkg-1.0-py3-none-any.whl\n"
+        "--index-url https://pypi.org/simple\n"
+        "--extra-index-url=https://download.pytorch.org/whl/cpu\n"
+        "-i https://example.com/simple\n"
     )
 
-    text, warnings = gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), TOOL)
+    requirements = requirements_of(tmp_path, text)
 
-    assert text == f"numpy\n{TOOL}\n"
-    assert tool_lines(text) == [TOOL]
-    assert len(warnings) == 1
-    assert "mogs>=0.0.1" in warnings[0]
+    assert requirements.packages == (
+        "numpy==2.0",
+        "torch==2.0+cpu ; sys_platform != 'darwin'",
+        "pkg @ https://example.com/pkg-1.0-py3-none-any.whl",
+    )
+    assert requirements.indexes == (
+        Index("https://pypi.org/simple", default=True),
+        Index("https://download.pytorch.org/whl/cpu"),
+        Index("https://example.com/simple", default=True),
+    )
+    assert requirements.text == text
+
+
+def test_mogs_lines_are_left_out(tmp_path):
+    requirements = requirements_of(tmp_path, "mogs>=0.0.1\nnumpy\nMogs[pdf]\n")
+
+    assert requirements.packages == ("numpy",)
 
 
 @pytest.mark.parametrize(
     "line",
     [
         "-r other.txt",
+        "-r https://example.com/requirements.txt",
         "--requirement=other.txt",
         "-c constraints.txt",
-        "--constraint constraints.txt",
         "-e .",
-        "--editable ./pkg",
+        "-f https://example.com/links",
+        "--find-links ./wheels",
+        "--pre",
+        "--hash=sha256:abc",
+        "git+https://github.com/me/repo@v1",
+        "numpy >> 1",
+    ],
+)
+def test_other_option_lines_are_refused(line, tmp_path):
+    with pytest.raises(ConfigError, match="--extra-index-url") as error:
+        requirements_of(tmp_path, f"numpy\n{line}\n")
+
+    assert line in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
         "./pkg",
         "../wheels/pkg-1.0-py3-none-any.whl",
         "/home/me/pkg",
-        "dist/pkg-1.0-py3-none-any.whl",
         "pkg-1.0.tar.gz",
-        "--find-links ./wheels",
-        "-f wheels",
         "pkg @ file:///home/me/pkg-1.0.whl",
-        "file:///home/me/pkg-1.0-py3-none-any.whl",
-        "git+file:///home/me/repo",
-        "-r file:///home/me/other.txt",
-        "-e file:///home/me/pkg",
         "--extra-index-url file:///home/me/simple",
         "--index-url=file:///home/me/simple",
         "-i /home/me/simple",
     ],
 )
-def test_override_file_rejects_local_paths(line, tmp_path):
-    (tmp_path / "env").mkdir()
-    (tmp_path / "env" / "requirements.txt").write_text(f"numpy\n{line}\n", encoding="utf-8")
-
-    with pytest.raises(ConfigError, match="requirements") as error:
-        gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), TOOL)
+def test_local_files_are_refused(line, tmp_path):
+    with pytest.raises(ConfigError, match="local file") as error:
+        requirements_of(tmp_path, f"numpy\n{line}\n")
 
     assert line in str(error.value)
 
 
-def test_override_file_keeps_urls(tmp_path):
-    lines = (
-        "https://example.com/pkg-1.0-py3-none-any.whl\n"
-        "https://example.com/pkg-1.0.tar.gz ; python_version >= '3.13'\n"
-        "git+https://github.com/me/repo@v1\n"
-        "-r https://example.com/requirements.txt\n"
-        "--requirement=https://example.com/requirements.txt\n"
-        "-c https://example.com/constraints.txt\n"
-        "--extra-index-url https://download.pytorch.org/whl/cpu\n"
-        "--index-url=https://pypi.org/simple\n"
-        "-i https://pypi.org/simple\n"
-        "--find-links https://example.com/links\n"
-        "torch==2.0+cpu ; sys_platform != 'darwin'  # cpu\n"
-        "pkg @ https://example.com/pkg-1.0-py3-none-any.whl\n"
-        "scipy==1.0 \\\n"
-        "    --hash=sha256:abc\n"
-        "\n"
-        "# ./not/a/path\n"
+# The header
+
+
+def test_header_of_pins_and_an_extra_index(tmp_path):
+    requirements = requirements_of(tmp_path, DS3000)
+
+    assert script_header(requirements, "3.13", "mogs") == [
+        'requires-python = "==3.13.*"',
+        "dependencies = [",
+        '    "numpy==2.4.2",',
+        '    "pandas==3.0.0",',
+        '    "torch==2.12.0+cpu",',
+        '    "lightgbm==4.7.0",',
+        '    "mogs",',
+        "]",
+        "",
+        "[tool.uv]",
+        'index-strategy = "unsafe-best-match"',
+        "",
+        "[[tool.uv.index]]",
+        'name = "index-1"',
+        'url = "https://download.pytorch.org/whl/cpu"',
+    ]
+
+
+def test_header_index_url_is_the_default():
+    requirements = Requirements(("numpy",), (Index("https://example.com/simple", default=True),))
+
+    assert script_header(requirements, "3.12", TOOL) == [
+        'requires-python = "==3.12.*"',
+        "dependencies = [",
+        '    "numpy",',
+        '    "mogs==0.1.0",',
+        "]",
+        "",
+        "[[tool.uv.index]]",
+        'name = "index-1"',
+        'url = "https://example.com/simple"',
+        "default = true",
+    ]
+
+
+def test_header_of_an_empty_file():
+    assert script_header(Requirements(), "3.13.5", "mogs") == [
+        'requires-python = "==3.13.5.*"',
+        "dependencies = [",
+        '    "mogs",',
+        "]",
+    ]
+
+
+def test_header_without_the_tool_requirement():
+    assert script_header(Requirements(), "3.13", None) == [
+        'requires-python = "==3.13.*"',
+        "dependencies = [",
+        "]",
+    ]
+
+
+@pytest.mark.parametrize("python", ["latest", "3", "3.13; rm -rf /", ""])
+def test_header_needs_a_python_version(python):
+    with pytest.raises(ConfigError, match="`python`"):
+        script_header(Requirements(), python, "mogs")
+
+
+def test_with_header_keeps_tool_tables_but_uv_ones():
+    out = with_header(HEADER + CODE, Requirements(("numpy",)), "3.13", "mogs")
+
+    assert out == (
+        "# /// script\n"
+        '# requires-python = "==3.13.*"\n'
+        "# dependencies = [\n"
+        '#     "numpy",\n'
+        '#     "mogs",\n'
+        "# ]\n"
+        "#\n"
+        "# [tool.marimo.runtime]\n"
+        "# reactive_tests = false\n"
+        "# ///\n" + CODE
     )
-    (tmp_path / "env").mkdir()
-    (tmp_path / "env" / "requirements.txt").write_text(lines, encoding="utf-8")
-
-    text, _ = gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), TOOL)
-
-    assert text == lines + TOOL + "\n"
 
 
-@pytest.mark.parametrize(
-    ("requires", "python", "warns"),
-    [(">=3.13", "3.12", True), (">=3.13", "3.13", False), (">=3.11,<3.13", "3.13.1", True)],
-)
-def test_python_outside_requires_python_warns(requires, python, warns, tmp_path):
-    src = OVERRIDE.replace("# dependencies", f'# requires-python = "{requires}"\n# dependencies')
-    src = with_python(src, python)
-    (tmp_path / "env").mkdir()
-    (tmp_path / "env" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
+def test_with_header_adds_a_missing_header():
+    out = with_header(CODE.lstrip(), Requirements(), "3.13", "mogs")
 
-    _, warnings = gradescope_requirements(src, config(src, tmp_path), TOOL)
-
-    if warns:
-        assert len(warnings) == 1
-        assert python in warnings[0] and requires in warnings[0]
-    else:
-        assert warnings == []
+    assert out == (
+        "# /// script\n"
+        '# requires-python = "==3.13.*"\n'
+        "# dependencies = [\n"
+        '#     "mogs",\n'
+        "# ]\n"
+        "# ///\n"
+        "\n" + CODE.lstrip()
+    )
 
 
-def test_invalid_requires_python(tmp_path):
-    src = OVERRIDE.replace("# dependencies", '# requires-python = "three"\n# dependencies')
-    (tmp_path / "env").mkdir()
-    (tmp_path / "env" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
+def test_with_header_refuses_an_invalid_old_header():
+    src = HEADER.replace('"scipy"]', '"scipy"') + CODE
 
-    with pytest.raises(ConfigError, match="requires-python"):
-        gradescope_requirements(src, config(src, tmp_path), TOOL)
+    with pytest.raises(ConfigError, match="TOML"):
+        with_header(src, Requirements(), "3.13", "mogs")
 
 
-def test_override_file_missing(tmp_path):
+# Writing the source notebook's header
+
+
+def test_write_header_warns_about_packages_only_the_header_lists(tmp_path):
+    notebook = assignment(tmp_path, "numpy\n", 'python="3.12"')
+
+    warnings = write_header(notebook)
+
+    header = read_header(notebook.read_text(encoding="utf-8"))
+    assert header["requires-python"] == "==3.12.*"
+    assert header["dependencies"] == ["numpy", "mogs"]
+    assert header["tool"] == {"marimo": {"runtime": {"reactive_tests": False}}}
+    assert warnings == [
+        f"The header of {notebook} listed 'scipy', which {tmp_path / 'requirements.txt'} does "
+        f"not. Add them to {tmp_path / 'requirements.txt'}; mogs rewrites the header from it."
+    ]
+
+
+def test_write_header_is_quiet_when_the_file_lists_everything(tmp_path):
+    notebook = assignment(tmp_path, "SciPy>=1\n")
+
+    assert write_header(notebook) == []
+    assert write_header(notebook) == []
+
+
+def test_write_header_needs_no_questions(tmp_path):
+    notebook = tmp_path / "hw.py"
+    notebook.write_text("import mogs\n\nmogs.assignment()\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("", encoding="utf-8")
+
+    assert write_header(notebook) == []
+    assert notebook.read_text(encoding="utf-8").startswith("# /// script\n")
+
+
+def test_write_header_names_a_missing_file(tmp_path):
+    notebook = assignment(tmp_path, None)
+    before = notebook.read_text(encoding="utf-8")
+
     with pytest.raises(ConfigError, match="requirements.txt"):
-        gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), TOOL)
+        write_header(notebook)
+
+    assert notebook.read_text(encoding="utf-8") == before
 
 
-# Tool line
+# Gradescope's file
+
+
+def test_gradescope_gets_the_file_as_written_and_mogs(tmp_path):
+    requirements = requirements_of(tmp_path, DS3000)
+
+    text, warnings = gradescope_requirements(requirements, TOOL)
+
+    assert text == DS3000 + TOOL + "\n"
+    assert warnings == []
+
+
+def test_gradescope_file_without_trailing_newline():
+    text, _ = gradescope_requirements(Requirements(text="numpy==2.0"), TOOL)
+
+    assert text == f"numpy==2.0\n{TOOL}\n"
+
+
+def test_gradescope_file_drops_its_own_mogs_line():
+    requirements = Requirements(text="mogs>=0.0.1\nnumpy\nMogs[pdf]\n")
+
+    text, warnings = gradescope_requirements(requirements, TOOL)
+
+    assert text == f"numpy\n{TOOL}\n"
+    assert len(warnings) == 1
+    assert "mogs>=0.0.1" in warnings[0]
 
 
 @pytest.mark.parametrize("version", ["0.1.0.dev3", "0.1.dev0+g1234", "0.1.0+local"])
-def test_unreleased_version_warns(version, tmp_path):
-    (tmp_path / "env").mkdir()
-    (tmp_path / "env" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
+def test_unreleased_version_warns(version):
     tool = f"mogs=={version}"
 
-    text, warnings = gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), tool)
+    text, warnings = gradescope_requirements(Requirements(text="numpy\n"), tool)
 
-    assert tool_lines(text) == [tool]
+    assert text == f"numpy\n{tool}\n"
     assert len(warnings) == 1
     assert version in warnings[0]
     assert "not on PyPI" in warnings[0]
 
 
-def test_tool_requirement_must_name_the_tool(tmp_path):
-    (tmp_path / "env").mkdir()
-    (tmp_path / "env" / "requirements.txt").write_text("numpy\n", encoding="utf-8")
-
+def test_tool_requirement_must_name_the_tool():
     with pytest.raises(ValueError, match="mogs"):
-        gradescope_requirements(OVERRIDE, config(OVERRIDE, tmp_path), "numpy==1.0")
+        gradescope_requirements(Requirements(text="numpy\n"), "numpy==1.0")

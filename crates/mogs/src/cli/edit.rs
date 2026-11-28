@@ -6,15 +6,16 @@ use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PyString};
 
-use super::failed;
+use super::{failed, print};
 
-/// Run `marimo edit --sandbox` on the source notebook at `path`, a file or its folder, and
-/// return marimo's exit code.
+/// Write the header of the source notebook at `path`, a file or its folder, from its
+/// requirements file, then run `marimo edit --sandbox` on it and return marimo's exit code.
 ///
-/// marimo runs on this package's Python, which has pytest. The editor server compiles the
-/// test cells there, and without pytest it logs a warning for each of them. A `BuildError`
-/// from `mogs._analysis.source_notebook`, or an `OSError` from it or from starting marimo, fails
-/// the command with exit code 1.
+/// The warnings of `mogs.requirements.write_header` go to stderr. marimo runs on this
+/// package's Python, which has pytest. The editor server compiles the test cells there, and
+/// without pytest it logs a warning for each of them. A `BuildError` from
+/// `mogs._analysis.source_notebook`, a `ConfigError` from `write_header`, or an `OSError` from
+/// them or from starting marimo, fails the command with exit code 1.
 pub(super) fn edit(py: Python<'_>, path: &Path) -> PyResult<i64> {
     let marimo = match start(py, path) {
         Ok(marimo) => marimo,
@@ -32,12 +33,23 @@ pub(super) fn edit(py: Python<'_>, path: &Path) -> PyResult<i64> {
     }
 }
 
+/// Write the header, print its warnings, then
 /// `subprocess.Popen([sys.executable, "-m", "marimo", "edit", "--sandbox", str(notebook)])`.
 fn start<'py>(py: Python<'py>, path: &Path) -> PyResult<Bound<'py, PyAny>> {
     let notebook = py
         .import("mogs._analysis")?
-        .call_method1("source_notebook", (path,))?
-        .str()?;
+        .call_method1("source_notebook", (path,))?;
+    let warnings: Vec<Bound<'py, PyString>> = py
+        .import("mogs.requirements")?
+        .call_method1("write_header", (&notebook,))?
+        .extract()?;
+
+    for warning in warnings {
+        let line = PyString::new(py, "Warning: ").add(warning)?.cast_into()?;
+        print(py, line, true, "\n")?;
+    }
+
+    let notebook = notebook.str()?;
     let python = py.import("sys")?.getattr("executable")?;
     let args = ["-m", "marimo", "edit", "--sandbox"].map(|arg| PyString::new(py, arg).into_any());
     let command = PyList::new(

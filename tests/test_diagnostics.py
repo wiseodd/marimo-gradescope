@@ -17,6 +17,7 @@ from mogs.config import (
     read_config,
     split_lines,
 )
+from mogs.requirements import Requirements
 from mogs.source import SourceError, parse_notebook
 from mogs.transform import _name_written_cells, _rewrite_grade, student_notebook
 
@@ -97,6 +98,7 @@ def build(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, src: str) -> tuple[in
 
     (tmp_path / "hw").mkdir()
     (tmp_path / "hw" / "hw.py").write_text(src, encoding="utf-8")
+    (tmp_path / "hw" / "requirements.txt").write_text("", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("NO_COLOR", raising=False)
     err = io.StringIO()
@@ -500,7 +502,7 @@ def test_student_notebook_places_source_line_errors_in_path():
     cfg = read_config(MARKER, NB)
 
     with pytest.raises(SourceError) as caught:
-        student_notebook(MARKER, nb, cfg, "mogs", path=NB)
+        student_notebook(MARKER, nb, cfg, Requirements(), "mogs", path=NB)
 
     assert str(caught.value) == "line 17: `# SOLUTION` must end a statement."
     assert caught.value.diagnostic.message == "`# SOLUTION` must end a statement."
@@ -557,7 +559,7 @@ def test_two_edits_on_one_line_point_at_it():
 
     # A SourceError, not the internal `_Overlap`.
     with pytest.raises(SourceError) as caught:
-        student_notebook(src, nb, cfg, "mogs")
+        student_notebook(src, nb, cfg, Requirements(), "mogs")
 
     assert str(caught.value) == "line 17: two student-copy edits touch this line."
     assert caught.value.diagnostic.span == Span(None, 17, 4, 17, 43)

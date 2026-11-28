@@ -62,8 +62,8 @@ def assignment(
         budget: Seconds for the whole grading run.
         memory: MB per grading process, at least 2048. Linux only.
         python: Python version on Gradescope.
-        requirements: A requirements file for Gradescope, relative to the notebook. It is used
-            instead of the header's `dependencies`.
+        requirements: The requirements file, relative to the notebook; `requirements.txt`
+            next to it by default.
 
     Returns:
         The summary, as marimo HTML.

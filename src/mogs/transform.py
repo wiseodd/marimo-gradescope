@@ -22,9 +22,9 @@ from mogs.config import (
     Span,
     located,
     normalize_newlines,
-    set_dependency,
     split_lines,
 )
+from mogs.requirements import Requirements, with_header
 from mogs.source import (
     BEGIN,
     END,
@@ -75,6 +75,7 @@ def student_notebook(
     src: str,
     nb: Notebook,
     cfg: AssignmentConfig,
+    requirements: Requirements,
     tool_requirement: str,
     *,
     solutions: bool = False,
@@ -103,7 +104,8 @@ def student_notebook(
       answer with the prompts just before it.
     - Export cells go after the last cell: a "Submit" note, the export button and the export
       panel (`export_cells`).
-    - The header depends on `tool_requirement`.
+    - The header is the one `mogs.requirements.script_header` writes from `requirements`,
+      `cfg.python` and `tool_requirement`.
 
     With `solutions=True` it makes the solved copy instead: the same notebook, except that a
     solution region keeps its code without the marker and `# PROMPT:` lines, and
@@ -113,6 +115,7 @@ def student_notebook(
         src: Source notebook text.
         nb: The notebook parsed from `src`. It should pass `validate`.
         cfg: Assignment config of the notebook.
+        requirements: The assignment's requirements file.
         tool_requirement: Requirement on this package for the header, such as
             `pinned_requirement()`.
         solutions: Keep the solutions.
@@ -126,7 +129,7 @@ def student_notebook(
         SourceError: If a `# SOLUTION` comment does not end a statement it can edit, a grade
             call names an unknown question, solution markers do not pair up, the source
             defines `export_button` itself, or the result is not valid Python.
-        ConfigError: If a header edit fails.
+        ConfigError: If `cfg.python` is invalid or the old header is not valid TOML.
     """
 
     if normalize_newlines(src) != nb.src:
@@ -140,8 +143,8 @@ def student_notebook(
 
     # Only errors from the source's lines point at the notebook, not those from the copies.
     with located(path):
-        text = _edited(nb, cfg, tool_requirement, solutions=solutions)
-        blank = _edited(nb, cfg, tool_requirement) if solutions else text
+        text = _edited(nb, cfg, requirements, tool_requirement, solutions=solutions)
+        blank = _edited(nb, cfg, requirements, tool_requirement) if solutions else text
 
     manual = [question.id for question in cfg.questions.values() if question.manual]
     # The copy, not the source: the edits may have removed an import or a name. Placeholders
@@ -427,7 +430,12 @@ def _string_literal(text: str) -> str:
 
 
 def _edited(
-    nb: Notebook, cfg: AssignmentConfig, tool_requirement: str, *, solutions: bool = False
+    nb: Notebook,
+    cfg: AssignmentConfig,
+    requirements: Requirements,
+    tool_requirement: str,
+    *,
+    solutions: bool = False,
 ) -> str:
     """`student_notebook` without the export cells."""
 
@@ -462,7 +470,7 @@ def _edited(
     # Parsed before the header edit, which can change the line count. The header is
     # comments only, so it does not change whether the code parses.
     _check_python(text, [number for number, _ in copied], lines)
-    text = set_dependency(text, tool_requirement)
+    text = with_header(text, requirements, cfg.python, tool_requirement)
 
     if not solutions and (leaks := solution_leaks(nb, text)):
         raise SourceError(
