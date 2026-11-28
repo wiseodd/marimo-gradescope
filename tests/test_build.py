@@ -755,27 +755,13 @@ def requirements_file_copy(target: Path, requirements: str) -> Path:
     return folder
 
 
-def test_tool_requirement_comes_from_the_environment(tmp_path, monkeypatch):
+def test_requirements_pin_this_version(tmp_path):
     folder = requirements_file_copy(tmp_path / "demo", "numpy==2.0\n")
-    monkeypatch.setenv("MOGS_TOOL_REQUIREMENT", "mogs @ file:///wheels/mogs.whl")
-
-    inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
-
-    assert inputs["requirements"] == "numpy==2.0\nmogs @ file:///wheels/mogs.whl\n"
-    assert inputs["grading_requirements"] == "numpy==2.0\n"
-
-
-@pytest.mark.parametrize("value", [None, ""])
-def test_tool_requirement_defaults_to_this_version(tmp_path, monkeypatch, value):
-    folder = requirements_file_copy(tmp_path / "demo", "numpy==2.0\n")
-    if value is None:
-        monkeypatch.delenv("MOGS_TOOL_REQUIREMENT", raising=False)
-    else:
-        monkeypatch.setenv("MOGS_TOOL_REQUIREMENT", value)
 
     inputs = _analysis.build_inputs(_analysis.read_assignment(folder))
 
     assert inputs["requirements"] == f"numpy==2.0\nmogs=={__version__}\n"
+    assert inputs["grading_requirements"] == "numpy==2.0\n"
 
 
 @pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="root reads any file")

@@ -11,7 +11,6 @@ import ast
 import importlib.metadata
 import io
 import json
-import os
 import re
 import zipfile
 from collections.abc import Iterable
@@ -56,9 +55,6 @@ PORTING_URL = "https://mogs.kristia.de/porting"
 OTTER_RE = re.compile(
     r"(?<![\w#])# (?:ASSIGNMENT CONFIG|(?:BEGIN|END) (?:QUESTION|TESTS|PROMPT|TEST CONFIG))\b"
 )
-# The mogs line of Gradescope's `requirements.txt`, when not this exact version. The
-# end-to-end tests set it to a wheel of the checkout.
-TOOL_REQUIREMENT = "MOGS_TOOL_REQUIREMENT"
 # A Python version such as `3.13` or `3.13.5`, as `uv venv --python` takes it on Gradescope.
 PYTHON_RE = re.compile(r"3\.\d+(\.\d+)?")
 # Limits of a zipped submission.
@@ -141,9 +137,7 @@ def read_assignment(assignment_dir: Path) -> Assignment:
 def build_inputs(assignment: Assignment) -> BuildInputs:
     """What a build writes and checks, from the notebook.
 
-    The mogs line of `requirements` is `MOGS_TOOL_REQUIREMENT` when set and not empty, else
-    this version.
-    Student notebooks always pin this version.
+    The mogs line of `requirements` and student notebooks pin this version.
 
     Raises:
         ConfigError: If a data file, a header edit or `python` is invalid.
@@ -158,8 +152,7 @@ def build_inputs(assignment: Assignment) -> BuildInputs:
     solved = student_notebook(src, nb, cfg, pinned_requirement(), solutions=True)
     bundle = bundle_from_notebook(nb, cfg)
     tests = public_test_files(nb)
-    requirement = os.environ.get(TOOL_REQUIREMENT) or f"{TOOL}=={__version__}"
-    requirements, warnings = gradescope_requirements(src, cfg, requirement)
+    requirements, warnings = gradescope_requirements(src, cfg, f"{TOOL}=={__version__}")
     prompts = {
         q.id: list(prompt_previews(nb, q.id) or (NO_TEXT,))
         for q in cfg.questions.values()
