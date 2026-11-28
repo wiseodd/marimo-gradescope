@@ -72,7 +72,7 @@ def test_command_ignores_modules_in_working_directory(mogs_script, tmp_path):
 
 
 @pytest.mark.slow
-def test_wheel_ships_typst_licenses(tmp_path):
+def test_wheel_ships_only_the_package_and_its_license(tmp_path):
     uv = shutil.which("uv")
     assert uv is not None
 
@@ -88,8 +88,7 @@ def test_wheel_ships_typst_licenses(tmp_path):
     # The templates of `setup.sh` and `run_autograder` are in the extension module.
     assert "templates/" not in names
 
-    # The Typst packages the PDF of written answers needs are in the extension module; their
-    # licenses ship with the wheel's metadata.
-    assert "mogs/_typst/" not in names
-    for package in ("cmarker/0.1.10", "mitex/0.2.7"):
-        assert f"crates/mogs-pdf/typst/preview/{package}/LICENSE" in names
+    # Typst downloads the packages of the PDF of written answers on first use.
+    licenses = [name for name in names.split() if "/licenses/" in name]
+    assert "typst" not in names
+    assert [name.rsplit("/licenses/", 1)[1] for name in licenses] == ["LICENSE"]

@@ -4,6 +4,24 @@ from pathlib import Path
 
 import pytest
 
+# Every proxy variable the PDF's package downloader reads.
+PROXIES = ("ALL_PROXY", "all_proxy", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")
+
+
+@pytest.fixture
+def offline_typst(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Empty Typst package folders, and downloads through a proxy nothing listens on."""
+
+    for name in PROXIES:
+        monkeypatch.delenv(name, raising=False)
+
+    for name in ("NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(name, raising=False)
+
+    monkeypatch.setenv("TYPST_PACKAGE_PATH", str(tmp_path / "typst-data"))
+    monkeypatch.setenv("TYPST_PACKAGE_CACHE_PATH", str(tmp_path / "typst-cache"))
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+
 
 @pytest.fixture(scope="session")
 def mogs_script() -> Path:

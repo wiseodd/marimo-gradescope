@@ -6,8 +6,7 @@ description = "Build Gradescope autograders from marimo notebooks."
 readme = "README.md"
 authors = [{ name = "Agustinus Kristiadi", email = "agustinus@kristia.de" }]
 license = "MIT"
-# The vendored Typst packages are compiled into the extension module; their licenses ship too.
-license-files = ["LICENSE", "crates/mogs-pdf/typst/preview/*/*/LICENSE"]
+license-files = ["LICENSE"]
 requires-python = ">=3.13"
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -84,7 +83,7 @@ convention = "google"
 testpaths = ["tests"]
 markers = [
   "slow: runs marimo in a subprocess through `uv run --with` (network on a cold cache)",
-  "network: resolves packages from PyPI through uv (fast with a warm cache)",
+  "network: resolves packages from PyPI through uv, or renders a PDF with Typst packages (fast with a warm cache)",
   "docker: grades in Gradescope's base image with docker or podman (deselected unless `-m` names `docker`)",
 ]
 
@@ -98,9 +97,8 @@ cache-keys = [
   { file = "Cargo.lock" },
   { file = "rust-toolchain.toml" },
   { file = "crates/**/*.rs" },
-  # The Typst template and the vendored Typst packages are compiled into the module.
+  # The Typst template is compiled into the module.
   { file = "crates/**/*.typ" },
-  { file = "crates/mogs-pdf/typst/**/*" },
   # So are the notebook template of `mogs init` and Gradescope's scripts.
   { file = "crates/mogs-cli/templates/*" },
   { file = "crates/mogs-build/templates/*" },

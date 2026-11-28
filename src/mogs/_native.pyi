@@ -8,6 +8,9 @@ from mogs._answers import Question
 class TypstError(Exception):
     """Typst failed, even on the plain-text document. The message is Typst's."""
 
+class DownloadError(Exception):
+    """A Typst package could not be downloaded. The message names it and the cause."""
+
 def main(argv: list[str] | None = None) -> int:
     """Run the `mogs` command line on `argv`, `sys.argv[1:]` when `None`.
 
@@ -36,13 +39,15 @@ PDF_STATUS: str
 def render_pdf(questions: Iterable[Question]) -> bytes:
     """The PDF of `questions`, one page or more per question.
 
-    A Markdown part shows with LaTeX math, through the vendored Typst packages cmarker and
-    mitex. A part that breaks the document is rendered again with less: first with each
-    failing formula shown as LaTeX source, then as plain text, with a note under it. Typst
-    runs with the GIL released; Ctrl+C stops it and raises `KeyboardInterrupt`.
+    A Markdown part shows with LaTeX math, through the Typst Universe packages cmarker and
+    mitex, which are downloaded into Typst's package cache on first use. A part that breaks
+    the document is rendered again with less: first with each failing formula shown as LaTeX
+    source, then as plain text, with a note under it. Typst runs with the GIL released;
+    Ctrl+C stops it and raises `KeyboardInterrupt`.
 
     Raises:
         TypstError: If Typst fails even on the plain-text document.
+        DownloadError: If a Typst package is not in the cache and cannot be downloaded.
         TypeError: If a question or part lacks a field, or a field has the wrong type. A
             role or style outside `Role` or `Style` is a `TypeError` caused by a `ValueError`
             that names the value.

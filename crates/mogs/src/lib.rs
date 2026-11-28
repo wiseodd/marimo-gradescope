@@ -17,7 +17,7 @@ mod _native {
     use super::grader::data_files;
 
     #[pymodule_export]
-    use super::pdf::{TypstError, render_pdf};
+    use super::pdf::{DownloadError, TypstError, render_pdf};
 
     /// `PDF_STATUS`: the message to show while `render_pdf` works.
     #[pymodule_init]

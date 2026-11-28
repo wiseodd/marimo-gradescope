@@ -18,9 +18,9 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 - `crates/mogs-pdf/`: the PDF of written answers, plain Rust with cargo tests.
   `src/mogs/_answers.py` builds the questions from the notebook; this crate
   finds the formulas, runs Typst and falls back to LaTeX source or plain text.
-  The Typst packages cmarker and mitex are vendored in `typst/` and compiled
-  into the module. They need the pinned typst crate version (`=0.15.x`): bump
-  the crates and the vendored packages together.
+  The Typst packages cmarker and mitex are downloaded on first use into
+  Typst's package cache. They need the pinned typst crate version (`=0.15.x`):
+  bump the crates and the package versions in `src/preamble.typ` together.
 - `crates/mogs/`: the extension module `mogs._native`, in Rust (PyO3, abi3
   for Python 3.13 and newer). The `mogs` command is the console script
   `mogs._native:main`, which parses the command line with clap. maturin builds
@@ -72,8 +72,8 @@ and a Gradescope autograder zip. Alpha: the API changes without deprecation.
 Always go through `uv` (never global Python). The Rust toolchain is
 `rust-toolchain.toml` (stable, with clippy and rustfmt). `uv sync` and
 `uv run` rebuild the extension when a file in `cache-keys` of
-`pyproject.toml` changes: the Cargo files, the `.rs` and `.typ` files, the
-templates and the vendored Typst packages.
+`pyproject.toml` changes: the Cargo files, the `.rs` and `.typ` files and the
+templates.
 
 ```bash
 make sync        # uv sync

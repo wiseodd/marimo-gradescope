@@ -1,63 +1,117 @@
-//! The Typst world of one compile: the document, its inputs, the vendored packages and the
-//! fonts.
+//! The Typst world of one compile: the document, its inputs, the Typst Universe packages and
+//! the fonts.
 //!
-//! The document reads nothing from disk. The packages are in the binary, and the fonts are
+//! The document reads nothing from disk. The packages come from Typst's package folders, and
+//! `fetch_packages` downloads the preamble's into Typst's package cache first. The fonts are
 //! Typst's embedded ones, plus the system's only when the inputs need them.
 
+use std::any::Any;
 use std::collections::HashMap;
+use std::env;
+use std::io::{self, Read};
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration as Timeout;
 
 use typst::diag::{FileError, FileResult, PackageError, SourceDiagnostic};
 use typst::foundations::{Bytes, Datetime, Dict, Duration, IntoValue, Str};
+use typst::syntax::package::PackageSpec;
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Library, LibraryExt, World};
+use typst_kit::downloader::Downloader;
 use typst_kit::fonts::{self, FontStore};
+use typst_kit::packages::{FsPackages, SystemPackages, UniversePackages};
 use typst_layout::PagedDocument;
 use typst_pdf::PdfOptions;
 
 use crate::formulas::needs_system_fonts;
 
-/// The namespace of the vendored packages.
-const NAMESPACE: &str = "preview";
+/// How long one package download may take in all.
+const DOWNLOAD_TIMEOUT: Timeout = Timeout::from_secs(60);
 
-/// One vendored file, as `(package, version, path in the package, content)`.
-type Vendored = (&'static str, &'static str, &'static str, &'static [u8]);
+/// How long the connection of a package download may take.
+const CONNECT_TIMEOUT: Timeout = Timeout::from_secs(15);
 
-macro_rules! vendored {
-    ($name:literal, $version:literal, $path:literal) => {
-        (
-            $name,
-            $version,
-            $path,
-            include_bytes!(concat!(
-                "../typst/preview/",
-                $name,
-                "/",
-                $version,
-                "/",
-                $path
-            )),
-        )
-    };
+/// The packages and math helpers every document starts with.
+const PREAMBLE: &str = include_str!("preamble.typ");
+
+/// The Typst Universe packages the preamble imports, in its order.
+pub(crate) fn imports() -> Vec<PackageSpec> {
+    PREAMBLE
+        .lines()
+        .filter_map(|line| line.strip_prefix("#import \""))
+        .filter_map(|rest| rest.split('"').next())
+        .filter(|spec| spec.starts_with('@'))
+        .map(|spec| {
+            spec.parse()
+                .expect("the preamble imports packages by full spec")
+        })
+        .collect()
 }
 
-/// Every file of the vendored packages cmarker and mitex, from `typst/preview/`.
-pub(crate) const PACKAGES: &[Vendored] = &[
-    vendored!("cmarker", "0.1.10", "LICENSE"),
-    vendored!("cmarker", "0.1.10", "lib.typ"),
-    vendored!("cmarker", "0.1.10", "plugin.wasm"),
-    vendored!("cmarker", "0.1.10", "typst.toml"),
-    vendored!("mitex", "0.2.7", "LICENSE"),
-    vendored!("mitex", "0.2.7", "lib.typ"),
-    vendored!("mitex", "0.2.7", "mitex.typ"),
-    vendored!("mitex", "0.2.7", "mitex.wasm"),
-    vendored!("mitex", "0.2.7", "specs/latex/standard.typ"),
-    vendored!("mitex", "0.2.7", "specs/mod.typ"),
-    vendored!("mitex", "0.2.7", "specs/prelude.typ"),
-    vendored!("mitex", "0.2.7", "typst.toml"),
-];
+/// Download the packages the preamble imports into Typst's package cache, unless there.
+///
+/// Returns one line that names the package and the cause when a download fails.
+pub(crate) fn fetch_packages() -> Result<(), String> {
+    fetch(&packages(), &imports())
+}
+
+fn fetch(packages: &SystemPackages, specs: &[PackageSpec]) -> Result<(), String> {
+    for spec in specs {
+        packages.obtain(spec).map_err(|error| {
+            let cause = match error {
+                PackageError::NetworkFailed(Some(cause)) => cause.to_string(),
+                other => other.to_string(),
+            };
+
+            format!("downloading the Typst package {spec} failed ({cause})")
+        })?;
+    }
+
+    Ok(())
+}
+
+/// Typst's package folders, as the Typst CLI finds them.
+///
+/// `TYPST_PACKAGE_PATH` and `TYPST_PACKAGE_CACHE_PATH` replace the system's data and cache
+/// folders. The environment is read on every call, so a change applies to the next compile.
+fn packages() -> SystemPackages {
+    let folder = |variable: &str, system: fn() -> Option<FsPackages>| {
+        env::var_os(variable).map(FsPackages::new).or_else(system)
+    };
+
+    SystemPackages::from_parts(
+        folder("TYPST_PACKAGE_PATH", FsPackages::system_data),
+        folder("TYPST_PACKAGE_CACHE_PATH", FsPackages::system_cache),
+        UniversePackages::new(Http),
+    )
+}
+
+/// Downloads with ureq over rustls, through the proxy the environment names.
+struct Http;
+
+impl Downloader for Http {
+    fn stream(&self, _key: &dyn Any, url: &str) -> io::Result<(Option<usize>, Box<dyn Read>)> {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .user_agent(concat!("mogs/", env!("CARGO_PKG_VERSION")))
+            .timeout_global(Some(DOWNLOAD_TIMEOUT))
+            .timeout_connect(Some(CONNECT_TIMEOUT))
+            .build()
+            .into();
+
+        let response = agent.get(url).call().map_err(|error| match error {
+            ureq::Error::StatusCode(404) => io::Error::new(io::ErrorKind::NotFound, "not found"),
+            other => io::Error::other(other.to_string()),
+        })?;
+        let size = response
+            .body()
+            .content_length()
+            .and_then(|length| usize::try_from(length).ok());
+
+        Ok((size, Box::new(response.into_body().into_reader())))
+    }
+}
 
 /// Compile the Typst `text`, named `name`, to PDF with `inputs` in `sys.inputs`.
 ///
@@ -160,20 +214,22 @@ impl World for PdfWorld {
             return Ok(self.main.clone());
         }
 
-        // The vendored files never change, so their parsed sources serve every compile.
+        // A package version never changes, so its parsed sources serve every compile.
         static SOURCES: OnceLock<Mutex<HashMap<FileId, Source>>> = OnceLock::new();
-        let mut sources = SOURCES
-            .get_or_init(Default::default)
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let sources = SOURCES.get_or_init(Default::default);
 
-        if let Some(source) = sources.get(&id) {
+        if let Some(source) = sources.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {
             return Ok(source.clone());
         }
 
-        let text = std::str::from_utf8(vendored_file(id)?).map_err(|_| FileError::InvalidUtf8)?;
+        let bytes = package_file(id)?;
+        let text = std::str::from_utf8(&bytes).map_err(|_| FileError::InvalidUtf8)?;
         let source = Source::new(id, text.to_owned());
-        sources.insert(id, source.clone());
+
+        sources
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(id, source.clone());
 
         Ok(source)
     }
@@ -183,7 +239,7 @@ impl World for PdfWorld {
             return Ok(Bytes::from_string(self.main.text().to_owned()));
         }
 
-        vendored_file(id).map(Bytes::new)
+        package_file(id)
     }
 
     fn font(&self, index: usize) -> Option<Font> {
@@ -195,79 +251,84 @@ impl World for PdfWorld {
     }
 }
 
-/// The content of a vendored package file.
-fn vendored_file(id: FileId) -> FileResult<&'static [u8]> {
-    let not_found = || FileError::NotFound(id.vpath().get_with_slash().into());
-
+/// The content of a package file, from Typst's package folders; read once per process.
+fn package_file(id: FileId) -> FileResult<Bytes> {
     let VirtualRoot::Package(spec) = id.root() else {
-        return Err(not_found());
+        return Err(FileError::NotFound(id.vpath().get_with_slash().into()));
     };
 
-    let version = spec.version.to_string();
-    let mut files = PACKAGES
-        .iter()
-        .filter(|(name, at, _, _)| {
-            spec.namespace == NAMESPACE && spec.name == *name && *at == version
-        })
-        .peekable();
+    static FILES: OnceLock<Mutex<HashMap<FileId, Bytes>>> = OnceLock::new();
+    let files = FILES.get_or_init(Default::default);
 
-    if files.peek().is_none() {
-        return Err(FileError::Package(PackageError::NotFound(spec.clone())));
+    if let Some(bytes) = files.lock().unwrap_or_else(|e| e.into_inner()).get(&id) {
+        return Ok(bytes.clone());
     }
 
+    let root = packages().obtain(spec).map_err(FileError::Package)?;
+    let bytes = root.load(id.vpath())?;
+
     files
-        .find(|(_, _, path, _)| *path == id.vpath().get_without_slash())
-        .map(|(_, _, _, content)| *content)
-        .ok_or_else(not_found)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(id, bytes.clone());
+
+    Ok(bytes)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     use super::*;
 
-    fn files_under(folder: &Path) -> Vec<PathBuf> {
-        let mut found = Vec::new();
+    /// Typst's package folders under `folder`, with the registry at `url`.
+    fn packages_in(folder: &Path, url: &str) -> SystemPackages {
+        SystemPackages::from_parts(
+            None,
+            Some(FsPackages::new(folder.join("cache"))),
+            UniversePackages::with_url(Http, url),
+        )
+    }
 
-        for entry in std::fs::read_dir(folder).unwrap() {
-            let path = entry.unwrap().path();
+    #[test]
+    fn imports_are_the_preamble_s_packages() {
+        let names: Vec<String> = imports().iter().map(ToString::to_string).collect();
 
-            if path.is_dir() {
-                found.extend(files_under(&path));
-            } else {
-                found.push(path);
-            }
+        assert_eq!(names, ["@preview/cmarker:0.1.10", "@preview/mitex:0.2.7"]);
+    }
+
+    #[test]
+    fn a_failed_download_names_the_package_and_the_cause() {
+        let folder = tempfile::tempdir().unwrap();
+        // Nothing listens on port 1.
+        let packages = packages_in(folder.path(), "http://127.0.0.1:1");
+
+        let error = fetch(&packages, &imports()).unwrap_err();
+
+        let prefix = "downloading the Typst package @preview/cmarker:0.1.10 failed (";
+        assert!(error.starts_with(prefix), "{error}");
+        assert!(error.ends_with(')'), "{error}");
+        assert!(!error.contains('\n'), "{error}");
+        assert!(error.contains("refused"), "{error}");
+    }
+
+    #[test]
+    fn fetched_packages_are_in_the_cache() {
+        let folder = tempfile::tempdir().unwrap();
+        let packages = packages_in(folder.path(), "https://packages.typst.org");
+
+        fetch(&packages, &imports()).unwrap();
+
+        for spec in imports() {
+            let root = folder
+                .path()
+                .join(format!("cache/preview/{}/{}", spec.name, spec.version));
+            assert!(root.join("typst.toml").is_file(), "{spec}");
         }
-
-        found
     }
 
     #[test]
-    fn every_vendored_file_is_embedded() {
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("typst/preview");
-        let mut on_disk: Vec<String> = files_under(&root)
-            .iter()
-            .map(|path| {
-                let rel = path.strip_prefix(&root).unwrap();
-                rel.components()
-                    .map(|part| part.as_os_str().to_str().unwrap())
-                    .collect::<Vec<_>>()
-                    .join("/")
-            })
-            .collect();
-        let mut embedded: Vec<String> = PACKAGES
-            .iter()
-            .map(|(name, version, path, _)| format!("{name}/{version}/{path}"))
-            .collect();
-        on_disk.sort();
-        embedded.sort();
-
-        assert_eq!(on_disk, embedded);
-    }
-
-    #[test]
-    fn compiles_with_the_vendored_packages() {
+    fn compiles_with_the_packages() {
         let text = "#import \"@preview/mitex:0.2.7\": mitex\n#mitex(sys.inputs.formula)\n";
 
         let pdf = compile("test.typ", text, &[("formula", "x^2")]).unwrap();
@@ -277,7 +338,8 @@ mod tests {
 
     #[test]
     fn errors_name_the_problem() {
-        let error = compile("test.typ", "#import \"@preview/nothing:0.1.0\"\n", &[]).unwrap_err();
+        // Only the `preview` namespace is downloaded.
+        let error = compile("test.typ", "#import \"@local/nothing:0.1.0\"\n", &[]).unwrap_err();
 
         assert!(error.contains("package not found"), "{error}");
         assert!(

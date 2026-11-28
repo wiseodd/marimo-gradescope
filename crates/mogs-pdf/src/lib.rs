@@ -3,7 +3,7 @@
 //! Python reads the notebook and builds the questions: per question a heading, then the
 //! prompt and answer cells in notebook order. This crate renders them with Typst in-process.
 //! A page break separates questions. A Markdown part shows with LaTeX math, through the
-//! vendored Typst packages cmarker and mitex; any other part shows as plain text.
+//! Typst Universe packages cmarker and mitex; any other part shows as plain text.
 
 mod document;
 pub mod formulas;
@@ -120,6 +120,8 @@ pub enum RenderError {
     Interrupted,
     /// The rendering thread panicked, with the panic's message.
     Panicked(String),
+    /// A Typst package could not be downloaded; one line that names it and the cause.
+    Download(String),
 }
 
 /// What `render` needs from its caller.
@@ -130,10 +132,13 @@ pub trait Signals {
 
 /// The PDF of `questions`; parts that break the document are rendered with less.
 ///
+/// The Typst packages are downloaded first when they are not in Typst's package cache.
 /// Typst runs on its own thread, so the caller can stop waiting at once when `host` says so;
-/// the thread then ends after the Typst run it is in.
+/// the thread then ends after the Typst run or download it is in.
 pub fn render(questions: Vec<Question>, host: &dyn Signals) -> Result<Vec<u8>, RenderError> {
     stoppable(host, move |stop| {
+        world::fetch_packages().map_err(RenderError::Download)?;
+
         let pdf = Typst { stop }.pdf(&questions);
 
         // Typst keeps its caches between runs; drop what recent runs did not use.
@@ -269,5 +274,14 @@ mod tests {
         let result = stoppable(&Never, |_| Err::<(), _>(RenderError::Typst("boom".into())));
 
         assert_eq!(result, Err(RenderError::Typst("boom".into())));
+    }
+
+    #[test]
+    fn a_download_failure_keeps_its_message() {
+        let result = stoppable(&Never, |_| {
+            Err::<(), _>(RenderError::Download("boom".into()))
+        });
+
+        assert_eq!(result, Err(RenderError::Download("boom".into())));
     }
 }

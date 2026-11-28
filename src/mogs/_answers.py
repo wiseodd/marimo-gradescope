@@ -106,8 +106,8 @@ def render_manual_pdf(
         `out`.
 
     Raises:
-        PdfUnavailable: If the notebook cannot be read, `out` cannot be written, or Typst
-            fails even on the plain-text document.
+        PdfUnavailable: If the notebook cannot be read, `out` cannot be written, a Typst
+            package cannot be downloaded, or Typst fails even on the plain-text document.
     """
 
     try:
@@ -126,6 +126,8 @@ def render_manual_pdf(
         data = _native.render_pdf(questions)
     except _native.TypstError as exc:
         raise PdfUnavailable(f"Typst failed ({exception_summary(exc)})") from exc
+    except _native.DownloadError as exc:
+        raise PdfUnavailable(str(exc)) from exc
 
     # Python writes the file, so the error text is Python's on every platform.
     try:

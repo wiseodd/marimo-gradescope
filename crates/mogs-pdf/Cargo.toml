@@ -10,9 +10,14 @@ publish = false
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# The vendored packages in `typst/` need this Typst version: bump the Typst crates and the
-# packages together.
+# The packages `src/preamble.typ` imports need this Typst version: bump the Typst crates and
+# the package versions there together.
 typst = "=0.15.1"
-typst-kit = { version = "=0.15.1", default-features = false, features = ["embedded-fonts", "scan-fonts"] }
+typst-kit = { version = "=0.15.1", default-features = false, features = ["embedded-fonts", "scan-fonts", "system-packages"] }
 typst-layout = "=0.15.1"
 typst-pdf = "=0.15.1"
+# Downloads the packages over rustls with its own root certificates: no system OpenSSL.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+[dev-dependencies]
+tempfile = "3"

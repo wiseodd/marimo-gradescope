@@ -193,6 +193,23 @@ def test_package_reports_disk_file_tests_and_download(tmp_path, no_pdf):
     assert result.note == f"Exported hw.py as saved at {saved}."
 
 
+@pytest.mark.usefixtures("offline_typst")
+def test_package_without_typst_packages_includes_markdown_answers(tmp_path):
+    notebook = tmp_path / "hw.py"
+    notebook.write_text(student_copy(), encoding="utf-8")
+    write_tests(tmp_path)
+
+    result = package(notebook, name="hw", manual=["q3"], titles=TITLES)
+    line = texts(result.lines)[1]
+
+    assert line.startswith(
+        "⚠ PDF not created: downloading the Typst package @preview/cmarker:0.1.10 failed ("
+    )
+    assert line.endswith("); answers included as Markdown")
+    assert "hw_answers.md" in zip_names(result.data)
+    assert "hw.pdf" not in zip_names(result.data)
+
+
 # The student moves `three` into a plain cell, so the grader has to run the whole notebook.
 PLAIN_CELL_EDIT = (
     "@app.function\ndef three():\n    n = ...\n    return n\n",
@@ -395,6 +412,7 @@ def test_one_line_answer_cell_still_packaged(tmp_path, no_pdf):
     assert 'mo.md("Because.")' in zip_text(result.data, "hw_answers.md")
 
 
+@pytest.mark.network
 def test_one_line_answer_cell_with_real_pdf(tmp_path):
     # Without the fixture: the PDF shows the cell's source.
     notebook = tmp_path / "hw.py"
