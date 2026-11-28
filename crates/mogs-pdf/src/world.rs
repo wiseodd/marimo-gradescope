@@ -9,7 +9,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::env;
 use std::io::{self, Read};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration as Timeout;
 
 use typst::diag::{FileError, FileResult, PackageError, SourceDiagnostic};
@@ -24,6 +24,7 @@ use typst_kit::fonts::{self, FontStore};
 use typst_kit::packages::{FsPackages, SystemPackages, UniversePackages};
 use typst_layout::PagedDocument;
 use typst_pdf::PdfOptions;
+use ureq::tls::{RootCerts, TlsConfig};
 
 use crate::formulas::needs_system_fonts;
 
@@ -59,23 +60,30 @@ pub(crate) fn fetch_packages() -> Result<(), String> {
 
 fn fetch(packages: &SystemPackages, specs: &[PackageSpec]) -> Result<(), String> {
     for spec in specs {
-        packages.obtain(spec).map_err(|error| {
-            let cause = match error {
-                PackageError::NetworkFailed(Some(cause)) => cause.to_string(),
-                other => other.to_string(),
-            };
-
-            format!("downloading the Typst package {spec} failed ({cause})")
-        })?;
+        packages
+            .obtain(spec)
+            .map_err(|error| failure(spec, error))?;
     }
 
     Ok(())
 }
 
+/// One line that names `spec` and the cause of `error`, with its whitespace collapsed.
+fn failure(spec: &PackageSpec, error: PackageError) -> String {
+    let cause = match error {
+        PackageError::NetworkFailed(Some(cause)) => cause.to_string(),
+        other => other.to_string(),
+    };
+    let cause = cause.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    format!("downloading the Typst package {spec} failed ({cause})")
+}
+
 /// Typst's package folders, as the Typst CLI finds them.
 ///
 /// `TYPST_PACKAGE_PATH` and `TYPST_PACKAGE_CACHE_PATH` replace the system's data and cache
-/// folders. The environment is read on every call, so a change applies to the next compile.
+/// folders. The environment is read on every call, so a change decides where the next fetch
+/// looks and stores. Files a compile already read stay cached in memory for the process.
 fn packages() -> SystemPackages {
     let folder = |variable: &str, system: fn() -> Option<FsPackages>| {
         env::var_os(variable).map(FsPackages::new).or_else(system)
@@ -88,19 +96,31 @@ fn packages() -> SystemPackages {
     )
 }
 
-/// Downloads with ureq over rustls, through the proxy the environment names.
+/// An HTTP client over rustls with ring that trusts the OS certificate store, like the Typst
+/// CLI, and goes through the proxy the environment names.
+///
+/// A new one per download, so it reads the proxy variables as they are then.
+fn agent() -> ureq::Agent {
+    let tls = TlsConfig::builder()
+        .root_certs(RootCerts::PlatformVerifier)
+        .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
+        .build();
+
+    ureq::Agent::config_builder()
+        .user_agent(concat!("mogs/", env!("CARGO_PKG_VERSION")))
+        .timeout_global(Some(DOWNLOAD_TIMEOUT))
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .tls_config(tls)
+        .build()
+        .into()
+}
+
+/// Downloads with `agent`.
 struct Http;
 
 impl Downloader for Http {
     fn stream(&self, _key: &dyn Any, url: &str) -> io::Result<(Option<usize>, Box<dyn Read>)> {
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .user_agent(concat!("mogs/", env!("CARGO_PKG_VERSION")))
-            .timeout_global(Some(DOWNLOAD_TIMEOUT))
-            .timeout_connect(Some(CONNECT_TIMEOUT))
-            .build()
-            .into();
-
-        let response = agent.get(url).call().map_err(|error| match error {
+        let response = agent().get(url).call().map_err(|error| match error {
             ureq::Error::StatusCode(404) => io::Error::new(io::ErrorKind::NotFound, "not found"),
             other => io::Error::other(other.to_string()),
         })?;
@@ -295,6 +315,29 @@ mod tests {
         let names: Vec<String> = imports().iter().map(ToString::to_string).collect();
 
         assert_eq!(names, ["@preview/cmarker:0.1.10", "@preview/mitex:0.2.7"]);
+    }
+
+    #[test]
+    fn a_failure_with_line_breaks_stays_on_one_line() {
+        let spec: PackageSpec = "@preview/mitex:0.2.7".parse().unwrap();
+        let error =
+            PackageError::NetworkFailed(Some("tls:\n  invalid\tpeer  certificate\r\n".into()));
+
+        assert_eq!(
+            failure(&spec, error),
+            "downloading the Typst package @preview/mitex:0.2.7 failed \
+             (tls: invalid peer certificate)"
+        );
+    }
+
+    #[test]
+    fn downloads_trust_the_os_certificate_store() {
+        let agent = agent();
+
+        assert!(matches!(
+            agent.config().tls_config().root_certs(),
+            ureq::tls::RootCerts::PlatformVerifier
+        ));
     }
 
     #[test]
